@@ -91,9 +91,10 @@ class AssetRepository {
     );
     final localId = await _db.accountDao.insertRow(companion);
 
-    if (_api != null) {
+    final api = _api;
+    if (api != null) {
       try {
-        final remote = await _api!.addAccount({
+        final remote = await api.addAccount({
           'name': name,
           'currency': currency,
           'balance': balance,
@@ -168,9 +169,10 @@ class AssetRepository {
       synced: false,
     ));
 
-    if (_api != null && existing.remoteId != null) {
+    final api = _api;
+    if (api != null && existing.remoteId != null) {
       try {
-        await _api!.updateAccount(existing.remoteId!, {
+        await api.updateAccount(existing.remoteId!, {
           'name': name,
           'currency': currency,
           'balance': newBalance,
@@ -188,17 +190,19 @@ class AssetRepository {
     final row = await _db.accountDao.getById(localId);
     await _db.accountDao.removeById(localId);
 
-    if (_api != null && row?.remoteId != null) {
+    final api = _api;
+    if (api != null && row?.remoteId != null) {
       try {
-        await _api!.deleteAccount(row!.remoteId!);
+        await api.deleteAccount(row!.remoteId!);
       } catch (_) {}
     }
   }
 
   Future<void> syncFromServer(String currency) async {
-    if (_api == null) return;
+    final api = _api;
+    if (api == null) return;
     try {
-      final accounts = await _api!.getAccounts(currency: currency);
+      final accounts = await api.getAccounts(currency: currency);
       for (final a in accounts) {
         await _db.accountDao.upsertByRemoteId(
           AccountsCompanion(

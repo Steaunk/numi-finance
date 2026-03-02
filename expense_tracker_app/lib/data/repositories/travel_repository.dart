@@ -46,9 +46,10 @@ class TravelRepository {
     );
     final localId = await _db.tripDao.insertTrip(companion);
 
-    if (_api != null) {
+    final api = _api;
+    if (api != null) {
       try {
-        final remote = await _api!.addTrip({
+        final remote = await api.addTrip({
           'destination': destination,
           'start_date':
               '${startDate.year}-${startDate.month.toString().padLeft(2, '0')}-${startDate.day.toString().padLeft(2, '0')}',
@@ -84,9 +85,10 @@ class TravelRepository {
     final row = await _db.tripDao.getById(localId);
     await _db.tripDao.removeTripById(localId);
 
-    if (_api != null && row?.remoteId != null) {
+    final api = _api;
+    if (api != null && row?.remoteId != null) {
       try {
-        await _api!.deleteTrip(row!.remoteId!);
+        await api.deleteTrip(row!.remoteId!);
       } catch (_) {}
     }
   }
@@ -121,9 +123,10 @@ class TravelRepository {
     );
     final localId = await _db.tripDao.insertTravelExpense(companion);
 
-    if (_api != null && tripRow?.remoteId != null) {
+    final api = _api;
+    if (api != null && tripRow?.remoteId != null) {
       try {
-        final remote = await _api!.addTripExpense(tripRow!.remoteId!, {
+        final remote = await api.addTripExpense(tripRow!.remoteId!, {
           'amount': amount,
           'currency': currency,
           'date':
@@ -167,17 +170,19 @@ class TravelRepository {
     await _db.tripDao.removeTravelExpenseById(localId);
 
     final tripRow = await _db.tripDao.getById(tripId);
-    if (_api != null && row?.remoteId != null && tripRow?.remoteId != null) {
+    final api = _api;
+    if (api != null && row?.remoteId != null && tripRow?.remoteId != null) {
       try {
-        await _api!.deleteTripExpense(tripRow!.remoteId!, row!.remoteId!);
+        await api.deleteTripExpense(tripRow!.remoteId!, row!.remoteId!);
       } catch (_) {}
     }
   }
 
   Future<void> syncFromServer(String currency) async {
-    if (_api == null) return;
+    final api = _api;
+    if (api == null) return;
     try {
-      final trips = await _api!.getTrips(currency: currency);
+      final trips = await api.getTrips(currency: currency);
       for (final t in trips) {
         final remoteId = t['id'] as int;
         await _db.tripDao.upsertTripByRemoteId(
@@ -197,7 +202,7 @@ class TravelRepository {
             .getSingleOrNull();
         if (localTrip == null) continue;
 
-        final expenses = await _api!.getTripExpenses(remoteId, currency: currency);
+        final expenses = await api.getTripExpenses(remoteId, currency: currency);
         for (final e in expenses) {
           await _db.tripDao.upsertTravelExpenseByRemoteId(
             TravelExpensesCompanion(
