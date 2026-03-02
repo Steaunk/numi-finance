@@ -6,9 +6,9 @@ from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
-from core.services import convert_amount, get_latest_rates
+from core.services import convert_amount, get_all_rates, get_latest_rates
 
-from .models import Expense
+from .models import Expense, TRAVEL_CATEGORIES, Trip, TravelExpense
 
 VALID_CURRENCIES = {'CNY', 'HKD', 'USD', 'SGD'}
 
@@ -242,3 +242,244 @@ def monthly_stats(request):
         'month_keys': month_keys,
         'months': months,
     })
+
+
+# --- Travel Expenses ---
+
+@ensure_csrf_cookie
+def travel_index(request):
+    return render(request, 'expenses/travel.html')
+
+
+@require_GET
+def list_trips(request):
+    display = request.GET.get('currency', 'SGD').upper()
+    all_rates = get_all_rates()
+    display_rate = all_rates.get(display.lower(), 1.0)
+
+    trips = Trip.objects.prefetch_related('expenses').all()
+    result = []
+    for trip in trips:
+        total = 0.0
+        category_totals = {}
+        for exp in trip.expenses.all():
+            usd = exp.amount / exp.rate_to_usd if exp.rate_to_usd else 0
+            converted = usd * display_rate
+            total += converted
+            category_totals[exp.category] = round(
+                category_totals.get(exp.category, 0.0) + converted, 2
+            )
+
+        result.append({
+            'id': trip.id,
+            'destination': trip.destination,
+            'start_date': trip.start_date.isoformat(),
+            'end_date': trip.end_date.isoformat(),
+            'notes': trip.notes,
+            'expense_count': trip.expenses.count(),
+            'total_converted': round(total, 2),
+            'category_totals': category_totals,
+        })
+
+    return JsonResponse({
+        'trips': result,
+        'display_currency': display,
+    })
+
+
+@require_POST
+def add_trip(request):
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    errors = []
+    destination = data.get('destination', '').strip()
+    if not destination:
+        errors.append('destination is required')
+
+    from datetime import datetime
+    start_date = end_date = None
+    try:
+        start_date = datetime.strptime(data.get('start_date', ''), '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        errors.append('start_date must be YYYY-MM-DD')
+    try:
+        end_date = datetime.strptime(data.get('end_date', ''), '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        errors.append('end_date must be YYYY-MM-DD')
+
+    if start_date and end_date and end_date < start_date:
+        errors.append('end_date must be >= start_date')
+
+    if errors:
+        return JsonResponse({'errors': errors}, status=400)
+
+    trip = Trip.objects.create(
+        destination=destination,
+        start_date=start_date,
+        end_date=end_date,
+        notes=data.get('notes', '').strip(),
+    )
+    return JsonResponse({'id': trip.id, 'destination': trip.destination}, status=201)
+
+
+@require_http_methods(["PUT"])
+def update_trip(request, trip_id):
+    try:
+        trip = Trip.objects.get(id=trip_id)
+    except Trip.DoesNotExist:
+        return JsonResponse({'error': 'Trip not found'}, status=404)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    from datetime import datetime
+    if 'destination' in data:
+        trip.destination = data['destination'].strip()
+    if 'start_date' in data:
+        try:
+            trip.start_date = datetime.strptime(data['start_date'], '%Y-%m-%d').date()
+        except (ValueError, TypeError):
+            return JsonResponse({'error': 'Invalid start_date'}, status=400)
+    if 'end_date' in data:
+        try:
+            trip.end_date = datetime.strptime(data['end_date'], '%Y-%m-%d').date()
+        except (ValueError, TypeError):
+            return JsonResponse({'error': 'Invalid end_date'}, status=400)
+    if 'notes' in data:
+        trip.notes = data['notes'].strip()
+
+    trip.save()
+    return JsonResponse({'id': trip.id, 'destination': trip.destination})
+
+
+@require_http_methods(["DELETE"])
+def delete_trip(request, trip_id):
+    try:
+        trip = Trip.objects.get(id=trip_id)
+    except Trip.DoesNotExist:
+        return JsonResponse({'error': 'Trip not found'}, status=404)
+    trip.delete()
+    return JsonResponse({'deleted': True})
+
+
+@require_GET
+def list_trip_expenses(request, trip_id):
+    try:
+        trip = Trip.objects.get(id=trip_id)
+    except Trip.DoesNotExist:
+        return JsonResponse({'error': 'Trip not found'}, status=404)
+
+    display = request.GET.get('currency', 'SGD').upper()
+    all_rates = get_all_rates()
+    display_rate = all_rates.get(display.lower(), 1.0)
+
+    expenses = trip.expenses.all()
+    result = []
+    total = 0.0
+    category_totals = {}
+    for exp in expenses:
+        usd = exp.amount / exp.rate_to_usd if exp.rate_to_usd else 0
+        converted = round(usd * display_rate, 2)
+        total += converted
+        category_totals[exp.category] = round(
+            category_totals.get(exp.category, 0.0) + converted, 2
+        )
+        result.append({
+            'id': exp.id,
+            'amount': exp.amount,
+            'currency': exp.currency,
+            'date': exp.date.isoformat(),
+            'category': exp.category,
+            'name': exp.name,
+            'notes': exp.notes,
+            'converted_amount': converted,
+        })
+
+    return JsonResponse({
+        'trip': {
+            'id': trip.id,
+            'destination': trip.destination,
+            'start_date': trip.start_date.isoformat(),
+            'end_date': trip.end_date.isoformat(),
+        },
+        'expenses': result,
+        'total_converted': round(total, 2),
+        'category_totals': category_totals,
+        'display_currency': display,
+        'categories': TRAVEL_CATEGORIES,
+    })
+
+
+@require_POST
+def add_trip_expense(request, trip_id):
+    try:
+        trip = Trip.objects.get(id=trip_id)
+    except Trip.DoesNotExist:
+        return JsonResponse({'error': 'Trip not found'}, status=404)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    errors = []
+    amount = data.get('amount')
+    try:
+        amount = float(amount)
+        if amount <= 0:
+            errors.append('amount must be positive')
+    except (TypeError, ValueError):
+        errors.append('amount must be a number')
+
+    currency = data.get('currency', '').upper()
+    all_rates = get_all_rates()
+    rate = all_rates.get(currency.lower())
+    if currency == 'USD':
+        rate = 1.0
+    if rate is None:
+        errors.append(f'Unknown currency: {currency}')
+
+    from datetime import datetime
+    exp_date = None
+    try:
+        exp_date = datetime.strptime(data.get('date', ''), '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        errors.append('date must be YYYY-MM-DD')
+
+    category = data.get('category', '').strip()
+    if not category:
+        errors.append('category is required')
+
+    name = data.get('name', '').strip()
+    if not name:
+        errors.append('name is required')
+
+    if errors:
+        return JsonResponse({'errors': errors}, status=400)
+
+    exp = TravelExpense.objects.create(
+        trip=trip,
+        amount=amount,
+        currency=currency,
+        date=exp_date,
+        category=category,
+        name=name,
+        notes=data.get('notes', '').strip(),
+        rate_to_usd=rate,
+    )
+    return JsonResponse({'id': exp.id, 'name': exp.name}, status=201)
+
+
+@require_http_methods(["DELETE"])
+def delete_trip_expense(request, trip_id, expense_id):
+    try:
+        exp = TravelExpense.objects.get(id=expense_id, trip_id=trip_id)
+    except TravelExpense.DoesNotExist:
+        return JsonResponse({'error': 'Expense not found'}, status=404)
+    exp.delete()
+    return JsonResponse({'deleted': True})
