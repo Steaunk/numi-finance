@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Asset Manager</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; color: #333; padding: 20px; max-width: 1200px; margin: 0 auto; }
+        h1 { font-size: 1.5rem; }
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding: 16px 20px; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .header-left { display: flex; align-items: center; gap: 16px; }
+        .nav-link { font-size: 0.85rem; color: #4a90d9; text-decoration: none; }
+        .nav-link:hover { text-decoration: underline; }
+        .currency-selector { display: flex; align-items: center; gap: 8px; }
+        .currency-selector label { font-size: 0.9rem; color: #666; }
+        .currency-selector select { padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9rem; }
+        .section { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 20px; }
+        .section h2 { font-size: 1.1rem; margin-bottom: 16px; color: #444; }
+        .summary-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px; }
+        .summary-card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 16px; text-align: center; }
+        .summary-card .label { font-size: 0.8rem; color: #888; text-transform: uppercase; margin-bottom: 4px; }
+        .summary-card .value { font-size: 1.4rem; font-weight: 700; }
+        .summary-card .value.positive { color: #27ae60; }
+        .summary-card .value.negative { color: #e74c3c; }
+        .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+        .form-group { display: flex; flex-direction: column; }
+        .form-group label { font-size: 0.8rem; color: #666; margin-bottom: 4px; }
+        .form-group input, .form-group select, .form-group textarea { padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9rem; }
+        .form-group textarea { resize: vertical; min-height: 36px; }
+        .form-actions { display: flex; gap: 10px; margin-top: 12px; align-items: center; }
+        .btn { padding: 8px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem; transition: background 0.2s; }
+        .btn-primary { background: #4a90d9; color: #fff; }
+        .btn-primary:hover { background: #357abd; }
+        .btn-secondary { background: #e8e8e8; color: #555; }
+        .btn-secondary:hover { background: #ddd; }
+        .btn-danger { background: #e74c3c; color: #fff; padding: 4px 10px; font-size: 0.8rem; }
+        .btn-danger:hover { background: #c0392b; }
+        .btn-sm { padding: 4px 10px; font-size: 0.8rem; }
+        .message { padding: 8px 12px; border-radius: 4px; margin-bottom: 12px; font-size: 0.9rem; }
+        .message-success { background: #d4edda; color: #155724; }
+        .message-error { background: #f8d7da; color: #721c24; }
+        .account-group { margin-bottom: 16px; }
+        .account-group h3 { font-size: 0.9rem; color: #888; text-transform: uppercase; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid #eee; }
+        .account-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
+        .account-item:last-child { border-bottom: none; }
+        .account-info { flex: 1; }
+        .account-name { font-weight: 600; font-size: 0.95rem; }
+        .account-notes { font-size: 0.8rem; color: #999; }
+        .account-balance { text-align: right; margin-right: 12px; }
+        .account-balance .original { font-weight: 600; font-size: 0.95rem; }
+        .account-balance .converted { font-size: 0.8rem; color: #888; }
+        .account-actions { display: flex; gap: 6px; align-items: center; }
+        .inline-edit { display: flex; gap: 6px; align-items: center; }
+        .inline-edit input { width: 120px; padding: 4px 8px; border: 1px solid #4a90d9; border-radius: 4px; font-size: 0.9rem; }
+        .change-indicator { font-size: 0.75rem; margin-left: 4px; }
+        .change-positive { color: #27ae60; }
+        .change-negative { color: #e74c3c; }
+        .chart-box { position: relative; height: 300px; }
+        .checkbox-group { display: flex; align-items: center; gap: 6px; }
+        .checkbox-group input[type="checkbox"] { width: 16px; height: 16px; }
+        @media (max-width: 768px) {
+            body { padding: 10px; }
+            header { flex-direction: column; gap: 10px; padding: 12px 16px; }
+            .header-left { flex-direction: column; gap: 6px; align-items: flex-start; }
+            h1 { font-size: 1.3rem; }
+            .section { padding: 14px; }
+            .summary-cards { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+            .summary-card { padding: 10px; }
+            .summary-card .value { font-size: 1.1rem; }
+            .form-grid { grid-template-columns: 1fr 1fr; }
+            .form-actions { flex-wrap: wrap; }
+            .btn { padding: 10px 16px; }
+            .chart-box { height: 250px; }
+        }
+        @media (max-width: 480px) {
+            body { padding: 6px; }
+            header { padding: 10px 12px; }
+            h1 { font-size: 1.15rem; }
+            .section { padding: 10px; margin-bottom: 12px; }
+            .section h2 { font-size: 1rem; margin-bottom: 10px; }
+            .summary-cards { grid-template-columns: 1fr; }
+            .form-grid { grid-template-columns: 1fr; }
+            .form-group input, .form-group select, .form-group textarea { padding: 10px; font-size: 1rem; }
+            .btn { padding: 10px 14px; font-size: 0.85rem; min-height: 44px; }
+            .account-item { flex-wrap: wrap; gap: 8px; }
+            .account-actions { width: 100%; justify-content: flex-end; }
+            .chart-box { height: 220px; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <h1>Asset Manager</h1>
+            <a href="/expenses/" class="nav-link">Expenses</a>
+        </div>
+        <div class="currency-selector">
+            <label>Display Currency:</label>
+            <select id="displayCurrency" onchange="handleCurrencyChange(this.value)">
+                <option value="CNY">CNY</option>
+                <option value="HKD">HKD</option>
+                <option value="USD">USD</option>
+                <option value="SGD">SGD</option>
+                <option value="JPY">JPY</option>
+            </select>
+        </div>
+    </header>
+
+    <div id="messageArea"></div>
+
+    <!-- Total Summary -->
+    <div class="summary-cards" style="grid-template-columns:1fr;">
+        <div class="summary-card">
+            <div class="label">Total Assets</div>
+            <div class="value positive" id="totalAssets">-</div>
+        </div>
+    </div>
+
+    <!-- Account List -->
+    <div class="section">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <h2 style="margin-bottom:0;">Accounts</h2>
+            <button class="btn btn-primary btn-sm" onclick="toggleAddForm()">+ Add Account</button>
+        </div>
+        <div id="accountList"></div>
+    </div>
+
+    <!-- Add Account Form (hidden by default) -->
+    <div class="section" id="addAccountForm" style="display:none;">
+        <h2>Add Account</h2>
+        <form onsubmit="handleAddAccount(event)">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Name *</label>
+                    <input type="text" id="accName" required>
+                </div>
+                <div class="form-group">
+                    <label>Currency *</label>
+                    <select id="accCurrency">
+                        <option value="CNY">CNY</option>
+                        <option value="HKD">HKD</option>
+                        <option value="USD">USD</option>
+                        <option value="SGD">SGD</option>
+                        <option value="JPY">JPY</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Initial Balance</label>
+                    <input type="number" id="accBalance" step="0.01" value="0">
+                </div>
+                <div class="form-group">
+                    <label>Notes</label>
+                    <input type="text" id="accNotes">
+                </div>
+                <div class="form-group">
+                    <label>&nbsp;</label>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="accIncludeInTotal" checked>
+                        <label for="accIncludeInTotal" style="font-size:0.9rem;color:#333;">Include in Total</label>
+                    </div>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Add</button>
+                <button type="button" class="btn btn-secondary" onclick="toggleAddForm()">Cancel</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Net Worth Trend Chart -->
+    <div class="section">
+        <h2>Net Worth Trend</h2>
+        <div class="chart-box">
+            <canvas id="trendChart"></canvas>
+        </div>
+    </div>
+
+    <footer style="text-align:center;color:#aaa;font-size:0.75rem;padding:20px 0;">&copy; Mar 2026 Steaunk</footer>
+
+    <script>
+        let displayCurrency = localStorage.getItem('displayCurrency') || 'SGD';
+        let trendChart = null;
+        let editingAccountId = null;
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!localStorage.getItem('displayCurrency')) {
+                try {
+                    const resp = await fetch('/api/geo/currency/');
+                    const data = await resp.json();
+                    displayCurrency = data.currency;
+                    localStorage.setItem('displayCurrency', displayCurrency);
+                } catch (e) {}
+            }
+            document.getElementById('displayCurrency').value = displayCurrency;
+            loadAll();
+        });
+
+        function showMessage(text, type) {
+            const area = document.getElementById('messageArea');
+            area.innerHTML = `<div class="message message-${type}">${text}</div>`;
+            setTimeout(() => { area.innerHTML = ''; }, 4000);
+        }
+
+        function handleCurrencyChange(val) {
+            displayCurrency = val;
+            localStorage.setItem('displayCurrency', val);
+            loadAll();
+        }
+
+        function loadAll() {
+            loadAccounts();
+            loadTrend();
+        }
+
+        function toggleAddForm() {
+            const form = document.getElementById('addAccountForm');
+            form.style.display = form.style.display === 'none' ? 'block' : 'none';
+        }
+
+        async function loadAccounts() {
+            try {
+                const resp = await fetch(`/assets/api/accounts/?currency=${displayCurrency}`);
+                const data = await resp.json();
+                renderAccounts(data);
+                renderSummary(data);
+            } catch (err) {
+                console.error('Failed to load accounts:', err);
+            }
+        }
+
+        function renderSummary(data) {
+            const el = document.getElementById('totalAssets');
+            el.textContent = `${data.total.toLocaleString(undefined, {minimumFractionDigits: 2})} ${data.display_currency}`;
+            el.className = 'value ' + (data.total >= 0 ? 'positive' : 'negative');
+        }
+
+        function renderAccounts(data) {
+            const container = document.getElementById('accountList');
+            if (data.accounts.length === 0) {
+                container.innerHTML = '<p style="color:#999;text-align:center;padding:20px;">No accounts yet</p>';
+                return;
+            }
+
+            let html = '';
+            for (const acc of data.accounts) {
+                const isEditing = editingAccountId === acc.id;
+                const excludeTag = !acc.include_in_total ? ' <span style="color:#999;font-size:0.7rem;">(excluded)</span>' : '';
+                html += `<div class="account-item" style="${!acc.include_in_total ? 'opacity:0.6;' : ''}">
+                    <div class="account-info">
+                        <div class="account-name">${esc(acc.name)}${excludeTag}</div>
+                        ${acc.notes ? `<div class="account-notes">${esc(acc.notes)}</div>` : ''}
+                    </div>
+                    <div class="account-balance">
+                        ${isEditing ? `
+                            <div class="inline-edit">
+                                <input type="number" step="0.01" id="editBalance_${acc.id}" value="${acc.balance}" onkeydown="if(event.key==='Enter'){saveBalance(${acc.id});}" autofocus>
+                                <button class="btn btn-primary btn-sm" onclick="saveBalance(${acc.id})">Save</button>
+                                <button class="btn btn-secondary btn-sm" onclick="cancelEdit()">Cancel</button>
+                            </div>
+                        ` : `
+                            <div class="original">${acc.balance.toLocaleString(undefined, {minimumFractionDigits: 2})} ${acc.currency}</div>
+                            ${acc.currency !== data.display_currency ? `<div class="converted">${acc.converted_balance.toLocaleString(undefined, {minimumFractionDigits: 2})} ${data.display_currency}</div>` : ''}
+                        `}
+                    </div>
+                    ${!isEditing ? `
+                    <div class="account-actions">
+                        <button class="btn btn-secondary btn-sm" onclick="startEdit(${acc.id})">Edit</button>
+                        <button class="btn btn-danger" onclick="deleteAccount(${acc.id}, '${esc(acc.name)}')">Del</button>
+                    </div>
+                    ` : ''}
+                </div>`;
+            }
+            container.innerHTML = html;
+
+            if (editingAccountId) {
+                const input = document.getElementById(`editBalance_${editingAccountId}`);
+                if (input) input.focus();
+            }
+        }
+
+        function startEdit(id) {
+            editingAccountId = id;
+            loadAccounts();
+        }
+
+        function cancelEdit() {
+            editingAccountId = null;
+            loadAccounts();
+        }
+
+        async function saveBalance(id) {
+            const input = document.getElementById(`editBalance_${id}`);
+            if (!input) return;
+            const newBalance = parseFloat(input.value);
+            if (isNaN(newBalance)) {
+                showMessage('Invalid balance', 'error');
+                return;
+            }
+
+            try {
+                const resp = await fetch(`/assets/api/accounts/${id}/`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+                    body: JSON.stringify({ balance: newBalance }),
+                });
+                const result = await resp.json();
+                if (!resp.ok) {
+                    showMessage('Error: ' + (result.error || result.errors), 'error');
+                    return;
+                }
+                editingAccountId = null;
+                showMessage('Balance updated!', 'success');
+                loadAll();
+            } catch (err) {
+                showMessage('Network error: ' + err.message, 'error');
+            }
+        }
+
+        async function handleAddAccount(e) {
+            e.preventDefault();
+            const data = {
+                name: document.getElementById('accName').value.trim(),
+                currency: document.getElementById('accCurrency').value,
+                balance: parseFloat(document.getElementById('accBalance').value) || 0,
+                include_in_total: document.getElementById('accIncludeInTotal').checked,
+                notes: (document.getElementById('accNotes').value || '').trim(),
+            };
+
+            try {
+                const resp = await fetch('/assets/api/accounts/add/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+                    body: JSON.stringify(data),
+                });
+                const result = await resp.json();
+                if (!resp.ok) {
+                    showMessage('Error: ' + (result.errors || [result.error]).join(', '), 'error');
+                    return;
+                }
+                showMessage(`Account "${result.name}" created!`, 'success');
+                document.getElementById('addAccountForm').style.display = 'none';
+                document.getElementById('accName').value = '';
+                document.getElementById('accBalance').value = '0';
+                document.getElementById('accNotes').value = '';
+                document.getElementById('accIncludeInTotal').checked = true;
+                loadAll();
+            } catch (err) {
+                showMessage('Network error: ' + err.message, 'error');
+            }
+        }
+
+        async function deleteAccount(id, name) {
+            if (!confirm(`Delete account "${name}"?`)) return;
+            try {
+                await fetch(`/assets/api/accounts/${id}/delete/`, {
+                    method: 'DELETE',
+                    headers: { 'X-CSRFToken': getCsrf() },
+                });
+                loadAll();
+            } catch (err) {
+                showMessage('Delete failed: ' + err.message, 'error');
+            }
+        }
+
+        async function loadTrend() {
+            try {
+                const resp = await fetch(`/assets/api/trend/?currency=${displayCurrency}`);
+                const data = await resp.json();
+                renderTrendChart(data);
+            } catch (err) {
+                console.error('Failed to load trend:', err);
+            }
+        }
+
+        function renderTrendChart(data) {
+            if (trendChart) trendChart.destroy();
+            trendChart = new Chart(document.getElementById('trendChart'), {
+                type: 'line',
+                data: {
+                    labels: data.dates,
+                    datasets: [{
+                        label: `Net Worth (${data.currency})`,
+                        data: data.values,
+                        borderColor: '#4a90d9',
+                        backgroundColor: 'rgba(74, 144, 217, 0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 4,
+                        pointHoverRadius: 6,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                    },
+                    scales: {
+                        y: { beginAtZero: false },
+                    },
+                }
+            });
+        }
+
+        function getCsrf() {
+            const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
+            return cookie ? cookie.split('=')[1] : '';
+        }
+
+        function esc(str) {
+            const d = document.createElement('div');
+            d.textContent = str || '';
+            return d.innerHTML;
+        }
+    </script>
+</body>
+</html>
