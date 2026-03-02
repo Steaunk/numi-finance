@@ -24,10 +24,10 @@ class BalanceSnapshot(models.Model):
     balance = models.FloatField()
     change = models.FloatField(default=0)
     snapshot_date = models.DateField()
-    rate_cny = models.FloatField()
-    rate_hkd = models.FloatField()
-    rate_sgd = models.FloatField()
-    rate_jpy = models.FloatField()
+    amount_usd = models.FloatField(default=0)
+    amount_cny = models.FloatField(default=0)
+    amount_hkd = models.FloatField(default=0)
+    amount_sgd = models.FloatField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
