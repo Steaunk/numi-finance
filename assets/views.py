@@ -142,6 +142,10 @@ def update_account(request, account_id):
 
     if 'name' in data:
         account.name = data['name'].strip()
+    if 'currency' in data:
+        cur = data['currency'].upper()
+        if cur in VALID_CURRENCIES:
+            account.currency = cur
     if 'notes' in data:
         account.notes = data['notes'].strip()
     if 'include_in_total' in data:
