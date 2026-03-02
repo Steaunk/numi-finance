@@ -1,6 +1,7 @@
 import json
 from datetime import date
 
+import requests as http_requests
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -10,6 +11,7 @@ from .models import Expense
 from .services import convert_amount, get_latest_rates
 
 VALID_CURRENCIES = {'CNY', 'HKD', 'USD', 'SGD'}
+COUNTRY_CURRENCY_MAP = {'CN': 'CNY', 'HK': 'HKD', 'SG': 'SGD'}
 
 
 @ensure_csrf_cookie
@@ -209,6 +211,29 @@ def list_categories(request):
         .order_by('category')
     )
     return JsonResponse({'categories': list(categories)})
+
+
+@require_GET
+def detect_currency(request):
+    """Detect default currency based on client IP geolocation."""
+    # Get client IP (handle proxies)
+    ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip()
+    if not ip:
+        ip = request.META.get('REMOTE_ADDR', '')
+
+    # Skip for localhost
+    if ip in ('127.0.0.1', '::1', ''):
+        return JsonResponse({'currency': 'SGD'})
+
+    try:
+        resp = http_requests.get(f'http://ip-api.com/json/{ip}?fields=countryCode', timeout=3)
+        data = resp.json()
+        country = data.get('countryCode', '')
+        currency = COUNTRY_CURRENCY_MAP.get(country, 'SGD')
+    except Exception:
+        currency = 'SGD'
+
+    return JsonResponse({'currency': currency})
 
 
 @require_GET
