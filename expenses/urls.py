@@ -9,6 +9,7 @@ urlpatterns = [
     path('api/expenses/bulk/', views.bulk_add_expenses, name='bulk_add_expenses'),
     path('api/expenses/<int:expense_id>/', views.delete_expense, name='delete_expense'),
     path('api/categories/', views.list_categories, name='list_categories'),
+    path('api/geo/currency/', views.detect_currency, name='detect_currency'),
     path('api/rates/latest/', views.latest_rates, name='latest_rates'),
     path('api/stats/monthly/', views.monthly_stats, name='monthly_stats'),
 ]

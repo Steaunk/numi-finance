@@ -161,8 +161,15 @@
     </div>
 
     <script>
+        function getPrevMonth(ym) {
+            const [y, m] = ym.split('-').map(Number);
+            const d = new Date(y, m - 2, 1);
+            return d.toISOString().slice(0, 7);
+        }
+
         let displayCurrency = localStorage.getItem('displayCurrency') || 'SGD';
         let selectedMonth = new Date().toISOString().slice(0, 7);
+        let doughnutMonth = getPrevMonth(selectedMonth);
         let barChart = null;
         let doughnutChart = null;
 
@@ -175,7 +182,15 @@
             return COLORS[idx % COLORS.length];
         }
 
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!localStorage.getItem('displayCurrency')) {
+                try {
+                    const resp = await fetch('/api/geo/currency/');
+                    const data = await resp.json();
+                    displayCurrency = data.currency;
+                    localStorage.setItem('displayCurrency', displayCurrency);
+                } catch (e) {}
+            }
             document.getElementById('displayCurrency').value = displayCurrency;
             document.getElementById('date').value = new Date().toISOString().slice(0, 10);
             document.getElementById('monthFilter').value = selectedMonth;
@@ -367,43 +382,94 @@
             }
         }
 
-        function getPrevMonth(ym) {
-            const [y, m] = ym.split('-').map(Number);
-            const d = new Date(y, m - 2, 1);
-            return d.toISOString().slice(0, 7);
-        }
+        let lastStatsData = null;
+        let categoryColorMap = {};
 
         function renderCharts(data) {
+            lastStatsData = data;
             const allMonths = data.month_keys || [];
-            const labels = allMonths.map(m => m);  // 'YYYY-MM'
-            const totals = allMonths.map(m => (data.months[m] ? data.months[m].total : 0));
+
+            // Collect all unique categories across all months and assign stable colors
+            const categorySet = new Set();
+            for (const m of allMonths) {
+                if (data.months[m]) {
+                    for (const cat of Object.keys(data.months[m].by_category)) {
+                        categorySet.add(cat);
+                    }
+                }
+            }
+            const allCategories = Array.from(categorySet).sort();
+            categoryColorMap = {};
+            allCategories.forEach((cat, i) => { categoryColorMap[cat] = getColor(i); });
+
+            // Build one dataset per category for stacked bar
+            const datasets = allCategories.map(cat => ({
+                label: cat,
+                data: allMonths.map(m => (data.months[m] && data.months[m].by_category[cat]) || 0),
+                backgroundColor: categoryColorMap[cat],
+            }));
+
+            // Precompute totals per month for labels
+            const monthTotals = allMonths.map(m => data.months[m] ? data.months[m].total : 0);
+
+            // Plugin to draw total on top of each stacked bar
+            const totalLabelPlugin = {
+                id: 'totalLabel',
+                afterDraw(chart) {
+                    const { ctx } = chart;
+                    const meta = chart.getDatasetMeta(chart.data.datasets.length - 1);
+                    if (!meta) return;
+                    ctx.save();
+                    ctx.font = '10px sans-serif';
+                    ctx.fillStyle = '#666';
+                    ctx.textAlign = 'center';
+                    meta.data.forEach((bar, i) => {
+                        const total = monthTotals[i];
+                        if (total > 0) {
+                            ctx.fillText(total.toFixed(0), bar.x, bar.y - 4);
+                        }
+                    });
+                    ctx.restore();
+                }
+            };
 
             if (barChart) barChart.destroy();
             barChart = new Chart(document.getElementById('barChart'), {
                 type: 'bar',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: `Monthly Expenses (${data.currency})`,
-                        data: totals,
-                        backgroundColor: '#4a90d9',
-                        borderRadius: 4,
-                    }]
-                },
+                data: { labels: allMonths, datasets },
+                plugins: [totalLabelPlugin],
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true } },
+                    plugins: {
+                        legend: { display: true, position: 'top', labels: { boxWidth: 12, font: { size: 10 } } },
+                    },
+                    scales: {
+                        x: { stacked: true },
+                        y: { stacked: true, beginAtZero: true },
+                    },
+                    onClick: (evt, elements) => {
+                        if (elements.length > 0) {
+                            const idx = elements[0].index;
+                            doughnutMonth = allMonths[idx];
+                            renderDoughnut(data);
+                        }
+                    },
                 }
             });
 
-            // Doughnut shows last month's data
-            const lastMonth = getPrevMonth(selectedMonth);
-            const monthData = data.months[lastMonth];
+            // If doughnutMonth isn't in the data, default to last available month
+            if (!data.months[doughnutMonth] && allMonths.length > 0) {
+                doughnutMonth = allMonths[allMonths.length - 1];
+            }
+            renderDoughnut(data);
+        }
+
+        function renderDoughnut(data) {
+            const monthData = data.months[doughnutMonth];
             const categories = monthData ? Object.keys(monthData.by_category) : [];
             const catValues = categories.map(c => monthData.by_category[c]);
-            const catColors = categories.map((_, i) => getColor(i));
+            const catColors = categories.map(c => categoryColorMap[c] || getColor(0));
 
             if (doughnutChart) doughnutChart.destroy();
             doughnutChart = new Chart(document.getElementById('doughnutChart'), {
@@ -421,7 +487,7 @@
                     plugins: {
                         title: {
                             display: true,
-                            text: `${lastMonth} Category Breakdown (${data.currency})`,
+                            text: `${doughnutMonth} Category Breakdown (${data.currency})`,
                         },
                     }
                 }
