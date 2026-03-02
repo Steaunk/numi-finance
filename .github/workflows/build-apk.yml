@@ -2,9 +2,9 @@ name: Build Flutter APK
 
 on:
   push:
-    branches: [flutter-android-app]
+    branches: [main]
     paths:
-      - 'expense_tracker_app/**'
+      - 'numi_app/**'
       - '.github/workflows/build-apk.yml'
   workflow_dispatch:
 
@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: expense_tracker_app
+        working-directory: numi_app
 
     steps:
       - uses: actions/checkout@v4
@@ -51,8 +51,8 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: expense-tracker-apk
-          path: expense_tracker_app/build/app/outputs/flutter-apk/app-release.apk
+          name: numi-apk
+          path: numi_app/build/app/outputs/flutter-apk/app-release.apk
 
       - name: Create GitHub Release
         env:

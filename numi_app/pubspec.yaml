@@ -1,4 +1,4 @@
-name: expense_tracker_app
+name: numi_app
 description: Numi – personal finance tracker
 publish_to: 'none'
 version: 1.0.0+1
