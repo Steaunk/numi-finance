@@ -1,4 +1,3 @@
-import 'package:drift/drift.dart';
 import '../local/database.dart';
 import '../remote/endpoints/rate_api.dart';
 
@@ -9,9 +8,10 @@ class RateRepository {
   RateRepository(this._db, this._api);
 
   Future<void> fetchAndCacheRates() async {
-    if (_api == null) return;
+    final api = _api;
+    if (api == null) return;
     try {
-      final rates = await _api!.getRates();
+      final rates = await api.getRates();
       await _db.exchangeRateDao.insertRow(
         ExchangeRatesCompanion.insert(
           rateDate: DateTime.now(),

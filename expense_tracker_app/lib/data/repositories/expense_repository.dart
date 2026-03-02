@@ -74,9 +74,10 @@ class ExpenseRepository {
     );
     final localId = await _db.expenseDao.insertRow(companion);
 
-    if (_api != null) {
+    final api = _api;
+    if (api != null) {
       try {
-        final remote = await _api!.addExpense({
+        final remote = await api.addExpense({
           'amount': amount,
           'currency': currency,
           'date': '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}',
@@ -112,9 +113,10 @@ class ExpenseRepository {
         .getSingleOrNull();
     await _db.expenseDao.removeById(localId);
 
-    if (_api != null && row?.remoteId != null) {
+    final api = _api;
+    if (api != null && row?.remoteId != null) {
       try {
-        await _api!.deleteExpense(row!.remoteId!);
+        await api.deleteExpense(row!.remoteId!);
       } catch (_) {
         await _db.syncQueueDao.enqueue(
           SyncQueueCompanion.insert(
@@ -130,7 +132,8 @@ class ExpenseRepository {
   }
 
   Future<void> syncFromServer(String currency) async {
-    if (_api == null) return;
+    final api = _api;
+    if (api == null) return;
     try {
       final now = DateTime.now();
       for (var i = 0; i < 12; i++) {
@@ -142,7 +145,7 @@ class ExpenseRepository {
         }
         final monthStr =
             '$year-${month.toString().padLeft(2, '0')}';
-        final expenses = await _api!.getExpenses(
+        final expenses = await api.getExpenses(
           month: monthStr,
           currency: currency,
         );

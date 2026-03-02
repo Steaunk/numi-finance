@@ -123,7 +123,7 @@ class SyncQueueDao extends DatabaseAccessor<AppDatabase>
   Future<List<DbSyncOperation>> getPending() => select(syncQueue).get();
 
   Future<void> removeById(int id) =>
-      (deleteFrom(syncQueue)..where((t) => t.id.equals(id))).go();
+      (delete(syncQueue)..where((t) => t.id.equals(id))).go();
 }
 
 @DriftAccessor(tables: [Expenses])
@@ -170,7 +170,7 @@ class ExpenseDao extends DatabaseAccessor<AppDatabase>
       into(expenses).insert(entry);
 
   Future<void> removeById(int id) =>
-      (deleteFrom(expenses)..where((e) => e.id.equals(id))).go();
+      (delete(expenses)..where((e) => e.id.equals(id))).go();
 
   Future<void> upsertByRemoteId(ExpensesCompanion entry) async {
     final remoteId = entry.remoteId.value;
@@ -214,13 +214,13 @@ class TripDao extends DatabaseAccessor<AppDatabase> with _$TripDaoMixin {
   Future<int> insertTrip(TripsCompanion entry) => into(trips).insert(entry);
 
   Future<void> removeTripById(int id) =>
-      (deleteFrom(trips)..where((t) => t.id.equals(id))).go();
+      (delete(trips)..where((t) => t.id.equals(id))).go();
 
   Future<int> insertTravelExpense(TravelExpensesCompanion entry) =>
       into(travelExpenses).insert(entry);
 
   Future<void> removeTravelExpenseById(int id) =>
-      (deleteFrom(travelExpenses)..where((e) => e.id.equals(id))).go();
+      (delete(travelExpenses)..where((e) => e.id.equals(id))).go();
 
   Future<void> upsertTripByRemoteId(TripsCompanion entry) async {
     final remoteId = entry.remoteId.value;
@@ -275,7 +275,7 @@ class AccountDao extends DatabaseAccessor<AppDatabase>
           .replace(account);
 
   Future<void> removeById(int id) =>
-      (deleteFrom(accounts)..where((a) => a.id.equals(id))).go();
+      (delete(accounts)..where((a) => a.id.equals(id))).go();
 
   Future<int> insertSnapshot(BalanceSnapshotsCompanion entry) =>
       into(balanceSnapshots).insert(entry);
