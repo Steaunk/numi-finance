@@ -1,5 +1,5 @@
 services:
-  web:
+  expense-tracker:
     build: .
     ports:
       - "8051:8000"
@@ -8,3 +8,9 @@ services:
     environment:
       - DEBUG=false
       - DATABASE_PATH=/app/data/db.sqlite3
+    networks:
+      - shared_net
+
+networks:
+  shared_net:
+    external: true
