@@ -58,6 +58,13 @@
         .charts-row { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 16px; }
         .chart-box { position: relative; height: 250px; }
 
+        /* Inline edit row */
+        tr.editing-row { background: #f0f7ff; }
+        tr.editing-row input, tr.editing-row select { padding: 3px 5px; border: 1px solid #4a90d9; border-radius: 3px; font-size: 0.82rem; width: 100%; box-sizing: border-box; }
+        tr.editing-row td { padding: 5px 6px; }
+        .exp-row-clickable { cursor: pointer; }
+        .exp-row-clickable:hover { background: #fafafa; }
+
         @media (max-width: 768px) {
             body { padding: 10px; }
             header { flex-direction: column; gap: 10px; padding: 12px 16px; }
@@ -151,6 +158,8 @@
         let expandedTripId = null;
         let allRates = {};
         let pieCharts = {};
+        let editingExpenseId = null;
+        let editingTripId = null;
         const TRAVEL_CATEGORIES = ['Transportation', 'Accommodation', 'Sightseeing', 'Food & Drinks', 'Shopping', 'Other'];
         const CAT_COLORS = {
             'Transportation': '#4a90d9',
@@ -261,6 +270,8 @@
         function toggleTrip(id) {
             if (expandedTripId === id) {
                 expandedTripId = null;
+                editingExpenseId = null;
+                editingTripId = null;
                 // Destroy pie chart
                 if (pieCharts[id]) { pieCharts[id].destroy(); delete pieCharts[id]; }
             } else {
@@ -298,15 +309,35 @@
                         <th class="hide-mobile">Notes</th><th></th>
                     </tr></thead><tbody>`;
                 for (const exp of data.expenses) {
-                    html += `<tr>
-                        <td>${exp.date}</td>
-                        <td>${esc(exp.name)}</td>
-                        <td>${esc(exp.category)}</td>
-                        <td style="text-align:right;">${exp.amount.toLocaleString(undefined, {minimumFractionDigits: 2})} ${exp.currency}</td>
-                        <td style="text-align:right;">${exp.converted_amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                        <td class="hide-mobile">${esc(exp.notes || '')}</td>
-                        <td><button class="btn btn-danger" onclick="deleteExpense(${tripId}, ${exp.id})">Del</button></td>
-                    </tr>`;
+                    if (editingExpenseId === exp.id) {
+                        const catOpts = TRAVEL_CATEGORIES.map(c =>
+                            `<option value="${c}" ${c === exp.category ? 'selected' : ''}>${c}</option>`
+                        ).join('');
+                        html += `<tr id="expRow_${exp.id}" class="editing-row"
+                            onfocusout="onExpRowFocusOut(event, ${tripId}, ${exp.id})"
+                            onkeydown="if(event.key==='Escape'){editingExpenseId=null;editingTripId=null;loadTripDetail(${tripId});}">
+                            <td><input type="date" id="editExpDate_${exp.id}" value="${exp.date}" style="width:120px;"></td>
+                            <td><input type="text" id="editExpName_${exp.id}" value="${esc(exp.name)}"></td>
+                            <td><select id="editExpCategory_${exp.id}">${catOpts}</select></td>
+                            <td style="text-align:right;">
+                                <input type="number" step="0.01" id="editExpAmount_${exp.id}" value="${exp.amount}" style="width:75px;text-align:right;">
+                                <input type="text" list="currencyList" id="editExpCurrency_${exp.id}" value="${exp.currency}" maxlength="3" style="width:50px;text-transform:uppercase;">
+                            </td>
+                            <td style="text-align:right;color:#aaa;">—</td>
+                            <td class="hide-mobile"><input type="text" id="editExpNotes_${exp.id}" value="${esc(exp.notes || '')}"></td>
+                            <td><button class="btn btn-danger" onclick="event.stopPropagation(); deleteExpense(${tripId}, ${exp.id})">Del</button></td>
+                        </tr>`;
+                    } else {
+                        html += `<tr class="exp-row-clickable" onclick="startEditExpense(${tripId}, ${exp.id})">
+                            <td>${exp.date}</td>
+                            <td>${esc(exp.name)}</td>
+                            <td>${esc(exp.category)}</td>
+                            <td style="text-align:right;">${exp.amount.toLocaleString(undefined, {minimumFractionDigits: 2})} ${exp.currency}</td>
+                            <td style="text-align:right;">${exp.converted_amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                            <td class="hide-mobile">${esc(exp.notes || '')}</td>
+                            <td><button class="btn btn-danger" onclick="event.stopPropagation(); deleteExpense(${tripId}, ${exp.id})">Del</button></td>
+                        </tr>`;
+                    }
                 }
                 html += `<tr class="total-row">
                     <td colspan="3">Total</td>
@@ -360,6 +391,12 @@
             </div>`;
 
             el.innerHTML = html;
+
+            // Focus name input when entering edit mode
+            if (editingExpenseId) {
+                const nameEl = document.getElementById(`editExpName_${editingExpenseId}`);
+                if (nameEl) nameEl.focus();
+            }
 
             // Render pie chart
             if (data.expenses.length > 0 && data.category_totals) {
@@ -466,6 +503,54 @@
             } catch (err) {
                 showMessage('Network error: ' + err.message, 'error');
             }
+        }
+
+        function startEditExpense(tripId, expId) {
+            editingExpenseId = expId;
+            editingTripId = tripId;
+            loadTripDetail(tripId);
+        }
+
+        function onExpRowFocusOut(e, tripId, expId) {
+            if (editingExpenseId !== expId) return;
+            setTimeout(() => {
+                const row = document.getElementById(`expRow_${expId}`);
+                if (!row || row.contains(document.activeElement)) return;
+                saveExpense(tripId, expId);
+            }, 0);
+        }
+
+        async function saveExpense(tripId, expId) {
+            if (editingExpenseId !== expId) return;
+            editingExpenseId = null;
+            editingTripId = null;
+
+            const amount = parseFloat(document.getElementById(`editExpAmount_${expId}`)?.value);
+            const currency = (document.getElementById(`editExpCurrency_${expId}`)?.value || '').toUpperCase().trim();
+            const expDate = document.getElementById(`editExpDate_${expId}`)?.value || '';
+            const category = document.getElementById(`editExpCategory_${expId}`)?.value || '';
+            const name = (document.getElementById(`editExpName_${expId}`)?.value || '').trim();
+            const notes = (document.getElementById(`editExpNotes_${expId}`)?.value || '').trim();
+
+            if (!name || isNaN(amount) || amount <= 0 || !currency || !expDate || !category) {
+                loadTrips();
+                return;
+            }
+
+            try {
+                const resp = await fetch(`/expenses/api/travel/trips/${tripId}/expenses/${expId}/`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+                    body: JSON.stringify({ amount, currency, date: expDate, category, name, notes }),
+                });
+                if (!resp.ok) {
+                    const result = await resp.json();
+                    showMessage('Error: ' + JSON.stringify(result.errors || result.error), 'error');
+                }
+            } catch (err) {
+                showMessage('Save failed: ' + err.message, 'error');
+            }
+            loadTrips();
         }
 
         async function deleteTrip(id, name) {
