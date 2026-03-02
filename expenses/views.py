@@ -218,12 +218,13 @@ def monthly_stats(request):
         currency = 'USD'
 
     year = request.GET.get('year')
-    try:
-        year = int(year)
-    except (TypeError, ValueError):
-        year = date.today().year
-
-    expenses = Expense.objects.filter(date__year=year)
+    if year:
+        try:
+            expenses = Expense.objects.filter(date__year=int(year))
+        except (TypeError, ValueError):
+            expenses = Expense.objects.all()
+    else:
+        expenses = Expense.objects.all()
 
     months = {}
     for exp in expenses:
@@ -244,8 +245,10 @@ def monthly_stats(request):
             months[month_key]['by_category'].get(cat, 0.0) + converted, 2
         )
 
+    month_keys = sorted(months.keys())
+
     return JsonResponse({
         'currency': currency,
-        'year': year,
+        'month_keys': month_keys,
         'months': months,
     })
