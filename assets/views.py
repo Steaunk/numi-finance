@@ -7,9 +7,24 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
 from core.models import VALID_CURRENCIES
-from core.services import convert_amount, get_latest_rates
+from core.services import convert_amount, get_all_rates, get_latest_rates
 
 from .models import Account, BalanceSnapshot
+
+
+def _compute_snapshot_amounts(balance, currency, rates):
+    """Compute USD/CNY/HKD/SGD equivalents for a balance."""
+    if currency == 'USD':
+        amount_usd = balance
+    else:
+        rate = rates.get(currency.lower())
+        amount_usd = balance / rate if rate else 0
+    return {
+        'amount_usd': round(amount_usd, 2),
+        'amount_cny': round(amount_usd * rates.get('cny', 7.25), 2),
+        'amount_hkd': round(amount_usd * rates.get('hkd', 7.82), 2),
+        'amount_sgd': round(amount_usd * rates.get('sgd', 1.34), 2),
+    }
 
 
 @ensure_csrf_cookie
@@ -19,6 +34,7 @@ def index(request):
 
 @require_GET
 def list_accounts(request):
+    """Current balances — uses live rates."""
     currency = request.GET.get('currency', 'SGD')
     if currency not in VALID_CURRENCIES:
         currency = 'SGD'
@@ -82,7 +98,7 @@ def add_account(request):
     if errors:
         return JsonResponse({'errors': errors}, status=400)
 
-    rates = get_latest_rates()
+    rates = get_all_rates()
     account = Account.objects.create(
         name=name,
         currency=currency,
@@ -91,15 +107,13 @@ def add_account(request):
         notes=notes,
     )
 
+    amounts = _compute_snapshot_amounts(balance, currency, rates)
     BalanceSnapshot.objects.create(
         account=account,
         balance=balance,
         change=balance,
         snapshot_date=date.today(),
-        rate_cny=rates['cny'],
-        rate_hkd=rates['hkd'],
-        rate_sgd=rates['sgd'],
-        rate_jpy=rates['jpy'],
+        **amounts,
     )
 
     return JsonResponse({'id': account.id, 'name': account.name}, status=201)
@@ -128,16 +142,14 @@ def update_account(request, account_id):
         change = new_balance - old_balance
         account.balance = new_balance
 
-        rates = get_latest_rates()
+        rates = get_all_rates()
+        amounts = _compute_snapshot_amounts(new_balance, account.currency, rates)
         BalanceSnapshot.objects.create(
             account=account,
             balance=new_balance,
             change=change,
             snapshot_date=date.today(),
-            rate_cny=rates['cny'],
-            rate_hkd=rates['hkd'],
-            rate_sgd=rates['sgd'],
-            rate_jpy=rates['jpy'],
+            **amounts,
         )
 
     if 'name' in data:
@@ -173,6 +185,7 @@ def delete_account(request, account_id):
 
 @require_GET
 def net_worth(request):
+    """Current net worth — uses live rates."""
     currency = request.GET.get('currency', 'SGD')
     if currency not in VALID_CURRENCIES:
         currency = 'SGD'
@@ -198,11 +211,12 @@ def net_worth(request):
 
 @require_GET
 def trend(request):
-    """Net worth trend over time based on snapshots."""
+    """Net worth trend — uses historical rates stored in snapshots."""
     currency = request.GET.get('currency', 'SGD')
     if currency not in VALID_CURRENCIES:
         currency = 'SGD'
 
+    amount_field = f'amount_{currency.lower()}'
     snapshots = BalanceSnapshot.objects.select_related('account').order_by('snapshot_date')
     accounts = Account.objects.all()
 
@@ -227,11 +241,7 @@ def trend(request):
                 .first()
             )
             if snap:
-                converted = convert_amount(
-                    snap.balance, acc.currency, currency,
-                    snap.rate_cny, snap.rate_hkd, snap.rate_sgd, snap.rate_jpy,
-                )
-                total += converted
+                total += getattr(snap, amount_field)
 
         trend_data.append({
             'date': d.isoformat(),
