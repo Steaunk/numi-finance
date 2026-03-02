@@ -34,7 +34,10 @@ jobs:
       - name: Generate Android platform files
         run: |
           flutter create --platforms android --org com.steaunk --no-pub .
-          git checkout pubspec.yaml test/widget_test.dart android/app/src/main/res/values/strings.xml
+          git checkout pubspec.yaml test/widget_test.dart \
+            android/app/src/main/res/values/strings.xml \
+            android/app/src/main/AndroidManifest.xml \
+            android/app/src/main/res/xml/open_filex_provider_paths.xml
 
       - name: Install dependencies
         run: flutter pub get

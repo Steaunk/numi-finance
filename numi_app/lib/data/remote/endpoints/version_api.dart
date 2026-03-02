@@ -19,9 +19,10 @@ class VersionApi {
           ),
         );
 
-  /// Returns the latest release's build number and download page URL,
-  /// or null if unavailable / token missing / parse error.
-  Future<({int buildNumber, String htmlUrl})?> getLatestRelease() async {
+  /// Returns the latest release's build number, page URL, and APK asset
+  /// download URL (GitHub API URL — requires Bearer auth + octet-stream).
+  /// Returns null if unavailable / token missing / parse error.
+  Future<({int buildNumber, String htmlUrl, String assetApiUrl})?> getLatestRelease() async {
     try {
       final resp = await _dio.get(
           '/repos/Steaunk/expense-tracker/releases/latest');
@@ -31,8 +32,12 @@ class VersionApi {
       if (parts.length != 2) return null;
       final build = int.tryParse(parts[1]);
       if (build == null) return null;
-      final url = (resp.data['html_url'] as String?) ?? '';
-      return (buildNumber: build, htmlUrl: url);
+      final htmlUrl = (resp.data['html_url'] as String?) ?? '';
+      final assets = resp.data['assets'] as List?;
+      final assetApiUrl = (assets != null && assets.isNotEmpty)
+          ? (assets[0]['url'] as String?) ?? ''
+          : '';
+      return (buildNumber: build, htmlUrl: htmlUrl, assetApiUrl: assetApiUrl);
     } catch (_) {
       return null;
     }

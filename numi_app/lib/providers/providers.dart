@@ -45,16 +45,17 @@ final githubTokenProvider = StateProvider<String>((ref) {
   return ref.watch(sharedPrefsProvider).getString('github_token') ?? '';
 });
 
-/// Returns the download page URL if a newer build is available, else null.
-final updateCheckProvider = FutureProvider<String?>((ref) async {
+/// Returns {htmlUrl, assetApiUrl} if a newer build is available, else null.
+final updateCheckProvider =
+    FutureProvider<({String htmlUrl, String assetApiUrl})?>((ref) async {
   final token = ref.watch(githubTokenProvider);
   if (token.isEmpty) return null;
   try {
     final info = await PackageInfo.fromPlatform();
     final currentBuild = int.tryParse(info.buildNumber) ?? 0;
     final latest = await VersionApi(token).getLatestRelease();
-    if (latest == null) return null;
-    return latest.buildNumber > currentBuild ? latest.htmlUrl : null;
+    if (latest == null || latest.buildNumber <= currentBuild) return null;
+    return (htmlUrl: latest.htmlUrl, assetApiUrl: latest.assetApiUrl);
   } catch (_) {
     return null;
   }
