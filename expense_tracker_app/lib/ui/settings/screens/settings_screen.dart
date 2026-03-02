@@ -1,0 +1,193 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../config/constants.dart';
+import '../../../providers/providers.dart';
+import '../../../data/remote/api_client.dart';
+
+class SettingsScreen extends ConsumerStatefulWidget {
+  const SettingsScreen({super.key});
+
+  @override
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+  late final TextEditingController _urlController;
+  bool _testing = false;
+  String? _testResult;
+
+  @override
+  void initState() {
+    super.initState();
+    _urlController = TextEditingController(
+      text: ref.read(serverUrlProvider),
+    );
+  }
+
+  @override
+  void dispose() {
+    _urlController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final displayCurrency = ref.watch(displayCurrencyProvider);
+    final syncState = ref.watch(syncStateProvider);
+    final pendingCount = ref.watch(pendingCountProvider);
+    final isOnline = ref.watch(connectivityProvider).value ?? false;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Settings')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // Server URL
+          Text('Server Connection',
+              style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _urlController,
+            decoration: InputDecoration(
+              labelText: 'Server URL',
+              hintText: 'http://192.168.1.100:8000',
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.save),
+                onPressed: _saveUrl,
+              ),
+            ),
+            keyboardType: TextInputType.url,
+            onSubmitted: (_) => _saveUrl(),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              OutlinedButton.icon(
+                onPressed: _testing ? null : _testConnection,
+                icon: _testing
+                    ? const SizedBox(
+                        width: 16, height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.wifi_find, size: 18),
+                label: const Text('Test Connection'),
+              ),
+              const SizedBox(width: 12),
+              if (_testResult != null)
+                Text(
+                  _testResult!,
+                  style: TextStyle(
+                    color: _testResult == 'Connected!'
+                        ? Colors.green
+                        : Theme.of(context).colorScheme.error,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          // Display Currency
+          Text('Display Currency',
+              style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          SegmentedButton<String>(
+            segments: AppConstants.currencies
+                .map((c) => ButtonSegment(value: c, label: Text(c)))
+                .toList(),
+            selected: {displayCurrency},
+            onSelectionChanged: (selected) {
+              final currency = selected.first;
+              ref.read(displayCurrencyProvider.notifier).state = currency;
+              ref.read(sharedPrefsProvider).setString(
+                  'display_currency', currency);
+            },
+          ),
+          const SizedBox(height: 24),
+          // Sync
+          Text('Sync', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        isOnline ? Icons.cloud_done : Icons.cloud_off,
+                        color: isOnline ? Colors.green : Colors.red,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(isOnline ? 'Online' : 'Offline'),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  pendingCount.when(
+                    data: (count) =>
+                        Text('Pending operations: $count'),
+                    loading: () => const Text('Pending operations: ...'),
+                    error: (_, __) =>
+                        const Text('Pending operations: ?'),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: syncState.isLoading
+                        ? null
+                        : () => ref
+                            .read(syncStateProvider.notifier)
+                            .syncNow(),
+                    icon: syncState.isLoading
+                        ? const SizedBox(
+                            width: 16, height: 16,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2))
+                        : const Icon(Icons.sync),
+                    label: Text(
+                        syncState.isLoading ? 'Syncing...' : 'Sync Now'),
+                  ),
+                  if (syncState.hasError) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Sync error: ${syncState.error}',
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                          fontSize: 12),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _saveUrl() {
+    final url = _urlController.text.trim();
+    ref.read(serverUrlProvider.notifier).state = url;
+    ref.read(sharedPrefsProvider).setString('server_url', url);
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Server URL saved')));
+  }
+
+  Future<void> _testConnection() async {
+    final url = _urlController.text.trim();
+    if (url.isEmpty) {
+      setState(() => _testResult = 'Enter a URL first');
+      return;
+    }
+    setState(() {
+      _testing = true;
+      _testResult = null;
+    });
+    try {
+      final client = ApiClient(url);
+      final ok = await client.testConnection();
+      setState(() => _testResult = ok ? 'Connected!' : 'Failed');
+    } catch (e) {
+      setState(() => _testResult = 'Error: $e');
+    } finally {
+      setState(() => _testing = false);
+    }
+  }
+}
