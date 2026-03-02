@@ -191,6 +191,38 @@ def bulk_add_expenses(request):
     return JsonResponse({'created': created, 'errors': errors}, status=201)
 
 
+@require_http_methods(["PUT"])
+def update_expense(request, expense_id):
+    try:
+        expense = Expense.objects.get(id=expense_id)
+    except Expense.DoesNotExist:
+        return JsonResponse({'error': 'Expense not found'}, status=404)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    validated, errors = _validate_expense(data)
+    if errors:
+        return JsonResponse({'errors': errors}, status=400)
+
+    rates = get_all_rates()
+    amounts = _compute_amounts(validated['amount'], validated['currency'], rates)
+
+    expense.amount = validated['amount']
+    expense.currency = validated['currency']
+    expense.date = validated['date']
+    expense.category = validated['category']
+    expense.name = validated['name']
+    expense.notes = validated['notes']
+    for k, v in amounts.items():
+        setattr(expense, k, v)
+    expense.save()
+
+    return JsonResponse({'id': expense.id, 'name': expense.name})
+
+
 @require_http_methods(["DELETE"])
 def delete_expense(request, expense_id):
     try:
@@ -484,6 +516,67 @@ def add_trip_expense(request, trip_id):
         **amounts,
     )
     return JsonResponse({'id': exp.id, 'name': exp.name}, status=201)
+
+
+@require_http_methods(["PUT"])
+def update_trip_expense(request, trip_id, expense_id):
+    try:
+        exp = TravelExpense.objects.get(id=expense_id, trip_id=trip_id)
+    except TravelExpense.DoesNotExist:
+        return JsonResponse({'error': 'Expense not found'}, status=404)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    errors = []
+    amount = data.get('amount')
+    try:
+        amount = float(amount)
+        if amount <= 0:
+            errors.append('amount must be positive')
+    except (TypeError, ValueError):
+        errors.append('amount must be a number')
+
+    currency = data.get('currency', '').upper()
+    rates = get_all_rates()
+    rate = rates.get(currency.lower())
+    if currency == 'USD':
+        rate = 1.0
+    if rate is None:
+        errors.append(f'Unknown currency: {currency}')
+
+    from datetime import datetime
+    exp_date = None
+    try:
+        exp_date = datetime.strptime(data.get('date', ''), '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        errors.append('date must be YYYY-MM-DD')
+
+    category = data.get('category', '').strip()
+    if not category:
+        errors.append('category is required')
+
+    name = data.get('name', '').strip()
+    if not name:
+        errors.append('name is required')
+
+    if errors:
+        return JsonResponse({'errors': errors}, status=400)
+
+    amounts = _compute_amounts(amount, currency, rates)
+    exp.amount = amount
+    exp.currency = currency
+    exp.date = exp_date
+    exp.category = category
+    exp.name = name
+    exp.notes = data.get('notes', '').strip()
+    for k, v in amounts.items():
+        setattr(exp, k, v)
+    exp.save()
+
+    return JsonResponse({'id': exp.id, 'name': exp.name})
 
 
 @require_http_methods(["DELETE"])
