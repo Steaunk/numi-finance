@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc libpcre3-dev && \
+    apt-get install -y --no-install-recommends gcc libpcre2-dev && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
