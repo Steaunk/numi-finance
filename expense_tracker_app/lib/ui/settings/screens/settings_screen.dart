@@ -13,20 +13,25 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late final TextEditingController _urlController;
+  late final TextEditingController _userController;
+  late final TextEditingController _passController;
   bool _testing = false;
   String? _testResult;
+  bool _obscurePass = true;
 
   @override
   void initState() {
     super.initState();
-    _urlController = TextEditingController(
-      text: ref.read(serverUrlProvider),
-    );
+    _urlController = TextEditingController(text: ref.read(serverUrlProvider));
+    _userController = TextEditingController(text: ref.read(nginxUsernameProvider));
+    _passController = TextEditingController(text: ref.read(nginxPasswordProvider));
   }
 
   @override
   void dispose() {
     _urlController.dispose();
+    _userController.dispose();
+    _passController.dispose();
     super.dispose();
   }
 
@@ -50,7 +55,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             controller: _urlController,
             decoration: InputDecoration(
               labelText: 'Server URL',
-              hintText: 'http://192.168.1.100:8000',
+              hintText: 'https://your-server.com',
               suffixIcon: IconButton(
                 icon: const Icon(Icons.save),
                 onPressed: _saveUrl,
@@ -58,6 +63,42 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
             keyboardType: TextInputType.url,
             onSubmitted: (_) => _saveUrl(),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _userController,
+                  decoration: const InputDecoration(labelText: 'Username'),
+                  onSubmitted: (_) => _saveCredentials(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: _passController,
+                  obscureText: _obscurePass,
+                  decoration: InputDecoration(
+                    labelText: 'Password',
+                    suffixIcon: IconButton(
+                      icon: Icon(_obscurePass
+                          ? Icons.visibility_off
+                          : Icons.visibility),
+                      onPressed: () =>
+                          setState(() => _obscurePass = !_obscurePass),
+                    ),
+                  ),
+                  onSubmitted: (_) => _saveCredentials(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.save),
+                tooltip: 'Save credentials',
+                onPressed: _saveCredentials,
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           Row(
@@ -170,6 +211,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         .showSnackBar(const SnackBar(content: Text('Server URL saved')));
   }
 
+  void _saveCredentials() {
+    final user = _userController.text.trim();
+    final pass = _passController.text;
+    ref.read(nginxUsernameProvider.notifier).state = user;
+    ref.read(nginxPasswordProvider.notifier).state = pass;
+    ref.read(sharedPrefsProvider).setString('nginx_username', user);
+    ref.read(sharedPrefsProvider).setString('nginx_password', pass);
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Credentials saved')));
+  }
+
   Future<void> _testConnection() async {
     final url = _urlController.text.trim();
     if (url.isEmpty) {
@@ -181,7 +233,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _testResult = null;
     });
     try {
-      final client = ApiClient(url);
+      final user = _userController.text.trim();
+      final pass = _passController.text;
+      final client = ApiClient(
+        url,
+        username: user.isEmpty ? null : user,
+        password: pass.isEmpty ? null : pass,
+      );
       final ok = await client.testConnection();
       setState(() => _testResult = ok ? 'Connected!' : 'Failed');
     } catch (e) {
