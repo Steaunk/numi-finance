@@ -6,11 +6,26 @@ from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
-from core.services import convert_amount, get_all_rates, get_latest_rates
+from core.services import get_all_rates
 
 from .models import Expense, TRAVEL_CATEGORIES, Trip, TravelExpense
 
-VALID_CURRENCIES = {'CNY', 'HKD', 'USD', 'SGD'}
+DISPLAY_CURRENCIES = {'CNY', 'HKD', 'USD', 'SGD'}
+
+
+def _compute_amounts(amount, currency, rates):
+    """Compute USD/CNY/HKD/SGD equivalents at the given rates."""
+    if currency == 'USD':
+        amount_usd = amount
+    else:
+        rate = rates.get(currency.lower())
+        amount_usd = amount / rate if rate else 0
+    return {
+        'amount_usd': round(amount_usd, 2),
+        'amount_cny': round(amount_usd * rates.get('cny', 7.25), 2),
+        'amount_hkd': round(amount_usd * rates.get('hkd', 7.82), 2),
+        'amount_sgd': round(amount_usd * rates.get('sgd', 1.34), 2),
+    }
 
 
 @ensure_csrf_cookie
@@ -22,7 +37,7 @@ def index(request):
 def list_expenses(request):
     month = request.GET.get('month', date.today().strftime('%Y-%m'))
     currency = request.GET.get('currency', 'USD')
-    if currency not in VALID_CURRENCIES:
+    if currency not in DISPLAY_CURRENCIES:
         currency = 'USD'
 
     try:
@@ -31,15 +46,13 @@ def list_expenses(request):
     except (ValueError, AttributeError):
         return JsonResponse({'error': 'Invalid month format. Use YYYY-MM'}, status=400)
 
+    amount_field = f'amount_{currency.lower()}'
     expenses = Expense.objects.filter(date__year=year, date__month=mon)
 
     result = []
     total = 0.0
     for exp in expenses:
-        converted = convert_amount(
-            exp.amount, exp.currency, currency,
-            exp.rate_cny, exp.rate_hkd, exp.rate_sgd,
-        )
+        converted = getattr(exp, amount_field)
         total += converted
         result.append({
             'id': exp.id,
@@ -74,8 +87,8 @@ def _validate_expense(data):
             errors.append('amount must be a number')
 
     currency = data.get('currency', '').upper()
-    if currency not in VALID_CURRENCIES:
-        errors.append(f'currency must be one of {", ".join(sorted(VALID_CURRENCIES))}')
+    if not currency:
+        errors.append('currency is required')
 
     date_str = data.get('date', '')
     try:
@@ -119,7 +132,8 @@ def add_expense(request):
     if errors:
         return JsonResponse({'errors': errors}, status=400)
 
-    rates = get_latest_rates()
+    rates = get_all_rates()
+    amounts = _compute_amounts(validated['amount'], validated['currency'], rates)
 
     expense = Expense.objects.create(
         amount=validated['amount'],
@@ -128,9 +142,7 @@ def add_expense(request):
         category=validated['category'],
         name=validated['name'],
         notes=validated['notes'],
-        rate_cny=rates['cny'],
-        rate_hkd=rates['hkd'],
-        rate_sgd=rates['sgd'],
+        **amounts,
     )
 
     return JsonResponse({
@@ -154,7 +166,7 @@ def bulk_add_expenses(request):
     if not isinstance(data, list):
         return JsonResponse({'error': 'Expected a JSON array'}, status=400)
 
-    rates = get_latest_rates()
+    rates = get_all_rates()
     created = 0
     errors = []
 
@@ -164,6 +176,7 @@ def bulk_add_expenses(request):
             errors.append({'index': i, 'errors': item_errors})
             continue
 
+        amounts = _compute_amounts(validated['amount'], validated['currency'], rates)
         Expense.objects.create(
             amount=validated['amount'],
             currency=validated['currency'],
@@ -171,9 +184,7 @@ def bulk_add_expenses(request):
             category=validated['category'],
             name=validated['name'],
             notes=validated['notes'],
-            rate_cny=rates['cny'],
-            rate_hkd=rates['hkd'],
-            rate_sgd=rates['sgd'],
+            **amounts,
         )
         created += 1
 
@@ -204,8 +215,10 @@ def list_categories(request):
 @require_GET
 def monthly_stats(request):
     currency = request.GET.get('currency', 'USD')
-    if currency not in VALID_CURRENCIES:
+    if currency not in DISPLAY_CURRENCIES:
         currency = 'USD'
+
+    amount_field = f'amount_{currency.lower()}'
 
     year = request.GET.get('year')
     if year:
@@ -219,10 +232,7 @@ def monthly_stats(request):
     months = {}
     for exp in expenses:
         month_key = exp.date.strftime('%Y-%m')
-        converted = convert_amount(
-            exp.amount, exp.currency, currency,
-            exp.rate_cny, exp.rate_hkd, exp.rate_sgd,
-        )
+        converted = getattr(exp, amount_field)
 
         if month_key not in months:
             months[month_key] = {'total': 0.0, 'by_category': {}}
@@ -254,8 +264,9 @@ def travel_index(request):
 @require_GET
 def list_trips(request):
     display = request.GET.get('currency', 'SGD').upper()
-    all_rates = get_all_rates()
-    display_rate = all_rates.get(display.lower(), 1.0)
+    if display not in DISPLAY_CURRENCIES:
+        display = 'SGD'
+    amount_field = f'amount_{display.lower()}'
 
     trips = Trip.objects.prefetch_related('expenses').all()
     result = []
@@ -263,8 +274,7 @@ def list_trips(request):
         total = 0.0
         category_totals = {}
         for exp in trip.expenses.all():
-            usd = exp.amount / exp.rate_to_usd if exp.rate_to_usd else 0
-            converted = usd * display_rate
+            converted = getattr(exp, amount_field)
             total += converted
             category_totals[exp.category] = round(
                 category_totals.get(exp.category, 0.0) + converted, 2
@@ -375,16 +385,16 @@ def list_trip_expenses(request, trip_id):
         return JsonResponse({'error': 'Trip not found'}, status=404)
 
     display = request.GET.get('currency', 'SGD').upper()
-    all_rates = get_all_rates()
-    display_rate = all_rates.get(display.lower(), 1.0)
+    if display not in DISPLAY_CURRENCIES:
+        display = 'SGD'
+    amount_field = f'amount_{display.lower()}'
 
     expenses = trip.expenses.all()
     result = []
     total = 0.0
     category_totals = {}
     for exp in expenses:
-        usd = exp.amount / exp.rate_to_usd if exp.rate_to_usd else 0
-        converted = round(usd * display_rate, 2)
+        converted = round(getattr(exp, amount_field), 2)
         total += converted
         category_totals[exp.category] = round(
             category_totals.get(exp.category, 0.0) + converted, 2
@@ -437,8 +447,8 @@ def add_trip_expense(request, trip_id):
         errors.append('amount must be a number')
 
     currency = data.get('currency', '').upper()
-    all_rates = get_all_rates()
-    rate = all_rates.get(currency.lower())
+    rates = get_all_rates()
+    rate = rates.get(currency.lower())
     if currency == 'USD':
         rate = 1.0
     if rate is None:
@@ -462,6 +472,7 @@ def add_trip_expense(request, trip_id):
     if errors:
         return JsonResponse({'errors': errors}, status=400)
 
+    amounts = _compute_amounts(amount, currency, rates)
     exp = TravelExpense.objects.create(
         trip=trip,
         amount=amount,
@@ -470,7 +481,7 @@ def add_trip_expense(request, trip_id):
         category=category,
         name=name,
         notes=data.get('notes', '').strip(),
-        rate_to_usd=rate,
+        **amounts,
     )
     return JsonResponse({'id': exp.id, 'name': exp.name}, status=201)
 
