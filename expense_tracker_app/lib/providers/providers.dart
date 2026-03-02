@@ -7,6 +7,8 @@ import '../data/remote/endpoints/expense_api.dart';
 import '../data/remote/endpoints/travel_api.dart';
 import '../data/remote/endpoints/asset_api.dart';
 import '../data/remote/endpoints/rate_api.dart';
+import '../data/remote/endpoints/version_api.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../data/repositories/expense_repository.dart';
 import '../data/repositories/travel_repository.dart';
 import '../data/repositories/asset_repository.dart';
@@ -37,6 +39,25 @@ final nginxUsernameProvider = StateProvider<String>((ref) {
 
 final nginxPasswordProvider = StateProvider<String>((ref) {
   return ref.watch(sharedPrefsProvider).getString('nginx_password') ?? '';
+});
+
+final githubTokenProvider = StateProvider<String>((ref) {
+  return ref.watch(sharedPrefsProvider).getString('github_token') ?? '';
+});
+
+/// Returns the download page URL if a newer build is available, else null.
+final updateCheckProvider = FutureProvider<String?>((ref) async {
+  final token = ref.watch(githubTokenProvider);
+  if (token.isEmpty) return null;
+  try {
+    final info = await PackageInfo.fromPlatform();
+    final currentBuild = int.tryParse(info.buildNumber) ?? 0;
+    final latest = await VersionApi(token).getLatestRelease();
+    if (latest == null) return null;
+    return latest.buildNumber > currentBuild ? latest.htmlUrl : null;
+  } catch (_) {
+    return null;
+  }
 });
 
 final displayCurrencyProvider = StateProvider<String>((ref) {

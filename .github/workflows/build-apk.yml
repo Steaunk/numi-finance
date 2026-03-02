@@ -46,10 +46,20 @@ jobs:
         run: flutter analyze --no-fatal-infos
 
       - name: Build APK
-        run: flutter build apk --release
+        run: flutter build apk --release --build-number=${{ github.run_number }}
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: expense-tracker-apk
           path: expense_tracker_app/build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "build-${{ github.run_number }}" \
+            --repo "${{ github.repository }}" \
+            --title "Numi build ${{ github.run_number }}" \
+            --notes "Automated build from CI (run #${{ github.run_number }})" \
+            build/app/outputs/flutter-apk/app-release.apk

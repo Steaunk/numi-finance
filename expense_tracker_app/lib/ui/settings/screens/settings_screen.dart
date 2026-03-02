@@ -15,9 +15,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late final TextEditingController _urlController;
   late final TextEditingController _userController;
   late final TextEditingController _passController;
+  late final TextEditingController _tokenController;
   bool _testing = false;
   String? _testResult;
   bool _obscurePass = true;
+  bool _obscureToken = true;
 
   @override
   void initState() {
@@ -25,6 +27,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _urlController = TextEditingController(text: ref.read(serverUrlProvider));
     _userController = TextEditingController(text: ref.read(nginxUsernameProvider));
     _passController = TextEditingController(text: ref.read(nginxPasswordProvider));
+    _tokenController = TextEditingController(text: ref.read(githubTokenProvider));
   }
 
   @override
@@ -32,6 +35,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _urlController.dispose();
     _userController.dispose();
     _passController.dispose();
+    _tokenController.dispose();
     super.dispose();
   }
 
@@ -125,6 +129,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ],
           ),
           const SizedBox(height: 24),
+          // GitHub Token (for update checks)
+          Text('Auto Update',
+              style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _tokenController,
+            obscureText: _obscureToken,
+            decoration: InputDecoration(
+              labelText: 'GitHub Token',
+              hintText: 'github_pat_...',
+              helperText: 'Fine-grained PAT with Contents: Read',
+              suffixIcon: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: Icon(_obscureToken
+                        ? Icons.visibility_off
+                        : Icons.visibility),
+                    onPressed: () =>
+                        setState(() => _obscureToken = !_obscureToken),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.save),
+                    onPressed: _saveToken,
+                  ),
+                ],
+              ),
+            ),
+            onSubmitted: (_) => _saveToken(),
+          ),
+          const SizedBox(height: 24),
           // Display Currency
           Text('Display Currency',
               style: Theme.of(context).textTheme.titleMedium),
@@ -209,6 +244,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     ref.read(sharedPrefsProvider).setString('server_url', url);
     ScaffoldMessenger.of(context)
         .showSnackBar(const SnackBar(content: Text('Server URL saved')));
+  }
+
+  void _saveToken() {
+    final token = _tokenController.text.trim();
+    ref.read(githubTokenProvider.notifier).state = token;
+    ref.read(sharedPrefsProvider).setString('github_token', token);
+    ref.invalidate(updateCheckProvider);
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('GitHub token saved')));
   }
 
   void _saveCredentials() {
