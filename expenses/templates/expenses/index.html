@@ -513,7 +513,7 @@
 - "amount": number (positive)
 - "currency": one of "CNY", "HKD", "USD", "SGD"
 - "date": string in "YYYY-MM-DD" format
-- "category": string, pick the most appropriate from: ${catList} (or create a new one if none fits)
+- "category": string, must be one of: ${catList}
 - "name": string, short description of the expense
 - "notes": string, optional extra info (can be empty "")
 
@@ -528,7 +528,7 @@ Here are my expense records:
 
             try {
                 await navigator.clipboard.writeText(prompt);
-                showMessage('GPT prompt copied to clipboard!', 'success');
+                showMessage('Prompt copied to clipboard!', 'success');
             } catch (e) {
                 showMessage('Failed to copy: ' + e.message, 'error');
             }
