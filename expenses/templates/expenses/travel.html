@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Travel Expenses</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; color: #333; padding: 20px; max-width: 1200px; margin: 0 auto; }
+        h1 { font-size: 1.5rem; }
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding: 16px 20px; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .header-left { display: flex; align-items: center; gap: 16px; }
+        .nav-link { font-size: 0.85rem; color: #4a90d9; text-decoration: none; }
+        .nav-link:hover { text-decoration: underline; }
+        .currency-selector { display: flex; align-items: center; gap: 8px; }
+        .currency-selector label { font-size: 0.9rem; color: #666; }
+        .currency-selector select { padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9rem; }
+        .section { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 20px; }
+        .section h2 { font-size: 1.1rem; margin-bottom: 16px; color: #444; }
+        .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+        .form-group { display: flex; flex-direction: column; }
+        .form-group label { font-size: 0.8rem; color: #666; margin-bottom: 4px; }
+        .form-group input, .form-group select, .form-group textarea { padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9rem; }
+        .form-actions { display: flex; gap: 10px; margin-top: 12px; }
+        .btn { padding: 8px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem; transition: background 0.2s; }
+        .btn-primary { background: #4a90d9; color: #fff; }
+        .btn-primary:hover { background: #357abd; }
+        .btn-secondary { background: #e8e8e8; color: #555; }
+        .btn-secondary:hover { background: #ddd; }
+        .btn-danger { background: #e74c3c; color: #fff; padding: 4px 10px; font-size: 0.8rem; }
+        .btn-danger:hover { background: #c0392b; }
+        .btn-sm { padding: 4px 10px; font-size: 0.8rem; }
+        .message { padding: 8px 12px; border-radius: 4px; margin-bottom: 12px; font-size: 0.9rem; }
+        .message-success { background: #d4edda; color: #155724; }
+        .message-error { background: #f8d7da; color: #721c24; }
+
+        /* Trip cards */
+        .trip-card { cursor: default; }
+        .trip-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; padding: 4px 0; }
+        .trip-header:hover { opacity: 0.8; }
+        .trip-dest { font-weight: 600; font-size: 1rem; }
+        .trip-dates { font-size: 0.85rem; color: #888; margin-top: 2px; }
+        .trip-total { font-weight: 600; font-size: 0.95rem; text-align: right; }
+        .trip-count { font-size: 0.8rem; color: #888; }
+
+        /* Trip detail */
+        .trip-detail { margin-top: 16px; padding-top: 16px; border-top: 1px solid #eee; }
+        .expense-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .expense-table th { text-align: left; padding: 8px 6px; border-bottom: 2px solid #eee; color: #666; font-weight: 600; font-size: 0.8rem; }
+        .expense-table td { padding: 8px 6px; border-bottom: 1px solid #f0f0f0; }
+        .expense-table .total-row td { font-weight: 700; border-top: 2px solid #ddd; background: #f0f7ff; }
+        .add-expense-form { background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px; margin-top: 16px; }
+        .add-expense-form .form-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+        .add-expense-form .form-group label { font-size: 0.75rem; }
+        .add-expense-form .form-group input, .add-expense-form .form-group select { padding: 6px 8px; font-size: 0.85rem; }
+
+        .charts-row { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 16px; }
+        .chart-box { position: relative; height: 250px; }
+
+        @media (max-width: 768px) {
+            body { padding: 10px; }
+            header { flex-direction: column; gap: 10px; padding: 12px 16px; }
+            .header-left { flex-direction: column; gap: 6px; align-items: flex-start; }
+            h1 { font-size: 1.3rem; }
+            .section { padding: 14px; }
+            .form-grid { grid-template-columns: 1fr 1fr; }
+            .btn { padding: 10px 16px; }
+            .chart-box { height: 220px; }
+        }
+        @media (max-width: 480px) {
+            body { padding: 6px; }
+            header { padding: 10px 12px; }
+            h1 { font-size: 1.15rem; }
+            .section { padding: 10px; margin-bottom: 12px; }
+            .form-grid { grid-template-columns: 1fr; }
+            .form-group input, .form-group select { padding: 10px; font-size: 1rem; }
+            .btn { padding: 10px 14px; font-size: 0.85rem; min-height: 44px; }
+            .expense-table { font-size: 0.8rem; }
+            .expense-table .hide-mobile { display: none; }
+            .chart-box { height: 200px; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <h1>Travel Expenses</h1>
+            <div style="display:flex;gap:12px;">
+                <a href="/expenses/" class="nav-link">Expenses</a>
+                <a href="/assets/" class="nav-link">Assets</a>
+            </div>
+        </div>
+        <div class="currency-selector">
+            <label>Display:</label>
+            <select id="displayCurrency" onchange="handleCurrencyChange(this.value)">
+                <option value="CNY">CNY</option>
+                <option value="HKD">HKD</option>
+                <option value="USD">USD</option>
+                <option value="SGD" selected>SGD</option>
+                <option value="JPY">JPY</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+                <option value="THB">THB</option>
+                <option value="KRW">KRW</option>
+            </select>
+        </div>
+    </header>
+
+    <div id="messageArea"></div>
+
+    <!-- Trip List -->
+    <div class="section">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <h2 style="margin-bottom:0;">Trips</h2>
+            <button class="btn btn-primary btn-sm" onclick="toggleAddTrip()">+ Add Trip</button>
+        </div>
+        <div id="tripList"></div>
+    </div>
+
+    <!-- Add Trip Form -->
+    <div class="section" id="addTripForm" style="display:none;">
+        <h2>Add Trip</h2>
+        <form onsubmit="handleAddTrip(event)">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Destination *</label>
+                    <input type="text" id="tripDest" required placeholder="e.g. Japan">
+                </div>
+                <div class="form-group">
+                    <label>Start Date *</label>
+                    <input type="date" id="tripStart" required>
+                </div>
+                <div class="form-group">
+                    <label>End Date *</label>
+                    <input type="date" id="tripEnd" required>
+                </div>
+                <div class="form-group">
+                    <label>Notes</label>
+                    <input type="text" id="tripNotes" placeholder="Optional">
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Add</button>
+                <button type="button" class="btn btn-secondary" onclick="toggleAddTrip()">Cancel</button>
+            </div>
+        </form>
+    </div>
+
+    <datalist id="currencyList"></datalist>
+
+    <footer style="text-align:center;color:#aaa;font-size:0.75rem;padding:20px 0;">&copy; Mar 2026 Steaunk</footer>
+
+    <script>
+        let displayCurrency = localStorage.getItem('displayCurrency') || 'SGD';
+        let expandedTripId = null;
+        let allRates = {};
+        let pieCharts = {};
+        const TRAVEL_CATEGORIES = ['Transportation', 'Accommodation', 'Sightseeing', 'Food & Drinks', 'Shopping', 'Other'];
+        const CAT_COLORS = {
+            'Transportation': '#4a90d9',
+            'Accommodation': '#e67e22',
+            'Sightseeing': '#9b59b6',
+            'Food & Drinks': '#27ae60',
+            'Shopping': '#e74c3c',
+            'Other': '#95a5a6',
+        };
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!localStorage.getItem('displayCurrency')) {
+                try {
+                    const resp = await fetch('/api/geo/currency/');
+                    const data = await resp.json();
+                    displayCurrency = data.currency;
+                    localStorage.setItem('displayCurrency', displayCurrency);
+                } catch (e) {}
+            }
+            const sel = document.getElementById('displayCurrency');
+            // Ensure the stored currency is available in the select
+            if (![...sel.options].some(o => o.value === displayCurrency)) {
+                const opt = document.createElement('option');
+                opt.value = displayCurrency;
+                opt.textContent = displayCurrency;
+                sel.appendChild(opt);
+            }
+            sel.value = displayCurrency;
+            loadCurrencies();
+            loadTrips();
+        });
+
+        function showMessage(text, type) {
+            const area = document.getElementById('messageArea');
+            area.innerHTML = `<div class="message message-${type}">${text}</div>`;
+            setTimeout(() => { area.innerHTML = ''; }, 4000);
+        }
+
+        function handleCurrencyChange(val) {
+            displayCurrency = val;
+            localStorage.setItem('displayCurrency', val);
+            loadTrips();
+        }
+
+        function toggleAddTrip() {
+            const f = document.getElementById('addTripForm');
+            f.style.display = f.style.display === 'none' ? 'block' : 'none';
+        }
+
+        async function loadCurrencies() {
+            try {
+                const resp = await fetch('/api/rates/');
+                const data = await resp.json();
+                allRates = data.rates;
+                const dl = document.getElementById('currencyList');
+                dl.innerHTML = Object.keys(allRates)
+                    .map(c => c.toUpperCase())
+                    .sort()
+                    .map(c => `<option value="${c}">`)
+                    .join('');
+            } catch (e) {
+                console.error('Failed to load currencies:', e);
+            }
+        }
+
+        async function loadTrips() {
+            try {
+                const resp = await fetch(`/expenses/api/travel/trips/?currency=${displayCurrency}`);
+                const data = await resp.json();
+                renderTrips(data.trips, data.display_currency);
+            } catch (err) {
+                console.error('Failed to load trips:', err);
+            }
+        }
+
+        function renderTrips(trips, currency) {
+            const container = document.getElementById('tripList');
+            if (trips.length === 0) {
+                container.innerHTML = '<p style="color:#999;text-align:center;padding:20px;">No trips yet. Add your first trip!</p>';
+                return;
+            }
+
+            let html = '';
+            for (const trip of trips) {
+                const isExpanded = expandedTripId === trip.id;
+                html += `
+                <div class="trip-card" style="padding:12px 0;border-bottom:1px solid #f0f0f0;">
+                    <div class="trip-header" onclick="toggleTrip(${trip.id})">
+                        <div>
+                            <div class="trip-dest">${esc(trip.destination)}</div>
+                            <div class="trip-dates">${trip.start_date} ~ ${trip.end_date}${trip.notes ? ' &middot; ' + esc(trip.notes) : ''}</div>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:10px;">
+                            <div style="text-align:right;">
+                                <div class="trip-total">${trip.total_converted.toLocaleString(undefined, {minimumFractionDigits: 2})} ${currency}</div>
+                                <div class="trip-count">${trip.expense_count} expense${trip.expense_count !== 1 ? 's' : ''}</div>
+                            </div>
+                            <button class="btn btn-danger" onclick="event.stopPropagation(); deleteTrip(${trip.id}, '${esc(trip.destination)}')">Del</button>
+                        </div>
+                    </div>
+                    ${isExpanded ? `<div class="trip-detail" id="tripDetail_${trip.id}"><p style="color:#999;">Loading...</p></div>` : ''}
+                </div>`;
+            }
+            container.innerHTML = html;
+            if (expandedTripId) loadTripDetail(expandedTripId);
+        }
+
+        function toggleTrip(id) {
+            if (expandedTripId === id) {
+                expandedTripId = null;
+                // Destroy pie chart
+                if (pieCharts[id]) { pieCharts[id].destroy(); delete pieCharts[id]; }
+            } else {
+                // Destroy previous pie chart
+                if (pieCharts[expandedTripId]) { pieCharts[expandedTripId].destroy(); delete pieCharts[expandedTripId]; }
+                expandedTripId = id;
+            }
+            loadTrips();
+        }
+
+        async function loadTripDetail(tripId) {
+            try {
+                const resp = await fetch(`/expenses/api/travel/trips/${tripId}/expenses/?currency=${displayCurrency}`);
+                const data = await resp.json();
+                renderTripDetail(tripId, data);
+            } catch (err) {
+                const el = document.getElementById(`tripDetail_${tripId}`);
+                if (el) el.innerHTML = '<p style="color:#e74c3c;">Failed to load expenses.</p>';
+            }
+        }
+
+        function renderTripDetail(tripId, data) {
+            const el = document.getElementById(`tripDetail_${tripId}`);
+            if (!el) return;
+
+            let html = '';
+
+            // Expense table
+            if (data.expenses.length > 0) {
+                html += `<table class="expense-table">
+                    <thead><tr>
+                        <th>Date</th><th>Name</th><th>Category</th>
+                        <th style="text-align:right;">Amount</th>
+                        <th style="text-align:right;">${data.display_currency}</th>
+                        <th class="hide-mobile">Notes</th><th></th>
+                    </tr></thead><tbody>`;
+                for (const exp of data.expenses) {
+                    html += `<tr>
+                        <td>${exp.date}</td>
+                        <td>${esc(exp.name)}</td>
+                        <td>${esc(exp.category)}</td>
+                        <td style="text-align:right;">${exp.amount.toLocaleString(undefined, {minimumFractionDigits: 2})} ${exp.currency}</td>
+                        <td style="text-align:right;">${exp.converted_amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                        <td class="hide-mobile">${esc(exp.notes || '')}</td>
+                        <td><button class="btn btn-danger" onclick="deleteExpense(${tripId}, ${exp.id})">Del</button></td>
+                    </tr>`;
+                }
+                html += `<tr class="total-row">
+                    <td colspan="3">Total</td>
+                    <td></td>
+                    <td style="text-align:right;">${data.total_converted.toLocaleString(undefined, {minimumFractionDigits: 2})} ${data.display_currency}</td>
+                    <td class="hide-mobile"></td><td></td>
+                </tr></tbody></table>`;
+            } else {
+                html += '<p style="color:#999;padding:10px 0;">No expenses yet.</p>';
+            }
+
+            // Category pie chart
+            if (data.expenses.length > 0) {
+                html += `<div class="charts-row"><div class="chart-box"><canvas id="pieChart_${tripId}"></canvas></div></div>`;
+            }
+
+            // Add expense form
+            const catOptions = TRAVEL_CATEGORIES.map(c => `<option value="${c}">${c}</option>`).join('');
+            html += `
+            <div class="add-expense-form">
+                <div style="font-weight:600;font-size:0.9rem;margin-bottom:8px;">Add Expense</div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Amount *</label>
+                        <input type="number" step="0.01" id="expAmount_${tripId}" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Currency *</label>
+                        <input type="text" list="currencyList" id="expCurrency_${tripId}" placeholder="e.g. THB" maxlength="3" style="text-transform:uppercase;" value="${data.expenses.length > 0 ? data.expenses[data.expenses.length - 1].currency : 'USD'}">
+                    </div>
+                    <div class="form-group">
+                        <label>Date *</label>
+                        <input type="date" id="expDate_${tripId}" value="${data.trip.start_date}">
+                    </div>
+                    <div class="form-group">
+                        <label>Category *</label>
+                        <select id="expCategory_${tripId}">${catOptions}</select>
+                    </div>
+                    <div class="form-group">
+                        <label>Name *</label>
+                        <input type="text" id="expName_${tripId}" placeholder="e.g. Airport taxi">
+                    </div>
+                    <div class="form-group">
+                        <label>Notes</label>
+                        <input type="text" id="expNotes_${tripId}">
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button class="btn btn-primary btn-sm" onclick="addExpense(${tripId})">Add</button>
+                </div>
+            </div>`;
+
+            el.innerHTML = html;
+
+            // Render pie chart
+            if (data.expenses.length > 0 && data.category_totals) {
+                renderPieChart(tripId, data.category_totals, data.display_currency);
+            }
+        }
+
+        function renderPieChart(tripId, categoryTotals, currency) {
+            if (pieCharts[tripId]) pieCharts[tripId].destroy();
+            const canvas = document.getElementById(`pieChart_${tripId}`);
+            if (!canvas) return;
+
+            const labels = Object.keys(categoryTotals);
+            const values = Object.values(categoryTotals);
+            const colors = labels.map(l => CAT_COLORS[l] || '#bdc3c7');
+
+            pieCharts[tripId] = new Chart(canvas, {
+                type: 'doughnut',
+                data: {
+                    labels,
+                    datasets: [{ data: values, backgroundColor: colors, borderWidth: 1 }],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => {
+                                    const val = ctx.parsed.toLocaleString(undefined, {minimumFractionDigits: 2});
+                                    const total = values.reduce((a, b) => a + b, 0);
+                                    const pct = ((ctx.parsed / total) * 100).toFixed(1);
+                                    return ` ${ctx.label}: ${val} ${currency} (${pct}%)`;
+                                }
+                            }
+                        }
+                    },
+                },
+            });
+        }
+
+        async function handleAddTrip(e) {
+            e.preventDefault();
+            const payload = {
+                destination: document.getElementById('tripDest').value.trim(),
+                start_date: document.getElementById('tripStart').value,
+                end_date: document.getElementById('tripEnd').value,
+                notes: document.getElementById('tripNotes').value.trim(),
+            };
+            try {
+                const resp = await fetch('/expenses/api/travel/trips/add/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+                    body: JSON.stringify(payload),
+                });
+                const result = await resp.json();
+                if (!resp.ok) {
+                    showMessage('Error: ' + (result.errors || [result.error]).join(', '), 'error');
+                    return;
+                }
+                showMessage(`Trip "${result.destination}" created!`, 'success');
+                document.getElementById('addTripForm').style.display = 'none';
+                document.getElementById('tripDest').value = '';
+                document.getElementById('tripStart').value = '';
+                document.getElementById('tripEnd').value = '';
+                document.getElementById('tripNotes').value = '';
+                expandedTripId = result.id;
+                loadTrips();
+            } catch (err) {
+                showMessage('Network error: ' + err.message, 'error');
+            }
+        }
+
+        async function addExpense(tripId) {
+            const payload = {
+                amount: parseFloat(document.getElementById(`expAmount_${tripId}`).value),
+                currency: document.getElementById(`expCurrency_${tripId}`).value.toUpperCase().trim(),
+                date: document.getElementById(`expDate_${tripId}`).value,
+                category: document.getElementById(`expCategory_${tripId}`).value,
+                name: document.getElementById(`expName_${tripId}`).value.trim(),
+                notes: (document.getElementById(`expNotes_${tripId}`).value || '').trim(),
+            };
+            if (!payload.amount || !payload.currency || !payload.date || !payload.name) {
+                showMessage('Please fill in all required fields', 'error');
+                return;
+            }
+            try {
+                const resp = await fetch(`/expenses/api/travel/trips/${tripId}/expenses/add/`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+                    body: JSON.stringify(payload),
+                });
+                const result = await resp.json();
+                if (!resp.ok) {
+                    showMessage('Error: ' + (result.errors || [result.error]).join(', '), 'error');
+                    return;
+                }
+                // Clear form but keep currency and date
+                document.getElementById(`expAmount_${tripId}`).value = '';
+                document.getElementById(`expName_${tripId}`).value = '';
+                document.getElementById(`expNotes_${tripId}`).value = '';
+                loadTrips();
+            } catch (err) {
+                showMessage('Network error: ' + err.message, 'error');
+            }
+        }
+
+        async function deleteTrip(id, name) {
+            if (!confirm(`Delete trip "${name}" and all its expenses?`)) return;
+            try {
+                await fetch(`/expenses/api/travel/trips/${id}/delete/`, {
+                    method: 'DELETE',
+                    headers: { 'X-CSRFToken': getCsrf() },
+                });
+                if (expandedTripId === id) expandedTripId = null;
+                if (pieCharts[id]) { pieCharts[id].destroy(); delete pieCharts[id]; }
+                loadTrips();
+            } catch (err) {
+                showMessage('Delete failed: ' + err.message, 'error');
+            }
+        }
+
+        async function deleteExpense(tripId, expId) {
+            if (!confirm('Delete this expense?')) return;
+            try {
+                await fetch(`/expenses/api/travel/trips/${tripId}/expenses/${expId}/delete/`, {
+                    method: 'DELETE',
+                    headers: { 'X-CSRFToken': getCsrf() },
+                });
+                loadTrips();
+            } catch (err) {
+                showMessage('Delete failed: ' + err.message, 'error');
+            }
+        }
+
+        function getCsrf() {
+            const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
+            return cookie ? cookie.split('=')[1] : '';
+        }
+
+        function esc(str) {
+            const d = document.createElement('div');
+            d.textContent = str || '';
+            return d.innerHTML;
+        }
+    </script>
+</body>
+</html>
