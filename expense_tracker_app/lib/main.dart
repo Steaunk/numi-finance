@@ -14,19 +14,19 @@ void main() async {
       overrides: [
         sharedPrefsProvider.overrideWithValue(prefs),
       ],
-      child: const ExpenseTrackerApp(),
+      child: const NumiApp(),
     ),
   );
 }
 
-class ExpenseTrackerApp extends ConsumerStatefulWidget {
-  const ExpenseTrackerApp({super.key});
+class NumiApp extends ConsumerStatefulWidget {
+  const NumiApp({super.key});
 
   @override
-  ConsumerState<ExpenseTrackerApp> createState() => _ExpenseTrackerAppState();
+  ConsumerState<NumiApp> createState() => _NumiAppState();
 }
 
-class _ExpenseTrackerAppState extends ConsumerState<ExpenseTrackerApp> {
+class _NumiAppState extends ConsumerState<NumiApp> {
   @override
   void initState() {
     super.initState();
@@ -57,7 +57,7 @@ class _ExpenseTrackerAppState extends ConsumerState<ExpenseTrackerApp> {
     });
 
     return MaterialApp.router(
-      title: 'Expense Tracker',
+      title: 'Numi',
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.system,
