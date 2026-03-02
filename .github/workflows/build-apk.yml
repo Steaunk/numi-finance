@@ -31,6 +31,11 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Generate Android platform files
+        run: |
+          flutter create --platforms android --org com.steaunk --no-pub .
+          git checkout pubspec.yaml
+
       - name: Install dependencies
         run: flutter pub get
 
