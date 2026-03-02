@@ -2,21 +2,30 @@ import requests as http_requests
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 
-from .services import get_latest_rates
+from .services import get_rates
 
 COUNTRY_CURRENCY_MAP = {'CN': 'CNY', 'HK': 'HKD', 'SG': 'SGD', 'JP': 'JPY'}
 
 
 @require_GET
-def latest_rates(request):
-    rates = get_latest_rates()
-    return JsonResponse({
-        'USD': 1.0,
-        'CNY': rates['cny'],
-        'HKD': rates['hkd'],
-        'SGD': rates['sgd'],
-        'JPY': rates['jpy'],
-    })
+def rates(request):
+    """Unified rates endpoint.
+
+    Query params:
+        currencies - comma-separated list (e.g. ?currencies=cny,thb,eur)
+        date       - YYYY-MM-DD for historical rates (omit for latest)
+
+    Returns: {"rates": {"cny": 7.25, ...}, "date": "latest"}
+    """
+    currencies_param = request.GET.get('currencies', '').strip()
+    date_param = request.GET.get('date', '').strip() or None
+
+    currencies = None
+    if currencies_param:
+        currencies = [c.strip() for c in currencies_param.split(',') if c.strip()]
+
+    result = get_rates(rate_date=date_param, currencies=currencies)
+    return JsonResponse({'rates': result, 'date': date_param or 'latest'})
 
 
 @require_GET

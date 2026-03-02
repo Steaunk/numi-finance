@@ -4,56 +4,98 @@ import requests
 
 from .models import ExchangeRate
 
-RATE_API_URL = (
-    "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json"
+API_URL_TEMPLATE = (
+    "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@{date}/v1/currencies/usd.json"
+)
+FALLBACK_URL_TEMPLATE = (
+    "https://{date}.currency-api.pages.dev/v1/currencies/usd.json"
 )
 
 FALLBACK_RATES = {'cny': 7.25, 'hkd': 7.82, 'sgd': 1.34, 'jpy': 150.0}
 
 
-def get_latest_rates():
+def _fetch_rates_from_api(rate_date=None):
+    """Fetch all USD-based rates from the fawazahmed0 API for a given date.
+
+    Args:
+        rate_date: A date string 'YYYY-MM-DD' or None for latest.
+
+    Returns:
+        dict of {currency_code: rate} (lowercase keys, 1 USD = X), or None on failure.
     """
-    Return today's exchange rates as a dict: {'cny': ..., 'hkd': ..., 'sgd': ..., 'jpy': ...}.
-    Fetches from API if not cached for today. Falls back to most recent cache or hardcoded.
+    date_param = rate_date or 'latest'
+    url = API_URL_TEMPLATE.format(date=date_param)
+    fallback_url = FALLBACK_URL_TEMPLATE.format(date=date_param)
+
+    for u in (url, fallback_url):
+        try:
+            resp = requests.get(u, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get('usd', {})
+        except Exception:
+            continue
+    return None
+
+
+def get_rates(rate_date=None, currencies=None):
+    """Unified rate function. Returns dict of {currency: rate} (1 USD = X).
+
+    Args:
+        rate_date: 'YYYY-MM-DD' string or None for latest.
+        currencies: list of currency codes to filter, or None for all.
+
+    Returns:
+        dict like {'cny': 7.25, 'hkd': 7.82, ...}
     """
-    today = date.today()
+    rates = _fetch_rates_from_api(rate_date)
 
-    try:
-        cached = ExchangeRate.objects.get(rate_date=today)
-        return {'cny': cached.cny, 'hkd': cached.hkd, 'sgd': cached.sgd, 'jpy': cached.jpy}
-    except ExchangeRate.DoesNotExist:
-        pass
-
-    try:
-        resp = requests.get(RATE_API_URL, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-
-        rates = {
-            'cny': data['usd']['cny'],
-            'hkd': data['usd']['hkd'],
-            'sgd': data['usd']['sgd'],
-            'jpy': data['usd']['jpy'],
-        }
-
-        ExchangeRate.objects.update_or_create(
-            rate_date=today,
-            defaults={
-                'cny': rates['cny'],
-                'hkd': rates['hkd'],
-                'sgd': rates['sgd'],
-                'jpy': rates['jpy'],
-            },
-        )
-
-        return rates
-
-    except Exception:
+    if rates is None:
+        # Fallback: try ExchangeRate cache, then hardcoded
         latest = ExchangeRate.objects.order_by('-rate_date').first()
         if latest:
-            return {'cny': latest.cny, 'hkd': latest.hkd, 'sgd': latest.sgd, 'jpy': latest.jpy}
+            rates = {'cny': latest.cny, 'hkd': latest.hkd, 'sgd': latest.sgd, 'jpy': latest.jpy, 'usd': 1.0}
+        else:
+            rates = {**FALLBACK_RATES, 'usd': 1.0}
 
-        return FALLBACK_RATES.copy()
+    # Cache today's core rates in ExchangeRate for legacy callers
+    if rate_date is None and rates:
+        today = date.today()
+        if not ExchangeRate.objects.filter(rate_date=today).exists():
+            try:
+                ExchangeRate.objects.update_or_create(
+                    rate_date=today,
+                    defaults={
+                        'cny': rates.get('cny', 7.25),
+                        'hkd': rates.get('hkd', 7.82),
+                        'sgd': rates.get('sgd', 1.34),
+                        'jpy': rates.get('jpy', 150.0),
+                    },
+                )
+            except Exception:
+                pass
+
+    if currencies:
+        keys = {c.lower() for c in currencies}
+        rates = {k: v for k, v in rates.items() if k in keys}
+
+    return rates
+
+
+def get_latest_rates():
+    """Legacy helper: return today's rates for the 4 core currencies."""
+    rates = get_rates()
+    return {
+        'cny': rates.get('cny', 7.25),
+        'hkd': rates.get('hkd', 7.82),
+        'sgd': rates.get('sgd', 1.34),
+        'jpy': rates.get('jpy', 150.0),
+    }
+
+
+def get_all_rates():
+    """Legacy helper: return all rates (latest)."""
+    return get_rates()
 
 
 def convert_amount(amount, from_currency, to_currency, rate_cny, rate_hkd, rate_sgd, rate_jpy=150.0):
