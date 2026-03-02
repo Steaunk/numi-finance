@@ -15,5 +15,7 @@ VOLUME /app/data
 
 ENV DATABASE_PATH=/app/data/db.sqlite3
 
+RUN python manage.py collectstatic --noinput
+
 CMD python manage.py migrate --run-syncdb && \
     uwsgi --socket :8000 --module config.wsgi --master --processes 2 --threads 2
