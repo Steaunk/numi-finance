@@ -117,6 +117,7 @@
                     Upload JSON File
                     <input type="file" accept=".json" onchange="handleFileUpload(event)" style="display:none;">
                 </label>
+                <button class="btn btn-secondary" onclick="copyGptPrompt()">Copy Prompt</button>
             </div>
         </div>
     </div>
@@ -159,6 +160,8 @@
             </div>
         </div>
     </div>
+
+    <footer style="text-align:center;color:#aaa;font-size:0.75rem;padding:20px 0;">&copy; Mar 2026 Steaunk</footer>
 
     <script>
         function getPrevMonth(ym) {
@@ -492,6 +495,43 @@
                     }
                 }
             });
+        }
+
+        async function copyGptPrompt() {
+            let categories = [];
+            try {
+                const resp = await fetch('/api/categories/');
+                const data = await resp.json();
+                categories = data.categories;
+            } catch (e) {}
+
+            const catList = categories.length > 0
+                ? categories.join(', ')
+                : 'Food, Transport, Shopping, Entertainment, Housing, Others';
+
+            const prompt = `Please convert the following expense records into a JSON array. Each object must have these fields:
+- "amount": number (positive)
+- "currency": one of "CNY", "HKD", "USD", "SGD"
+- "date": string in "YYYY-MM-DD" format
+- "category": string, pick the most appropriate from: ${catList} (or create a new one if none fits)
+- "name": string, short description of the expense
+- "notes": string, optional extra info (can be empty "")
+
+Output ONLY the JSON array, no explanation. Example:
+[
+  {"amount": 50, "currency": "SGD", "date": "2026-03-01", "category": "Food", "name": "Lunch", "notes": ""},
+  {"amount": 15.5, "currency": "USD", "date": "2026-03-02", "category": "Transport", "name": "Taxi", "notes": "to airport"}
+]
+
+Here are my expense records:
+`;
+
+            try {
+                await navigator.clipboard.writeText(prompt);
+                showMessage('GPT prompt copied to clipboard!', 'success');
+            } catch (e) {
+                showMessage('Failed to copy: ' + e.message, 'error');
+            }
         }
 
         function getCsrf() {
