@@ -31,6 +31,14 @@ final serverUrlProvider = StateProvider<String>((ref) {
   return prefs.getString('server_url') ?? 'https://your-server.com';
 });
 
+final nginxUsernameProvider = StateProvider<String>((ref) {
+  return ref.watch(sharedPrefsProvider).getString('nginx_username') ?? '';
+});
+
+final nginxPasswordProvider = StateProvider<String>((ref) {
+  return ref.watch(sharedPrefsProvider).getString('nginx_password') ?? '';
+});
+
 final displayCurrencyProvider = StateProvider<String>((ref) {
   final prefs = ref.watch(sharedPrefsProvider);
   return prefs.getString('display_currency') ?? AppConstants.defaultCurrency;
@@ -43,7 +51,13 @@ final selectedMonthProvider = StateProvider<DateTime>((ref) => DateTime.now());
 final apiClientProvider = Provider<ApiClient?>((ref) {
   final url = ref.watch(serverUrlProvider);
   if (url.isEmpty) return null;
-  return ApiClient(url);
+  final username = ref.watch(nginxUsernameProvider);
+  final password = ref.watch(nginxPasswordProvider);
+  return ApiClient(
+    url,
+    username: username.isEmpty ? null : username,
+    password: password.isEmpty ? null : password,
+  );
 });
 
 final expenseApiProvider = Provider<ExpenseApi?>((ref) {
