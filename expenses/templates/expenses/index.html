@@ -48,6 +48,11 @@
         .message-success { background: #d4edda; color: #155724; }
         .message-error { background: #f8d7da; color: #721c24; }
         .original-amount { color: #888; font-size: 0.85rem; }
+        tr.editing-row { background: #f0f7ff !important; }
+        tr.editing-row input, tr.editing-row select { padding: 3px 5px; border: 1px solid #4a90d9; border-radius: 3px; font-size: 0.82rem; width: 100%; box-sizing: border-box; }
+        tr.editing-row td { padding: 5px 8px; }
+        tr.exp-row-clickable { cursor: pointer; }
+        tr.exp-row-clickable:hover { background: #f9f9f9; }
         @media (max-width: 768px) {
             body { padding: 10px; }
             header { flex-direction: column; gap: 10px; padding: 12px 16px; }
@@ -213,6 +218,7 @@
         let doughnutMonth = getPrevMonth(selectedMonth);
         let barChart = null;
         let doughnutChart = null;
+        let editingExpenseId = null;
 
         const COLORS = [
             '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
@@ -372,6 +378,8 @@
             }
         }
 
+        const EXPENSE_CURRENCIES = ['CNY', 'HKD', 'USD', 'SGD'];
+
         function renderExpenseTable(data) {
             const tbody = document.getElementById('expenseTableBody');
             if (data.expenses.length === 0) {
@@ -381,15 +389,35 @@
 
             let html = '';
             for (const exp of data.expenses) {
-                html += `<tr>
-                    <td>${exp.date}</td>
-                    <td>${esc(exp.name)}</td>
-                    <td>${esc(exp.category)}</td>
-                    <td class="original-amount">${exp.amount.toFixed(2)} ${exp.currency}</td>
-                    <td>${exp.converted_amount.toFixed(2)} ${data.display_currency}</td>
-                    <td class="hide-mobile">${esc(exp.notes)}</td>
-                    <td><button class="btn btn-danger" onclick="deleteExpense(${exp.id})">Del</button></td>
-                </tr>`;
+                if (editingExpenseId === exp.id) {
+                    const curOpts = EXPENSE_CURRENCIES.map(c =>
+                        `<option value="${c}" ${c === exp.currency ? 'selected' : ''}>${c}</option>`
+                    ).join('');
+                    html += `<tr id="expRow_${exp.id}" class="editing-row"
+                        onfocusout="onExpRowFocusOut(event, ${exp.id})"
+                        onkeydown="if(event.key==='Escape'){editingExpenseId=null;loadExpenses();}">
+                        <td><input type="date" id="editDate_${exp.id}" value="${exp.date}" style="width:120px;"></td>
+                        <td><input type="text" id="editName_${exp.id}" value="${esc(exp.name)}"></td>
+                        <td><input type="text" id="editCategory_${exp.id}" list="categoryList" value="${esc(exp.category)}"></td>
+                        <td class="original-amount" style="white-space:nowrap;">
+                            <input type="number" step="0.01" id="editAmount_${exp.id}" value="${exp.amount}" style="width:80px;text-align:right;">
+                            <select id="editCurrency_${exp.id}" style="width:60px;">${curOpts}</select>
+                        </td>
+                        <td style="color:#aaa;">—</td>
+                        <td class="hide-mobile"><input type="text" id="editNotes_${exp.id}" value="${esc(exp.notes || '')}"></td>
+                        <td><button class="btn btn-danger" onclick="event.stopPropagation(); deleteExpense(${exp.id})">Del</button></td>
+                    </tr>`;
+                } else {
+                    html += `<tr class="exp-row-clickable" onclick="startEditExpense(${exp.id})">
+                        <td>${exp.date}</td>
+                        <td>${esc(exp.name)}</td>
+                        <td>${esc(exp.category)}</td>
+                        <td class="original-amount">${exp.amount.toFixed(2)} ${exp.currency}</td>
+                        <td>${exp.converted_amount.toFixed(2)} ${data.display_currency}</td>
+                        <td class="hide-mobile">${esc(exp.notes)}</td>
+                        <td><button class="btn btn-danger" onclick="event.stopPropagation(); deleteExpense(${exp.id})">Del</button></td>
+                    </tr>`;
+                }
             }
             html += `<tr class="total-row">
                 <td colspan="4" style="text-align:right;">Total</td>
@@ -398,10 +426,63 @@
                 <td></td>
             </tr>`;
             tbody.innerHTML = html;
+
+            if (editingExpenseId) {
+                const el = document.getElementById(`editName_${editingExpenseId}`);
+                if (el) el.focus();
+            }
+        }
+
+        function startEditExpense(expId) {
+            editingExpenseId = expId;
+            loadExpenses();
+        }
+
+        function onExpRowFocusOut(e, expId) {
+            if (editingExpenseId !== expId) return;
+            setTimeout(() => {
+                const row = document.getElementById(`expRow_${expId}`);
+                if (!row || row.contains(document.activeElement)) return;
+                saveExpense(expId);
+            }, 0);
+        }
+
+        async function saveExpense(expId) {
+            if (editingExpenseId !== expId) return;
+            editingExpenseId = null;
+
+            const amount = parseFloat(document.getElementById(`editAmount_${expId}`)?.value);
+            const currency = document.getElementById(`editCurrency_${expId}`)?.value || '';
+            const date = document.getElementById(`editDate_${expId}`)?.value || '';
+            const category = (document.getElementById(`editCategory_${expId}`)?.value || '').trim();
+            const name = (document.getElementById(`editName_${expId}`)?.value || '').trim();
+            const notes = (document.getElementById(`editNotes_${expId}`)?.value || '').trim();
+
+            if (!name || isNaN(amount) || amount <= 0 || !currency || !date || !category) {
+                loadExpenses();
+                return;
+            }
+
+            try {
+                const resp = await fetch(`/expenses/api/expenses/${expId}/update/`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+                    body: JSON.stringify({ amount, currency, date, category, name, notes }),
+                });
+                if (!resp.ok) {
+                    const result = await resp.json();
+                    showMessage('Error: ' + JSON.stringify(result.errors || result.error), 'error');
+                }
+            } catch (err) {
+                showMessage('Save failed: ' + err.message, 'error');
+            }
+            loadExpenses();
+            loadStats();
         }
 
         async function deleteExpense(id) {
             if (!confirm('Delete this record?')) return;
+            editingExpenseId = null;
             try {
                 await fetch(`/expenses/api/expenses/${id}/`, {
                     method: 'DELETE',
