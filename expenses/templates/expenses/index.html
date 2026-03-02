@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Expense Tracker</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; color: #333; padding: 20px; max-width: 1200px; margin: 0 auto; }
+        h1 { font-size: 1.5rem; }
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding: 16px 20px; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .currency-selector { display: flex; align-items: center; gap: 8px; }
+        .currency-selector label { font-size: 0.9rem; color: #666; }
+        .currency-selector select { padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9rem; }
+        .section { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 20px; }
+        .section h2 { font-size: 1.1rem; margin-bottom: 16px; color: #444; }
+        .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+        .form-group { display: flex; flex-direction: column; }
+        .form-group label { font-size: 0.8rem; color: #666; margin-bottom: 4px; }
+        .form-group input, .form-group select, .form-group textarea { padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9rem; }
+        .form-group textarea { resize: vertical; min-height: 36px; }
+        .form-actions { display: flex; gap: 10px; margin-top: 12px; align-items: center; }
+        .btn { padding: 8px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem; transition: background 0.2s; }
+        .btn-primary { background: #4a90d9; color: #fff; }
+        .btn-primary:hover { background: #357abd; }
+        .btn-secondary { background: #e8e8e8; color: #555; }
+        .btn-secondary:hover { background: #ddd; }
+        .btn-danger { background: #e74c3c; color: #fff; padding: 4px 10px; font-size: 0.8rem; }
+        .btn-danger:hover { background: #c0392b; }
+        .month-filter { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+        .month-filter input { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9rem; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #eee; }
+        th { background: #fafafa; color: #666; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; }
+        tr:hover { background: #f9f9f9; }
+        .total-row { font-weight: 600; background: #f0f7ff; }
+        .total-row td { border-top: 2px solid #4a90d9; }
+        .charts-container { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .chart-box { position: relative; height: 300px; }
+        .bulk-area { margin-top: 12px; display: none; }
+        .bulk-area textarea { width: 100%; min-height: 120px; font-family: monospace; font-size: 0.85rem; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }
+        .bulk-actions { display: flex; gap: 10px; margin-top: 8px; align-items: center; }
+        .message { padding: 8px 12px; border-radius: 4px; margin-bottom: 12px; font-size: 0.9rem; }
+        .message-success { background: #d4edda; color: #155724; }
+        .message-error { background: #f8d7da; color: #721c24; }
+        .original-amount { color: #888; font-size: 0.85rem; }
+        @media (max-width: 768px) {
+            .form-grid { grid-template-columns: 1fr 1fr; }
+            .charts-container { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Expense Tracker</h1>
+        <div class="currency-selector">
+            <label>Display Currency:</label>
+            <select id="displayCurrency" onchange="handleCurrencyChange(this.value)">
+                <option value="CNY">CNY</option>
+                <option value="HKD">HKD</option>
+                <option value="USD">USD</option>
+                <option value="SGD">SGD</option>
+            </select>
+        </div>
+    </header>
+
+    <div id="messageArea"></div>
+
+    <!-- Add Expense Form -->
+    <div class="section">
+        <h2>Add Expense</h2>
+        <form id="expenseForm" onsubmit="handleFormSubmit(event)">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Amount *</label>
+                    <input type="number" id="amount" step="0.01" min="0.01" required>
+                </div>
+                <div class="form-group">
+                    <label>Currency *</label>
+                    <select id="currency">
+                        <option value="CNY">CNY</option>
+                        <option value="HKD">HKD</option>
+                        <option value="USD">USD</option>
+                        <option value="SGD">SGD</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Date *</label>
+                    <input type="date" id="date" required>
+                </div>
+                <div class="form-group">
+                    <label>Category *</label>
+                    <input type="text" id="category" list="categoryList" required placeholder="Type or select">
+                    <datalist id="categoryList"></datalist>
+                </div>
+                <div class="form-group">
+                    <label>Name *</label>
+                    <input type="text" id="name" required>
+                </div>
+                <div class="form-group">
+                    <label>Notes</label>
+                    <input type="text" id="notes">
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Add</button>
+                <button type="button" class="btn btn-secondary" onclick="toggleBulkArea()">Bulk Import JSON</button>
+            </div>
+        </form>
+
+        <div class="bulk-area" id="bulkArea">
+            <textarea id="bulkJson" placeholder='[{"amount": 50, "currency": "USD", "date": "2026-03-01", "category": "Food", "name": "Lunch", "notes": ""}]'></textarea>
+            <div class="bulk-actions">
+                <button class="btn btn-primary" onclick="handleBulkUpload()">Submit Bulk Import</button>
+                <label class="btn btn-secondary" style="cursor:pointer;">
+                    Upload JSON File
+                    <input type="file" accept=".json" onchange="handleFileUpload(event)" style="display:none;">
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <!-- Expense Table -->
+    <div class="section">
+        <h2>Expenses</h2>
+        <div class="month-filter">
+            <label>Month:</label>
+            <input type="month" id="monthFilter" onchange="handleMonthChange(this.value)">
+        </div>
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Name</th>
+                        <th>Category</th>
+                        <th>Original</th>
+                        <th>Converted</th>
+                        <th>Notes</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="expenseTableBody">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="section">
+        <h2>Monthly Statistics</h2>
+        <div class="charts-container">
+            <div class="chart-box">
+                <canvas id="barChart"></canvas>
+            </div>
+            <div class="chart-box">
+                <canvas id="doughnutChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let displayCurrency = localStorage.getItem('displayCurrency') || 'CNY';
+        let selectedMonth = new Date().toISOString().slice(0, 7);
+        let barChart = null;
+        let doughnutChart = null;
+
+        const COLORS = [
+            '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
+            '#FF9F40', '#C9CBCF', '#7C8CF8', '#E7598B', '#3DDC84',
+        ];
+
+        function getColor(idx) {
+            return COLORS[idx % COLORS.length];
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('displayCurrency').value = displayCurrency;
+            document.getElementById('date').value = new Date().toISOString().slice(0, 10);
+            document.getElementById('monthFilter').value = selectedMonth;
+            loadCategories();
+            loadExpenses();
+            loadStats();
+        });
+
+        function showMessage(text, type) {
+            const area = document.getElementById('messageArea');
+            area.innerHTML = `<div class="message message-${type}">${text}</div>`;
+            setTimeout(() => { area.innerHTML = ''; }, 4000);
+        }
+
+        function handleCurrencyChange(val) {
+            displayCurrency = val;
+            localStorage.setItem('displayCurrency', val);
+            loadExpenses();
+            loadStats();
+        }
+
+        function handleMonthChange(val) {
+            selectedMonth = val;
+            loadExpenses();
+            loadStats();
+        }
+
+        function toggleBulkArea() {
+            const area = document.getElementById('bulkArea');
+            area.style.display = area.style.display === 'none' ? 'block' : 'none';
+        }
+
+        async function loadCategories() {
+            try {
+                const resp = await fetch('/api/categories/');
+                const data = await resp.json();
+                const datalist = document.getElementById('categoryList');
+                datalist.innerHTML = data.categories.map(c => `<option value="${esc(c)}">`).join('');
+            } catch (err) {
+                console.error('Failed to load categories:', err);
+            }
+        }
+
+        async function handleFormSubmit(e) {
+            e.preventDefault();
+            const data = {
+                amount: parseFloat(document.getElementById('amount').value),
+                currency: document.getElementById('currency').value,
+                date: document.getElementById('date').value,
+                category: document.getElementById('category').value.trim(),
+                name: document.getElementById('name').value.trim(),
+                notes: (document.getElementById('notes').value || '').trim(),
+            };
+
+            try {
+                const resp = await fetch('/api/expenses/add/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+                    body: JSON.stringify(data),
+                });
+                const result = await resp.json();
+                if (!resp.ok) {
+                    showMessage('Error: ' + (result.errors || [result.error]).join(', '), 'error');
+                    return;
+                }
+                showMessage('Expense added successfully!', 'success');
+                document.getElementById('expenseForm').reset();
+                document.getElementById('date').value = new Date().toISOString().slice(0, 10);
+                loadCategories();
+                loadExpenses();
+                loadStats();
+            } catch (err) {
+                showMessage('Network error: ' + err.message, 'error');
+            }
+        }
+
+        async function handleBulkUpload() {
+            const text = document.getElementById('bulkJson').value.trim();
+            if (!text) { showMessage('Please enter JSON data', 'error'); return; }
+            try {
+                const data = JSON.parse(text);
+                await doBulkUpload(data);
+            } catch (err) {
+                showMessage('Invalid JSON: ' + err.message, 'error');
+            }
+        }
+
+        function handleFileUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async (ev) => {
+                try {
+                    const data = JSON.parse(ev.target.result);
+                    await doBulkUpload(data);
+                } catch (err) {
+                    showMessage('File parse error: ' + err.message, 'error');
+                }
+            };
+            reader.readAsText(file);
+            e.target.value = '';
+        }
+
+        async function doBulkUpload(data) {
+            if (!Array.isArray(data)) { showMessage('JSON must be an array', 'error'); return; }
+            try {
+                const resp = await fetch('/api/expenses/bulk/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+                    body: JSON.stringify(data),
+                });
+                const result = await resp.json();
+                if (!resp.ok) {
+                    showMessage('Error: ' + (result.error || JSON.stringify(result.errors)), 'error');
+                    return;
+                }
+                let msg = `Successfully imported ${result.created} records`;
+                if (result.errors.length > 0) {
+                    msg += `, ${result.errors.length} failed`;
+                }
+                showMessage(msg, result.errors.length > 0 ? 'error' : 'success');
+                document.getElementById('bulkJson').value = '';
+                loadCategories();
+                loadExpenses();
+                loadStats();
+            } catch (err) {
+                showMessage('Network error: ' + err.message, 'error');
+            }
+        }
+
+        async function loadExpenses() {
+            try {
+                const resp = await fetch(`/api/expenses/?month=${selectedMonth}&currency=${displayCurrency}`);
+                const data = await resp.json();
+                renderExpenseTable(data);
+            } catch (err) {
+                console.error('Failed to load expenses:', err);
+            }
+        }
+
+        function renderExpenseTable(data) {
+            const tbody = document.getElementById('expenseTableBody');
+            if (data.expenses.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;padding:20px;">No records</td></tr>';
+                return;
+            }
+
+            let html = '';
+            for (const exp of data.expenses) {
+                html += `<tr>
+                    <td>${exp.date}</td>
+                    <td>${esc(exp.name)}</td>
+                    <td>${esc(exp.category)}</td>
+                    <td class="original-amount">${exp.amount.toFixed(2)} ${exp.currency}</td>
+                    <td>${exp.converted_amount.toFixed(2)} ${data.display_currency}</td>
+                    <td>${esc(exp.notes)}</td>
+                    <td><button class="btn btn-danger" onclick="deleteExpense(${exp.id})">Delete</button></td>
+                </tr>`;
+            }
+            html += `<tr class="total-row">
+                <td colspan="4" style="text-align:right;">Total</td>
+                <td>${data.total_converted.toFixed(2)} ${data.display_currency}</td>
+                <td colspan="2"></td>
+            </tr>`;
+            tbody.innerHTML = html;
+        }
+
+        async function deleteExpense(id) {
+            if (!confirm('Delete this record?')) return;
+            try {
+                await fetch(`/api/expenses/${id}/`, {
+                    method: 'DELETE',
+                    headers: { 'X-CSRFToken': getCsrf() },
+                });
+                loadExpenses();
+                loadStats();
+            } catch (err) {
+                showMessage('Delete failed: ' + err.message, 'error');
+            }
+        }
+
+        async function loadStats() {
+            const year = selectedMonth.slice(0, 4);
+            try {
+                const resp = await fetch(`/api/stats/monthly/?currency=${displayCurrency}&year=${year}`);
+                const data = await resp.json();
+                renderCharts(data);
+            } catch (err) {
+                console.error('Failed to load stats:', err);
+            }
+        }
+
+        function renderCharts(data) {
+            const allMonths = [];
+            for (let m = 1; m <= 12; m++) {
+                allMonths.push(`${data.year}-${String(m).padStart(2, '0')}`);
+            }
+
+            const monthLabels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            const totals = allMonths.map(m => (data.months[m] ? data.months[m].total : 0));
+
+            if (barChart) barChart.destroy();
+            barChart = new Chart(document.getElementById('barChart'), {
+                type: 'bar',
+                data: {
+                    labels: monthLabels,
+                    datasets: [{
+                        label: `Monthly Expenses (${data.currency})`,
+                        data: totals,
+                        backgroundColor: '#4a90d9',
+                        borderRadius: 4,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true } },
+                }
+            });
+
+            const monthData = data.months[selectedMonth];
+            const categories = monthData ? Object.keys(monthData.by_category) : [];
+            const catValues = categories.map(c => monthData.by_category[c]);
+            const catColors = categories.map((_, i) => getColor(i));
+
+            if (doughnutChart) doughnutChart.destroy();
+            doughnutChart = new Chart(document.getElementById('doughnutChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: categories.length > 0 ? categories : ['No data'],
+                    datasets: [{
+                        data: categories.length > 0 ? catValues : [1],
+                        backgroundColor: categories.length > 0 ? catColors : ['#e0e0e0'],
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `${selectedMonth} Category Breakdown (${data.currency})`,
+                        },
+                    }
+                }
+            });
+        }
+
+        function getCsrf() {
+            const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
+            return cookie ? cookie.split('=')[1] : '';
+        }
+
+        function esc(str) {
+            const d = document.createElement('div');
+            d.textContent = str || '';
+            return d.innerHTML;
+        }
+    </script>
+</body>
+</html>
