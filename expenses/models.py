@@ -1,30 +1,16 @@
 from django.db import models
 
-
-class ExchangeRate(models.Model):
-    rate_date = models.DateField(unique=True)
-    fetched_at = models.DateTimeField(auto_now_add=True)
-    cny = models.FloatField()
-    hkd = models.FloatField()
-    sgd = models.FloatField()
-
-    class Meta:
-        ordering = ['-rate_date']
-
-    def __str__(self):
-        return f"Rates for {self.rate_date}"
+EXPENSE_CURRENCY_CHOICES = [
+    ('CNY', 'CNY'),
+    ('HKD', 'HKD'),
+    ('USD', 'USD'),
+    ('SGD', 'SGD'),
+]
 
 
 class Expense(models.Model):
-    CURRENCY_CHOICES = [
-        ('CNY', 'CNY'),
-        ('HKD', 'HKD'),
-        ('USD', 'USD'),
-        ('SGD', 'SGD'),
-    ]
-
     amount = models.FloatField()
-    currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES)
+    currency = models.CharField(max_length=3, choices=EXPENSE_CURRENCY_CHOICES)
     date = models.DateField()
     category = models.CharField(max_length=50)
     name = models.CharField(max_length=100)
