@@ -4,7 +4,7 @@ services:
     ports:
       - "8051:8000"
     volumes:
-      - ./data:/app/data
+      - ./db.sqlite3:/app/data/db.sqlite3
     environment:
       - DEBUG=false
       - DATABASE_PATH=/app/data/db.sqlite3
