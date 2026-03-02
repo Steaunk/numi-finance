@@ -1,5 +1,5 @@
 class AppConstants {
-  static const List<String> currencies = ['USD', 'CNY', 'HKD', 'SGD', 'JPY'];
+  static const List<String> currencies = ['USD', 'CNY', 'HKD', 'SGD'];
   static const String defaultCurrency = 'SGD';
 
   static const List<String> travelCategories = [
