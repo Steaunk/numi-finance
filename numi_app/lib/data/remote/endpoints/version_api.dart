@@ -6,14 +6,13 @@ import 'package:dio/dio.dart';
 class VersionApi {
   final Dio _dio;
 
-  VersionApi(String githubToken)
+  VersionApi()
       : _dio = Dio(
           BaseOptions(
             baseUrl: 'https://api.github.com',
             connectTimeout: const Duration(seconds: 10),
             receiveTimeout: const Duration(seconds: 10),
             headers: {
-              'Authorization': 'Bearer $githubToken',
               'Accept': 'application/vnd.github+json',
               'X-GitHub-Api-Version': '2022-11-28',
             },

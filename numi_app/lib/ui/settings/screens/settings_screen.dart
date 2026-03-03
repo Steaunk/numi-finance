@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:dio/dio.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../../config/constants.dart';
 import '../../../providers/providers.dart';
 import '../../../data/remote/api_client.dart';
@@ -15,11 +18,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late final TextEditingController _urlController;
   late final TextEditingController _userController;
   late final TextEditingController _passController;
-  late final TextEditingController _tokenController;
   bool _testing = false;
   String? _testResult;
   bool _obscurePass = true;
-  bool _obscureToken = true;
+
+  // Update check state
+  bool _updateChecking = false;
+  String? _updateStatus; // null = not checked, 'none' = up to date, 'available' = update ready
+  String? _updateAssetUrl;
 
   @override
   void initState() {
@@ -27,7 +33,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _urlController = TextEditingController(text: ref.read(serverUrlProvider));
     _userController = TextEditingController(text: ref.read(nginxUsernameProvider));
     _passController = TextEditingController(text: ref.read(nginxPasswordProvider));
-    _tokenController = TextEditingController(text: ref.read(githubTokenProvider));
   }
 
   @override
@@ -35,7 +40,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _urlController.dispose();
     _userController.dispose();
     _passController.dispose();
-    _tokenController.dispose();
     super.dispose();
   }
 
@@ -129,37 +133,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ],
           ),
           const SizedBox(height: 24),
-          // GitHub Token (for update checks)
-          Text('Auto Update',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _tokenController,
-            obscureText: _obscureToken,
-            decoration: InputDecoration(
-              labelText: 'GitHub Token',
-              hintText: 'github_pat_...',
-              helperText: 'Fine-grained PAT with Contents: Read',
-              suffixIcon: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    icon: Icon(_obscureToken
-                        ? Icons.visibility_off
-                        : Icons.visibility),
-                    onPressed: () =>
-                        setState(() => _obscureToken = !_obscureToken),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.save),
-                    onPressed: _saveToken,
-                  ),
-                ],
-              ),
-            ),
-            onSubmitted: (_) => _saveToken(),
-          ),
-          const SizedBox(height: 24),
           // Display Currency
           Text('Display Currency',
               style: Theme.of(context).textTheme.titleMedium),
@@ -233,6 +206,50 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
           ),
+          const SizedBox(height: 24),
+          // App Updates
+          Text('App Updates', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _updateChecking ? null : _checkForUpdates,
+                        icon: _updateChecking
+                            ? const SizedBox(
+                                width: 16, height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Icon(Icons.system_update, size: 18),
+                        label: const Text('Check for Updates'),
+                      ),
+                      const SizedBox(width: 12),
+                      if (_updateStatus == 'none')
+                        const Row(children: [
+                          Icon(Icons.check_circle, color: Colors.green, size: 18),
+                          SizedBox(width: 4),
+                          Text('Up to date'),
+                        ]),
+                    ],
+                  ),
+                  if (_updateStatus == 'available') ...[
+                    const SizedBox(height: 12),
+                    const Text('A new version of Numi is available!'),
+                    const SizedBox(height: 8),
+                    FilledButton.icon(
+                      onPressed: () => _downloadAndInstall(_updateAssetUrl!),
+                      icon: const Icon(Icons.download),
+                      label: const Text('Download & Install'),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -244,15 +261,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     ref.read(sharedPrefsProvider).setString('server_url', url);
     ScaffoldMessenger.of(context)
         .showSnackBar(const SnackBar(content: Text('Server URL saved')));
-  }
-
-  void _saveToken() {
-    final token = _tokenController.text.trim();
-    ref.read(githubTokenProvider.notifier).state = token;
-    ref.read(sharedPrefsProvider).setString('github_token', token);
-    ref.invalidate(updateCheckProvider);
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('GitHub token saved')));
   }
 
   void _saveCredentials() {
@@ -290,6 +298,97 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       setState(() => _testResult = 'Error: $e');
     } finally {
       setState(() => _testing = false);
+    }
+  }
+
+  Future<void> _checkForUpdates() async {
+    setState(() {
+      _updateChecking = true;
+      _updateStatus = null;
+      _updateAssetUrl = null;
+    });
+    ref.invalidate(updateCheckProvider);
+    try {
+      final result = await ref.read(updateCheckProvider.future);
+      if (!mounted) return;
+      if (result != null) {
+        setState(() {
+          _updateStatus = 'available';
+          _updateAssetUrl = result.assetApiUrl;
+        });
+      } else {
+        setState(() => _updateStatus = 'none');
+      }
+    } catch (_) {
+      if (mounted) setState(() => _updateStatus = 'none');
+    } finally {
+      if (mounted) setState(() => _updateChecking = false);
+    }
+  }
+
+  Future<void> _downloadAndInstall(String assetApiUrl) async {
+    final progressNotifier = ValueNotifier<double>(0);
+    if (!mounted) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('Downloading...'),
+        content: ValueListenableBuilder<double>(
+          valueListenable: progressNotifier,
+          builder: (_, value, __) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              LinearProgressIndicator(value: value > 0 ? value : null),
+              if (value > 0) ...[
+                const SizedBox(height: 8),
+                Text('${(value * 100).toInt()}%'),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+
+    try {
+      final dir = await getTemporaryDirectory();
+      final savePath = '${dir.path}/numi_update.apk';
+
+      // Step 1: Follow GitHub's redirect to CDN URL (public repo, no auth needed).
+      final redirectResp = await Dio(BaseOptions(
+        headers: {'Accept': 'application/octet-stream'},
+        followRedirects: false,
+        validateStatus: (status) => status != null && status < 400,
+      )).get(assetApiUrl);
+
+      final downloadUrl = redirectResp.headers.value('location');
+      if (downloadUrl == null) {
+        throw Exception('GitHub did not return a download URL');
+      }
+
+      // Step 2: Download from CDN (pre-signed URL, no auth required)
+      await Dio().download(
+        downloadUrl,
+        savePath,
+        onReceiveProgress: (received, total) {
+          if (total > 0) progressNotifier.value = received / total;
+        },
+      );
+
+      progressNotifier.dispose();
+      if (mounted) {
+        Navigator.pop(context);
+        await OpenFilex.open(savePath);
+      }
+    } catch (e) {
+      progressNotifier.dispose();
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Update failed: $e')),
+        );
+      }
     }
   }
 }

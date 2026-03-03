@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:cookie_jar/cookie_jar.dart';
@@ -6,6 +7,7 @@ import 'package:cookie_jar/cookie_jar.dart';
 class ApiClient {
   final String baseUrl;
   late final Dio _dio;
+  final CookieJar _cookieJar = CookieJar();
 
   ApiClient(this.baseUrl, {String? username, String? password}) {
     final headers = <String, dynamic>{'Content-Type': 'application/json'};
@@ -21,7 +23,29 @@ class ApiClient {
         headers: headers,
       ),
     );
-    _dio.interceptors.add(CookieManager(CookieJar()));
+    _dio.interceptors.add(CookieManager(_cookieJar));
+    // Forward Django's csrftoken cookie as X-CSRFToken header on write requests.
+    _dio.interceptors.add(InterceptorsWrapper(
+      onRequest: (options, handler) async {
+        if (options.method != 'GET') {
+          try {
+            final uri = Uri.parse(baseUrl);
+            final cookies = await _cookieJar.loadForRequest(uri);
+            Cookie? csrf;
+            for (final c in cookies) {
+              if (c.name == 'csrftoken') {
+                csrf = c;
+                break;
+              }
+            }
+            if (csrf != null) {
+              options.headers['X-CSRFToken'] = csrf.value;
+            }
+          } catch (_) {}
+        }
+        handler.next(options);
+      },
+    ));
   }
 
   Future<bool> testConnection() async {
