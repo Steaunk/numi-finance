@@ -1,7 +1,11 @@
 import 'package:dio/dio.dart';
 
 /// Checks GitHub Releases for the latest Numi build.
-/// Tag format: "build-NNNN" where NNNN = github.run_number.
+///
+/// Tag formats:
+///   New: "v20260303.1" — date (YYYYMMDD) + daily sequence.
+///        Build number = YYYYMMDD * 100 + seq.
+///   Legacy: "build-N" — plain integer.
 class VersionApi {
   final Dio _dio;
 
@@ -27,19 +31,38 @@ class VersionApi {
       final resp = await _dio.get(
           '/repos/Steaunk/numi-finance/releases/latest');
       final tag = (resp.data['tag_name'] as String?) ?? '';
-      // tag = "build-NNNN"
-      final parts = tag.split('-');
-      if (parts.length != 2) return null;
-      final build = int.tryParse(parts[1]);
-      if (build == null) return null;
+
+      final buildNumber = _parseBuildNumber(tag);
+      if (buildNumber == null) return null;
+
       final htmlUrl = (resp.data['html_url'] as String?) ?? '';
       final assets = resp.data['assets'] as List?;
       final assetApiUrl = (assets != null && assets.isNotEmpty)
           ? (assets[0]['url'] as String?) ?? ''
           : '';
-      return (buildNumber: build, htmlUrl: htmlUrl, assetApiUrl: assetApiUrl);
+      return (buildNumber: buildNumber, htmlUrl: htmlUrl, assetApiUrl: assetApiUrl);
     } catch (_) {
       return null;
     }
+  }
+
+  /// Parse tag into a monotonically increasing build number.
+  static int? _parseBuildNumber(String tag) {
+    // New format: v20260303.1
+    if (tag.startsWith('v')) {
+      final stripped = tag.substring(1);
+      final dotIndex = stripped.indexOf('.');
+      if (dotIndex < 0) return null;
+      final datePart = stripped.substring(0, dotIndex);
+      final seq = int.tryParse(stripped.substring(dotIndex + 1));
+      final dateNum = int.tryParse(datePart);
+      if (dateNum == null || seq == null || datePart.length != 8) return null;
+      return dateNum * 100 + seq;
+    }
+    // Legacy format: build-N
+    if (tag.startsWith('build-')) {
+      return int.tryParse(tag.substring(6));
+    }
+    return null;
   }
 }

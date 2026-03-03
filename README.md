@@ -104,4 +104,4 @@ flutter build apk --release
 
 ## CI/CD
 
-GitHub Actions automatically builds the Flutter APK on every push to `main` that changes `numi_app/`. Each build creates a GitHub Release (`build-N`) with the APK attached. The mobile app checks for updates on launch via the GitHub Releases API.
+GitHub Actions builds the Flutter APK on every push to `main` that changes `numi_app/`. Each build creates a GitHub Release tagged `v20260303.1` (date + daily sequence) with the APK attached. The mobile app checks for updates on launch via the GitHub Releases API.
