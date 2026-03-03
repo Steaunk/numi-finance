@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'package:drift/drift.dart';
 import '../local/database.dart';
 import '../remote/endpoints/expense_api.dart';
@@ -10,6 +11,7 @@ import '../repositories/asset_repository.dart';
 import '../repositories/rate_repository.dart';
 
 class SyncService {
+  static const _maxRetries = 5;
   final AppDatabase _db;
   final ExpenseApi _expenseApi;
   final TravelApi _travelApi;
@@ -54,6 +56,15 @@ class SyncService {
   Future<void> _processSyncQueue() async {
     final pending = await _db.syncQueueDao.getPending();
     for (final op in pending) {
+      if (op.retryCount >= _maxRetries) {
+        developer.log(
+          'Sync op ${op.id} (${op.entityType}/${op.operation}) exceeded '
+          '$_maxRetries retries, removing',
+          name: 'SyncService',
+        );
+        await _db.syncQueueDao.removeById(op.id);
+        continue;
+      }
       try {
         bool handled = false;
         switch (op.entityType) {
@@ -69,7 +80,15 @@ class SyncService {
         if (handled) {
           await _db.syncQueueDao.removeById(op.id);
         }
-      } catch (_) {}
+      } catch (e, st) {
+        developer.log(
+          'Sync op ${op.id} (${op.entityType}/${op.operation}) failed: $e',
+          name: 'SyncService',
+          error: e,
+          stackTrace: st,
+        );
+        await _db.syncQueueDao.incrementRetry(op.id);
+      }
     }
   }
 

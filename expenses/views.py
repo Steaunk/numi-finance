@@ -6,7 +6,7 @@ from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
-from core.services import get_all_rates
+from core.services import FALLBACK_RATES, get_all_rates
 
 from .models import Expense, EXPENSE_CATEGORIES, TRAVEL_CATEGORIES, Trip, TravelExpense
 
@@ -22,9 +22,9 @@ def _compute_amounts(amount, currency, rates):
         amount_usd = amount / rate if rate else 0
     return {
         'amount_usd': round(amount_usd, 2),
-        'amount_cny': round(amount_usd * rates.get('cny', 7.25), 2),
-        'amount_hkd': round(amount_usd * rates.get('hkd', 7.82), 2),
-        'amount_sgd': round(amount_usd * rates.get('sgd', 1.34), 2),
+        'amount_cny': round(amount_usd * rates.get('cny', FALLBACK_RATES['cny']), 2),
+        'amount_hkd': round(amount_usd * rates.get('hkd', FALLBACK_RATES['hkd']), 2),
+        'amount_sgd': round(amount_usd * rates.get('sgd', FALLBACK_RATES['sgd']), 2),
     }
 
 
@@ -197,38 +197,6 @@ def bulk_add_expenses(request):
         created += 1
 
     return JsonResponse({'created': created, 'errors': errors}, status=201)
-
-
-@require_http_methods(["PUT"])
-def update_expense(request, expense_id):
-    try:
-        expense = Expense.objects.get(id=expense_id)
-    except Expense.DoesNotExist:
-        return JsonResponse({'error': 'Expense not found'}, status=404)
-
-    try:
-        data = json.loads(request.body)
-    except json.JSONDecodeError:
-        return JsonResponse({'error': 'Invalid JSON'}, status=400)
-
-    validated, errors = _validate_expense(data)
-    if errors:
-        return JsonResponse({'errors': errors}, status=400)
-
-    rates = get_all_rates()
-    amounts = _compute_amounts(validated['amount'], validated['currency'], rates)
-
-    expense.amount = validated['amount']
-    expense.currency = validated['currency']
-    expense.date = validated['date']
-    expense.category = validated['category']
-    expense.name = validated['name']
-    expense.notes = validated['notes']
-    for k, v in amounts.items():
-        setattr(expense, k, v)
-    expense.save()
-
-    return JsonResponse({'id': expense.id, 'name': expense.name})
 
 
 @require_http_methods(["PUT", "DELETE"])
@@ -414,12 +382,12 @@ def update_trip(request, trip_id):
         try:
             trip.start_date = datetime.strptime(data['start_date'], '%Y-%m-%d').date()
         except (ValueError, TypeError):
-            return JsonResponse({'error': 'Invalid start_date'}, status=400)
+            return JsonResponse({'errors': ['start_date must be YYYY-MM-DD']}, status=400)
     if 'end_date' in data:
         try:
             trip.end_date = datetime.strptime(data['end_date'], '%Y-%m-%d').date()
         except (ValueError, TypeError):
-            return JsonResponse({'error': 'Invalid end_date'}, status=400)
+            return JsonResponse({'errors': ['end_date must be YYYY-MM-DD']}, status=400)
     if 'notes' in data:
         trip.notes = data['notes'].strip()
 

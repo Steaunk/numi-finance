@@ -1,8 +1,11 @@
+import logging
 from datetime import date
 
 import requests
 
 from .models import ExchangeRate
+
+logger = logging.getLogger(__name__)
 
 API_URL_TEMPLATE = (
     "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@{date}/v1/currencies/usd.json"
@@ -34,7 +37,9 @@ def _fetch_rates_from_api(rate_date=None):
             data = resp.json()
             return data.get('usd', {})
         except Exception:
+            logger.debug("Rate fetch from %s failed", u, exc_info=True)
             continue
+    logger.warning("All rate API endpoints failed, will use fallback")
     return None
 
 
@@ -73,7 +78,7 @@ def get_rates(rate_date=None, currencies=None):
                     },
                 )
             except Exception:
-                pass
+                logger.warning("Failed to cache exchange rates", exc_info=True)
 
     if currencies:
         keys = {c.lower() for c in currencies}
@@ -85,12 +90,7 @@ def get_rates(rate_date=None, currencies=None):
 def get_latest_rates():
     """Legacy helper: return today's rates for the 4 core currencies."""
     rates = get_rates()
-    return {
-        'cny': rates.get('cny', 7.25),
-        'hkd': rates.get('hkd', 7.82),
-        'sgd': rates.get('sgd', 1.34),
-        'jpy': rates.get('jpy', 150.0),
-    }
+    return {k: rates.get(k, v) for k, v in FALLBACK_RATES.items()}
 
 
 def get_all_rates():
