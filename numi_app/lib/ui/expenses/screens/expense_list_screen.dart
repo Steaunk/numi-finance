@@ -137,15 +137,12 @@ class ExpenseListScreen extends ConsumerWidget {
                             backgroundColor: Theme.of(context)
                                 .colorScheme
                                 .primaryContainer,
-                            child: Text(
-                              expense.category.isNotEmpty
-                                  ? expense.category[0].toUpperCase()
-                                  : '?',
-                              style: TextStyle(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onPrimaryContainer,
-                              ),
+                            child: Icon(
+                              _categoryIcon(expense.category),
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onPrimaryContainer,
+                              size: 20,
                             ),
                           ),
                           title: Text(expense.name),
@@ -266,5 +263,32 @@ class _TotalCard extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+IconData _categoryIcon(String category) {
+  switch (category) {
+    case 'Bills, Utilities & Taxes':
+      return Icons.receipt_long;
+    case 'Education':
+      return Icons.school;
+    case 'Entertainment':
+      return Icons.movie;
+    case 'Food & Drinks':
+      return Icons.restaurant;
+    case 'Groceries':
+      return Icons.shopping_cart;
+    case 'Health & Fitness':
+      return Icons.fitness_center;
+    case 'Housing':
+      return Icons.home;
+    case 'Others':
+      return Icons.more_horiz;
+    case 'Transport':
+      return Icons.directions_bus;
+    case 'Travel':
+      return Icons.flight;
+    default:
+      return Icons.attach_money;
   }
 }
