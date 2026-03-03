@@ -4,10 +4,14 @@ services:
     ports:
       - "8051:8000"
     volumes:
-      - ./db.sqlite3:/app/data/db.sqlite3
+      - ./data:/app/data
     environment:
       - DEBUG=false
       - DATABASE_PATH=/app/data/db.sqlite3
+      - QINIU_ACCESS_KEY=${QINIU_ACCESS_KEY}
+      - QINIU_SECRET_KEY=${QINIU_SECRET_KEY}
+      - QINIU_BUCKET=${QINIU_BUCKET}
+      - QINIU_ENDPOINT=${QINIU_ENDPOINT:-s3-cn-east-1.qiniucs.com}
     networks:
       - shared_net
 
