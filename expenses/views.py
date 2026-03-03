@@ -62,6 +62,10 @@ def list_expenses(request):
             'category': exp.category,
             'name': exp.name,
             'notes': exp.notes,
+            'amount_usd': exp.amount_usd,
+            'amount_cny': exp.amount_cny,
+            'amount_hkd': exp.amount_hkd,
+            'amount_sgd': exp.amount_sgd,
             'converted_amount': converted,
             'display_currency': currency,
             'amount_usd': exp.amount_usd,
@@ -231,15 +235,40 @@ def update_expense(request, expense_id):
     return JsonResponse({'id': expense.id, 'name': expense.name})
 
 
-@require_http_methods(["DELETE"])
-def delete_expense(request, expense_id):
+@require_http_methods(["PUT", "DELETE"])
+def expense_detail(request, expense_id):
     try:
         expense = Expense.objects.get(id=expense_id)
     except Expense.DoesNotExist:
         return JsonResponse({'error': 'Expense not found'}, status=404)
 
-    expense.delete()
-    return JsonResponse({'deleted': True})
+    if request.method == 'DELETE':
+        expense.delete()
+        return JsonResponse({'deleted': True})
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    validated, errors = _validate_expense(data)
+    if errors:
+        return JsonResponse({'errors': errors}, status=400)
+
+    rates = get_all_rates()
+    amounts = _compute_amounts(validated['amount'], validated['currency'], rates)
+
+    expense.amount = validated['amount']
+    expense.currency = validated['currency']
+    expense.date = validated['date']
+    expense.category = validated['category']
+    expense.name = validated['name']
+    expense.notes = validated['notes']
+    for k, v in amounts.items():
+        setattr(expense, k, v)
+    expense.save()
+
+    return JsonResponse({'id': expense.id, 'name': expense.name})
 
 
 @require_GET
@@ -442,6 +471,10 @@ def list_trip_expenses(request, trip_id):
             'category': exp.category,
             'name': exp.name,
             'notes': exp.notes,
+            'amount_usd': exp.amount_usd,
+            'amount_cny': exp.amount_cny,
+            'amount_hkd': exp.amount_hkd,
+            'amount_sgd': exp.amount_sgd,
             'converted_amount': converted,
             'amount_usd': exp.amount_usd,
             'amount_cny': exp.amount_cny,
