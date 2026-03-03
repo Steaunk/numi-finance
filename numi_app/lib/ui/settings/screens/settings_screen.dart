@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../config/constants.dart';
 import '../../../providers/providers.dart';
 import '../../../data/remote/api_client.dart';
+import '../../../data/sync/sync_logger.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -261,8 +262,80 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
           ),
+          const SizedBox(height: 24),
+          // Sync Logs
+          Text('Sync Logs', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _showSyncLogs,
+            icon: const Icon(Icons.article_outlined, size: 18),
+            label: const Text('View Sync Logs'),
+          ),
         ],
       ),
+    );
+  }
+
+  void _showSyncLogs() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        final logs = SyncLogger.instance.entries.reversed.toList();
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.7,
+          minChildSize: 0.3,
+          maxChildSize: 0.95,
+          builder: (_, scrollController) => Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
+                child: Row(
+                  children: [
+                    const Text('Sync Logs',
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold)),
+                    const Spacer(),
+                    TextButton(
+                      onPressed: () {
+                        SyncLogger.instance.clear();
+                        Navigator.pop(ctx);
+                      },
+                      child: const Text('Clear'),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(),
+              Expanded(
+                child: logs.isEmpty
+                    ? const Center(child: Text('No logs yet'))
+                    : ListView.builder(
+                        controller: scrollController,
+                        itemCount: logs.length,
+                        itemBuilder: (_, i) {
+                          final entry = logs[i];
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 4),
+                            child: Text(
+                              entry.toString(),
+                              style: const TextStyle(
+                                  fontSize: 12, fontFamily: 'monospace'),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

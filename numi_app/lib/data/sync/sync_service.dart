@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'dart:developer' as developer;
 import 'package:drift/drift.dart';
+import 'sync_logger.dart';
 import '../local/database.dart';
 import '../remote/endpoints/expense_api.dart';
 import '../remote/endpoints/travel_api.dart';
@@ -62,7 +62,7 @@ class SyncService {
         continue;
       }
       if (op.retryCount >= _maxRetries) {
-        developer.log(
+        SyncLogger.instance.log(
           'Sync op ${op.id} (${op.entityType}/${op.operation}) exceeded '
           '$_maxRetries retries, removing',
           name: 'SyncService',
@@ -85,7 +85,7 @@ class SyncService {
         if (handled) {
           await _db.syncQueueDao.removeById(op.id);
         } else {
-          developer.log(
+          SyncLogger.instance.log(
             'Sync op ${op.id} (${op.entityType}/${op.operation}) '
             'precondition not met, retry ${op.retryCount + 1}/$_maxRetries',
             name: 'SyncService',
@@ -93,7 +93,7 @@ class SyncService {
           await _db.syncQueueDao.incrementRetry(op.id);
         }
       } catch (e, st) {
-        developer.log(
+        SyncLogger.instance.log(
           'Sync op ${op.id} (${op.entityType}/${op.operation}) failed: $e',
           name: 'SyncService',
           error: e,
