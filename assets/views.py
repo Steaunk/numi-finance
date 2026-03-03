@@ -7,7 +7,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
 from core.models import VALID_CURRENCIES
-from core.services import convert_amount, get_all_rates, get_latest_rates
+from core.services import FALLBACK_RATES, convert_amount, get_all_rates, get_latest_rates
 
 from .models import Account, BalanceSnapshot
 
@@ -21,9 +21,9 @@ def _compute_snapshot_amounts(balance, currency, rates):
         amount_usd = balance / rate if rate else 0
     return {
         'amount_usd': round(amount_usd, 2),
-        'amount_cny': round(amount_usd * rates.get('cny', 7.25), 2),
-        'amount_hkd': round(amount_usd * rates.get('hkd', 7.82), 2),
-        'amount_sgd': round(amount_usd * rates.get('sgd', 1.34), 2),
+        'amount_cny': round(amount_usd * rates.get('cny', FALLBACK_RATES['cny']), 2),
+        'amount_hkd': round(amount_usd * rates.get('hkd', FALLBACK_RATES['hkd']), 2),
+        'amount_sgd': round(amount_usd * rates.get('sgd', FALLBACK_RATES['sgd']), 2),
     }
 
 
@@ -136,7 +136,7 @@ def update_account(request, account_id):
         try:
             new_balance = float(new_balance)
         except (TypeError, ValueError):
-            return JsonResponse({'error': 'balance must be a number'}, status=400)
+            return JsonResponse({'errors': ['balance must be a number']}, status=400)
 
         old_balance = account.balance
         change = new_balance - old_balance
@@ -217,41 +217,37 @@ def trend(request):
         currency = 'SGD'
 
     amount_field = f'amount_{currency.lower()}'
-    snapshots = BalanceSnapshot.objects.select_related('account').order_by('snapshot_date')
-    accounts = Account.objects.all()
+    included_ids = set(
+        Account.objects.filter(include_in_total=True).values_list('id', flat=True)
+    )
+    snapshots = list(
+        BalanceSnapshot.objects
+        .filter(account_id__in=included_ids)
+        .order_by('snapshot_date', 'created_at')
+    )
 
-    date_set = set()
-    for s in snapshots:
-        date_set.add(s.snapshot_date)
-    dates = sorted(date_set)
-
-    if not dates:
+    if not snapshots:
         return JsonResponse({'currency': currency, 'dates': [], 'values': []})
 
-    trend_data = []
-    for d in dates:
-        total = 0.0
-        for acc in accounts:
-            if not acc.include_in_total:
-                continue
-            snap = (
-                BalanceSnapshot.objects
-                .filter(account=acc, snapshot_date__lte=d)
-                .order_by('-snapshot_date', '-created_at')
-                .first()
-            )
-            if snap:
-                total += getattr(snap, amount_field)
+    # Build latest-balance-per-account at each date (2 queries total, not N*M)
+    dates = sorted({s.snapshot_date for s in snapshots})
+    latest_by_account = {}  # account_id -> amount in target currency
+    trend_dates = []
+    trend_values = []
 
-        trend_data.append({
-            'date': d.isoformat(),
-            'total': round(total, 2),
-        })
+    snap_idx = 0
+    for d in dates:
+        while snap_idx < len(snapshots) and snapshots[snap_idx].snapshot_date <= d:
+            s = snapshots[snap_idx]
+            latest_by_account[s.account_id] = getattr(s, amount_field)
+            snap_idx += 1
+        trend_dates.append(d.isoformat())
+        trend_values.append(round(sum(latest_by_account.values()), 2))
 
     return JsonResponse({
         'currency': currency,
-        'dates': [t['date'] for t in trend_data],
-        'values': [t['total'] for t in trend_data],
+        'dates': trend_dates,
+        'values': trend_values,
     })
 
 
@@ -267,7 +263,7 @@ def account_history(request, account_id):
     return JsonResponse({
         'account': account.name,
         'currency': account.currency,
-        'history': [
+        'snapshots': [
             {
                 'date': s.snapshot_date.isoformat(),
                 'balance': s.balance,

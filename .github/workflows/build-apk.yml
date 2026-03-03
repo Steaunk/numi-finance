@@ -71,34 +71,35 @@ jobs:
             android/app/src/main/res/xml/open_filex_provider_paths.xml
 
       - name: Set up release signing
+        if: env.KEYSTORE_BASE64 != ''
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
         run: |
-          echo "$KEYSTORE_BASE64" | base64 -d > android/app/numi-release.p12
-          cat > android/key.properties << EOF
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/numi-release.jks
+          cat > android/key.properties <<EOF
           storePassword=$STORE_PASSWORD
           keyPassword=$KEY_PASSWORD
           keyAlias=$KEY_ALIAS
-          storeFile=numi-release.p12
+          storeFile=numi-release.jks
           EOF
+          # Strip leading whitespace from key.properties (YAML heredoc artifact)
+          sed -i 's/^[[:space:]]*//' android/key.properties
           # Patch build.gradle to use release signing
-          python3 - << 'PYEOF'
+          python3 - <<'PYEOF'
           import re, pathlib
           f = pathlib.Path('android/app/build.gradle')
           t = f.read_text()
-          # Prepend key.properties loader
-          header = '''def keystoreProperties = new Properties()
+          header = """def keystoreProperties = new Properties()
           def keystorePropertiesFile = rootProject.file('key.properties')
           if (keystorePropertiesFile.exists()) {
               keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
           }
-          '''
+          """
           t = header + t
-          # Insert signingConfigs block before buildTypes
-          signingCfg = '''
+          signing = """
               signingConfigs {
                   release {
                       keyAlias keystoreProperties['keyAlias']
@@ -107,9 +108,8 @@ jobs:
                       storePassword keystoreProperties['storePassword']
                   }
               }
-          '''
-          t = t.replace('    buildTypes {', signingCfg + '    buildTypes {')
-          # Use release signing in release build type
+          """
+          t = t.replace('    buildTypes {', signing + '    buildTypes {')
           t = re.sub(r'(release \{[^}]*?)signingConfig signingConfigs\.debug',
                      r'\1signingConfig signingConfigs.release', t)
           f.write_text(t)

@@ -122,3 +122,39 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# Warn if running in production with insecure default SECRET_KEY
+if not DEBUG and SECRET_KEY == 'django-insecure-dev-only-change-in-production':
+    import warnings
+    warnings.warn(
+        "Running with insecure default SECRET_KEY! "
+        "Set DJANGO_SECRET_KEY environment variable in production.",
+        stacklevel=1,
+    )
+
+# Logging
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'default': {
+            'format': '[{asctime}] {levelname} {name}: {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'default',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'core': {'level': 'DEBUG' if DEBUG else 'INFO'},
+        'expenses': {'level': 'DEBUG' if DEBUG else 'INFO'},
+        'assets': {'level': 'DEBUG' if DEBUG else 'INFO'},
+    },
+}

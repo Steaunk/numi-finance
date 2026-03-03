@@ -124,6 +124,15 @@ class SyncQueueDao extends DatabaseAccessor<AppDatabase>
 
   Future<void> removeById(int id) =>
       (delete(syncQueue)..where((t) => t.id.equals(id))).go();
+
+  Future<void> incrementRetry(int id) async {
+    final row = await (select(syncQueue)..where((t) => t.id.equals(id)))
+        .getSingleOrNull();
+    if (row == null) return;
+    await (update(syncQueue)..where((t) => t.id.equals(id))).write(
+      SyncQueueCompanion(retryCount: Value(row.retryCount + 1)),
+    );
+  }
 }
 
 @DriftAccessor(tables: [Expenses])
