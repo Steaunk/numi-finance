@@ -120,7 +120,8 @@ class SyncQueueDao extends DatabaseAccessor<AppDatabase>
   Future<void> enqueue(SyncQueueCompanion entry) =>
       into(syncQueue).insert(entry);
 
-  Future<List<DbSyncOperation>> getPending() => select(syncQueue).get();
+  Future<List<DbSyncOperation>> getPending() =>
+      (select(syncQueue)..orderBy([(t) => OrderingTerm.asc(t.id)])).get();
 
   Future<void> removeById(int id) =>
       (delete(syncQueue)..where((t) => t.id.equals(id))).go();
