@@ -1,3 +1,4 @@
+import '../../config/constants.dart';
 import '../local/database.dart';
 import '../remote/endpoints/rate_api.dart';
 
@@ -12,13 +13,14 @@ class RateRepository {
     if (api == null) return;
     try {
       final rates = await api.getRates();
+      final fb = AppConstants.fallbackRates;
       await _db.exchangeRateDao.insertRow(
         ExchangeRatesCompanion.insert(
           rateDate: DateTime.now(),
-          cny: rates['cny'] ?? 7.25,
-          hkd: rates['hkd'] ?? 7.82,
-          sgd: rates['sgd'] ?? 1.34,
-          jpy: rates['jpy'] ?? 150.0,
+          cny: rates['cny'] ?? fb['cny']!,
+          hkd: rates['hkd'] ?? fb['hkd']!,
+          sgd: rates['sgd'] ?? fb['sgd']!,
+          jpy: rates['jpy'] ?? fb['jpy']!,
         ),
       );
     } catch (_) {}
@@ -29,6 +31,6 @@ class RateRepository {
     if (rate != null) {
       return {'cny': rate.cny, 'hkd': rate.hkd, 'sgd': rate.sgd, 'jpy': rate.jpy};
     }
-    return {'cny': 7.25, 'hkd': 7.82, 'sgd': 1.34, 'jpy': 150.0};
+    return Map<String, double>.from(AppConstants.fallbackRates);
   }
 }

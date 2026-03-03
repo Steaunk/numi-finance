@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../providers/providers.dart';
 import '../../../utils/currency_utils.dart';
 import '../../common/widgets/currency_selector.dart';
+import '../../common/widgets/empty_state.dart';
 import '../../common/widgets/sync_status_indicator.dart';
 import 'add_account_screen.dart';
 import 'update_account_screen.dart';
@@ -60,17 +61,9 @@ class AssetOverviewScreen extends ConsumerWidget {
             child: accountsAsync.when(
               data: (accounts) {
                 if (accounts.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.account_balance, size: 64,
-                            color: Theme.of(context).colorScheme.outline),
-                        const SizedBox(height: 16),
-                        Text('No accounts yet',
-                            style: Theme.of(context).textTheme.bodyLarge),
-                      ],
-                    ),
+                  return const EmptyState(
+                    icon: Icons.account_balance,
+                    message: 'No accounts yet',
                   );
                 }
                 return RefreshIndicator(

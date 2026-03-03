@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../config/constants.dart';
 import '../../../models/account.dart';
 import '../../../providers/providers.dart';
+import '../../common/widgets/loading_button.dart';
 import '../../../utils/currency_utils.dart';
 
 class UpdateAccountScreen extends ConsumerStatefulWidget {
@@ -141,13 +142,10 @@ class _UpdateAccountScreenState extends ConsumerState<UpdateAccountScreen> {
               maxLines: 2,
             ),
             const SizedBox(height: 20),
-            FilledButton(
-              onPressed: _saving ? null : _save,
-              child: _saving
-                  ? const SizedBox(
-                      height: 20, width: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('Save Changes'),
+            LoadingButton(
+              loading: _saving,
+              onPressed: _save,
+              label: 'Save Changes',
             ),
           ],
         ),

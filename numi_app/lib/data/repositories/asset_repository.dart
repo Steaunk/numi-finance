@@ -3,18 +3,21 @@ import 'package:drift/drift.dart';
 import '../../models/account.dart' as model;
 import '../../models/balance_snapshot.dart' as model;
 import '../../utils/currency_utils.dart';
+import '../../utils/date_utils.dart';
 import '../local/database.dart';
 import '../remote/endpoints/asset_api.dart';
+import 'rate_repository.dart';
 
 class AssetRepository {
   final AppDatabase _db;
   final AssetApi? _api;
+  final RateRepository _rateRepo;
 
-  AssetRepository(this._db, this._api);
+  AssetRepository(this._db, this._api, this._rateRepo);
 
   Stream<List<model.Account>> watchAllAccounts(String displayCurrency) {
     return _db.accountDao.watchAll().asyncMap((rows) async {
-      final rates = await _getCachedRates();
+      final rates = await _rateRepo.getCachedRates();
       return rows.map((row) {
         final converted =
             CurrencyUtils.convert(row.balance, row.currency, displayCurrency, rates);
@@ -25,7 +28,7 @@ class AssetRepository {
 
   Future<double> getNetWorth(String displayCurrency) async {
     final accounts = await _db.accountDao.getAll();
-    final rates = await _getCachedRates();
+    final rates = await _rateRepo.getCachedRates();
     double total = 0;
     for (final acc in accounts) {
       if (!acc.includeInTotal) continue;
@@ -50,8 +53,7 @@ class AssetRepository {
     for (final snap in snapshots) {
       final account = accountMap[snap.accountId];
       if (account == null || !account.includeInTotal) continue;
-      final dateKey =
-          '${snap.snapshotDate.year}-${snap.snapshotDate.month.toString().padLeft(2, '0')}-${snap.snapshotDate.day.toString().padLeft(2, '0')}';
+      final dateKey = AppDateUtils.formatDate(snap.snapshotDate);
       final amount = CurrencyUtils.getDisplayAmount(
         displayCurrency: displayCurrency,
         amountUsd: snap.amountUsd,
@@ -143,7 +145,7 @@ class AssetRepository {
 
     // Record snapshot locally if balance changed
     if (balance != null && balance != existing.balance) {
-      final rates = await _getCachedRates();
+      final rates = await _rateRepo.getCachedRates();
       final computed = CurrencyUtils.computeAmounts(newBalance, currency, rates);
       await _db.accountDao.insertSnapshot(
         BalanceSnapshotsCompanion.insert(
@@ -217,14 +219,6 @@ class AssetRepository {
         );
       }
     } catch (_) {}
-  }
-
-  Future<Map<String, double>> _getCachedRates() async {
-    final rate = await _db.exchangeRateDao.getLatest();
-    if (rate != null) {
-      return {'cny': rate.cny, 'hkd': rate.hkd, 'sgd': rate.sgd, 'jpy': rate.jpy};
-    }
-    return {'cny': 7.25, 'hkd': 7.82, 'sgd': 1.34, 'jpy': 150.0};
   }
 
   model.Account _rowToModel(DbAccount row, {double convertedBalance = 0}) =>

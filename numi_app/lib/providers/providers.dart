@@ -104,10 +104,18 @@ final rateApiProvider = Provider<RateApi?>((ref) {
 
 // --- Repositories ---
 
+final rateRepositoryProvider = Provider<RateRepository>((ref) {
+  return RateRepository(
+    ref.watch(databaseProvider),
+    ref.watch(rateApiProvider),
+  );
+});
+
 final expenseRepositoryProvider = Provider<ExpenseRepository>((ref) {
   return ExpenseRepository(
     ref.watch(databaseProvider),
     ref.watch(expenseApiProvider),
+    ref.watch(rateRepositoryProvider),
   );
 });
 
@@ -115,6 +123,7 @@ final travelRepositoryProvider = Provider<TravelRepository>((ref) {
   return TravelRepository(
     ref.watch(databaseProvider),
     ref.watch(travelApiProvider),
+    ref.watch(rateRepositoryProvider),
   );
 });
 
@@ -122,13 +131,7 @@ final assetRepositoryProvider = Provider<AssetRepository>((ref) {
   return AssetRepository(
     ref.watch(databaseProvider),
     ref.watch(assetApiProvider),
-  );
-});
-
-final rateRepositoryProvider = Provider<RateRepository>((ref) {
-  return RateRepository(
-    ref.watch(databaseProvider),
-    ref.watch(rateApiProvider),
+    ref.watch(rateRepositoryProvider),
   );
 });
 

@@ -30,12 +30,13 @@ class NumiApp extends ConsumerStatefulWidget {
 }
 
 class _NumiAppState extends ConsumerState<NumiApp> {
+  bool _updateDialogShown = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initSync();
-      _checkForUpdate();
     });
   }
 
@@ -47,30 +48,29 @@ class _NumiAppState extends ConsumerState<NumiApp> {
     }
   }
 
-  Future<void> _checkForUpdate() async {
-    final update = await ref.read(updateCheckProvider.future);
-    if (update != null && mounted) {
-      showDialog<void>(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('Update Available'),
-          content: const Text('A new version of Numi is ready.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Later'),
-            ),
-            FilledButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _downloadAndInstall(update.assetApiUrl);
-              },
-              child: const Text('Update'),
-            ),
-          ],
-        ),
-      );
-    }
+  void _showUpdateDialog(({String htmlUrl, String assetApiUrl}) update) {
+    if (_updateDialogShown || !mounted) return;
+    _updateDialogShown = true;
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Update Available'),
+        content: const Text('A new version of Numi is ready.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Later'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _downloadAndInstall(update.assetApiUrl);
+            },
+            child: const Text('Update'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _downloadAndInstall(String assetApiUrl) async {
@@ -142,6 +142,12 @@ class _NumiAppState extends ConsumerState<NumiApp> {
       if (wasOffline && isNowOnline) {
         ref.read(syncStateProvider.notifier).syncNow();
       }
+    });
+
+    // Reactively show update dialog when updateCheckProvider resolves
+    ref.listen(updateCheckProvider, (prev, next) {
+      final update = next.valueOrNull;
+      if (update != null) _showUpdateDialog(update);
     });
 
     return MaterialApp.router(

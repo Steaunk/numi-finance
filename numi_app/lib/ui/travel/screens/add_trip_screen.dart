@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../providers/providers.dart';
 import '../../../utils/date_utils.dart';
+import '../../common/widgets/loading_button.dart';
 
 class AddTripScreen extends ConsumerStatefulWidget {
   const AddTripScreen({super.key});
@@ -96,13 +97,10 @@ class _AddTripScreenState extends ConsumerState<AddTripScreen> {
                 maxLines: 2,
               ),
               const SizedBox(height: 20),
-              FilledButton(
-                onPressed: _saving ? null : _save,
-                child: _saving
-                    ? const SizedBox(
-                        height: 20, width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('Add Trip'),
+              LoadingButton(
+                loading: _saving,
+                onPressed: _save,
+                label: 'Add Trip',
               ),
             ],
           ),

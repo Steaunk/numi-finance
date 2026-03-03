@@ -3,14 +3,17 @@ import 'package:drift/drift.dart';
 import '../../models/travel_expense.dart' as model;
 import '../../models/trip.dart' as model;
 import '../../utils/currency_utils.dart';
+import '../../utils/date_utils.dart';
 import '../local/database.dart';
 import '../remote/endpoints/travel_api.dart';
+import 'rate_repository.dart';
 
 class TravelRepository {
   final AppDatabase _db;
   final TravelApi? _api;
+  final RateRepository _rateRepo;
 
-  TravelRepository(this._db, this._api);
+  TravelRepository(this._db, this._api, this._rateRepo);
 
   Stream<List<model.Trip>> watchAllTrips() {
     return _db.tripDao.watchAll().asyncMap((tripRows) async {
@@ -51,10 +54,8 @@ class TravelRepository {
       try {
         final remote = await api.addTrip({
           'destination': destination,
-          'start_date':
-              '${startDate.year}-${startDate.month.toString().padLeft(2, '0')}-${startDate.day.toString().padLeft(2, '0')}',
-          'end_date':
-              '${endDate.year}-${endDate.month.toString().padLeft(2, '0')}-${endDate.day.toString().padLeft(2, '0')}',
+          'start_date': AppDateUtils.formatDate(startDate),
+          'end_date': AppDateUtils.formatDate(endDate),
           'notes': notes,
         });
         await (_db.update(_db.trips)..where((t) => t.id.equals(localId)))
@@ -102,7 +103,7 @@ class TravelRepository {
     required String name,
     String notes = '',
   }) async {
-    final rates = await _getCachedRates();
+    final rates = await _rateRepo.getCachedRates();
     final computed = CurrencyUtils.computeAmounts(amount, currency, rates);
 
     final tripRow = await _db.tripDao.getById(tripId);
@@ -129,8 +130,7 @@ class TravelRepository {
         final remote = await api.addTripExpense(tripRow!.remoteId!, {
           'amount': amount,
           'currency': currency,
-          'date':
-              '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}',
+          'date': AppDateUtils.formatDate(date),
           'category': category,
           'name': name,
           'notes': notes,
@@ -225,14 +225,6 @@ class TravelRepository {
         }
       }
     } catch (_) {}
-  }
-
-  Future<Map<String, double>> _getCachedRates() async {
-    final rate = await _db.exchangeRateDao.getLatest();
-    if (rate != null) {
-      return {'cny': rate.cny, 'hkd': rate.hkd, 'sgd': rate.sgd, 'jpy': rate.jpy};
-    }
-    return {'cny': 7.25, 'hkd': 7.82, 'sgd': 1.34, 'jpy': 150.0};
   }
 
   model.Trip _tripToModel(DbTrip row, List<DbTravelExpense> expenseRows) =>
