@@ -1,5 +1,7 @@
 import 'package:intl/intl.dart';
 import '../config/constants.dart';
+import '../models/expense.dart';
+import '../models/travel_expense.dart';
 
 class CurrencyUtils {
   static final _formatters = <String, NumberFormat>{};
@@ -114,4 +116,30 @@ class CurrencyUtils {
     }
     return result;
   }
+}
+
+extension ExpenseDisplayAmount on Expense {
+  double displayAmount(String displayCurrency) =>
+      CurrencyUtils.getDisplayAmount(
+        displayCurrency: displayCurrency,
+        amountUsd: amountUsd,
+        amountCny: amountCny,
+        amountHkd: amountHkd,
+        amountSgd: amountSgd,
+        originalAmount: amount,
+        originalCurrency: currency,
+      );
+}
+
+extension TravelExpenseDisplayAmount on TravelExpense {
+  double displayAmount(String displayCurrency) =>
+      CurrencyUtils.getDisplayAmount(
+        displayCurrency: displayCurrency,
+        amountUsd: amountUsd,
+        amountCny: amountCny,
+        amountHkd: amountHkd,
+        amountSgd: amountSgd,
+        originalAmount: amount,
+        originalCurrency: currency,
+      );
 }

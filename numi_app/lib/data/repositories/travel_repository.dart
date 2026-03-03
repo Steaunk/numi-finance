@@ -96,7 +96,17 @@ class TravelRepository {
     if (api != null && row?.remoteId != null) {
       try {
         await api.deleteTrip(row!.remoteId!);
-      } catch (_) {}
+      } catch (_) {
+        await _db.syncQueueDao.enqueue(
+          SyncQueueCompanion.insert(
+            entityType: 'trip',
+            operation: 'delete',
+            localId: localId,
+            payload: jsonEncode({'remote_id': row!.remoteId}),
+            createdAt: Value(DateTime.now()),
+          ),
+        );
+      }
     }
   }
 
@@ -180,7 +190,20 @@ class TravelRepository {
     if (api != null && row?.remoteId != null && tripRow?.remoteId != null) {
       try {
         await api.deleteTripExpense(tripRow!.remoteId!, row!.remoteId!);
-      } catch (_) {}
+      } catch (_) {
+        await _db.syncQueueDao.enqueue(
+          SyncQueueCompanion.insert(
+            entityType: 'travel_expense',
+            operation: 'delete',
+            localId: localId,
+            payload: jsonEncode({
+              'remote_id': row!.remoteId,
+              'trip_remote_id': tripRow!.remoteId,
+            }),
+            createdAt: Value(DateTime.now()),
+          ),
+        );
+      }
     }
   }
 
@@ -191,6 +214,11 @@ class TravelRepository {
       final trips = await api.getTrips(currency: currency);
       for (final t in trips) {
         final remoteId = t['id'] as int;
+        final existingTrip = await (_db.select(_db.trips)
+              ..where((row) => row.remoteId.equals(remoteId)))
+            .getSingleOrNull();
+        if (existingTrip != null && !existingTrip.synced) continue;
+
         await _db.tripDao.upsertTripByRemoteId(
           TripsCompanion(
             remoteId: Value(remoteId),
@@ -210,6 +238,11 @@ class TravelRepository {
 
         final expenses = await api.getTripExpenses(remoteId, currency: currency);
         for (final e in expenses) {
+          final existingExp = await (_db.select(_db.travelExpenses)
+                ..where((row) => row.remoteId.equals(e['id'] as int)))
+              .getSingleOrNull();
+          if (existingExp != null && !existingExp.synced) continue;
+
           await _db.tripDao.upsertTravelExpenseByRemoteId(
             TravelExpensesCompanion(
               remoteId: Value(e['id'] as int),

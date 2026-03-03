@@ -10,6 +10,7 @@ import '../../common/widgets/currency_selector.dart';
 import '../../common/widgets/sync_status_indicator.dart';
 import '../../common/widgets/amount_display.dart';
 import '../../common/widgets/empty_state.dart';
+import '../../common/widgets/dialogs.dart';
 import 'add_expense_screen.dart';
 
 class ExpenseListScreen extends ConsumerWidget {
@@ -43,15 +44,7 @@ class ExpenseListScreen extends ConsumerWidget {
             data: (expenses) {
               final total = expenses.fold<double>(
                 0,
-                (sum, e) => sum + CurrencyUtils.getDisplayAmount(
-                  displayCurrency: displayCurrency,
-                  amountUsd: e.amountUsd,
-                  amountCny: e.amountCny,
-                  amountHkd: e.amountHkd,
-                  amountSgd: e.amountSgd,
-                  originalAmount: e.amount,
-                  originalCurrency: e.currency,
-                ),
+                (sum, e) => sum + e.displayAmount(displayCurrency),
               );
               return _TotalCard(total: total, currency: displayCurrency);
             },
@@ -75,42 +68,19 @@ class ExpenseListScreen extends ConsumerWidget {
                     itemCount: expenses.length,
                     itemBuilder: (context, index) {
                       final expense = expenses[index];
-                      final displayAmount = CurrencyUtils.getDisplayAmount(
-                        displayCurrency: displayCurrency,
-                        amountUsd: expense.amountUsd,
-                        amountCny: expense.amountCny,
-                        amountHkd: expense.amountHkd,
-                        amountSgd: expense.amountSgd,
-                        originalAmount: expense.amount,
-                        originalCurrency: expense.currency,
-                      );
                       return Slidable(
                         endActionPane: ActionPane(
                           motion: const BehindMotion(),
                           children: [
                             SlidableAction(
                               onPressed: (_) async {
-                                final confirm = await showDialog<bool>(
-                                  context: context,
-                                  builder: (ctx) => AlertDialog(
-                                    title: const Text('Delete Expense'),
-                                    content: Text(
-                                        'Delete "${expense.name}"?'),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.pop(ctx, false),
-                                        child: const Text('Cancel'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.pop(ctx, true),
-                                        child: const Text('Delete'),
-                                      ),
-                                    ],
-                                  ),
+                                final confirm =
+                                    await showDeleteConfirmDialog(
+                                  context,
+                                  title: 'Delete Expense',
+                                  content: 'Delete "${expense.name}"?',
                                 );
-                                if (confirm == true) {
+                                if (confirm) {
                                   await ref
                                       .read(expenseRepositoryProvider)
                                       .deleteExpense(expense.id);
@@ -143,7 +113,7 @@ class ExpenseListScreen extends ConsumerWidget {
                             '${AppDateUtils.displayDate(expense.date)} | ${expense.category}',
                           ),
                           trailing: AmountDisplay(
-                            amount: displayAmount,
+                            amount: expense.displayAmount(displayCurrency),
                             currency: displayCurrency,
                             originalAmount: expense.amount,
                             originalCurrency: expense.currency,

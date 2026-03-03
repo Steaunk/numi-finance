@@ -39,15 +39,7 @@ class TripListScreen extends ConsumerWidget {
                 final trip = trips[index];
                 final total = trip.expenses.fold<double>(
                   0,
-                  (sum, e) => sum + CurrencyUtils.getDisplayAmount(
-                    displayCurrency: displayCurrency,
-                    amountUsd: e.amountUsd,
-                    amountCny: e.amountCny,
-                    amountHkd: e.amountHkd,
-                    amountSgd: e.amountSgd,
-                    originalAmount: e.amount,
-                    originalCurrency: e.currency,
-                  ),
+                  (sum, e) => sum + e.displayAmount(displayCurrency),
                 );
                 return Card(
                   margin: const EdgeInsets.only(bottom: 12),

@@ -5,6 +5,7 @@ import '../../../providers/providers.dart';
 import '../../../utils/currency_utils.dart';
 import '../../../utils/date_utils.dart';
 import '../../common/widgets/amount_display.dart';
+import '../../common/widgets/dialogs.dart';
 import 'add_travel_expense_screen.dart';
 
 class TripDetailScreen extends ConsumerWidget {
@@ -27,15 +28,7 @@ class TripDetailScreen extends ConsumerWidget {
         // Category breakdown
         final categoryTotals = <String, double>{};
         for (final e in trip.expenses) {
-          final amount = CurrencyUtils.getDisplayAmount(
-            displayCurrency: displayCurrency,
-            amountUsd: e.amountUsd,
-            amountCny: e.amountCny,
-            amountHkd: e.amountHkd,
-            amountSgd: e.amountSgd,
-            originalAmount: e.amount,
-            originalCurrency: e.currency,
-          );
+          final amount = e.displayAmount(displayCurrency);
           categoryTotals.update(e.category, (v) => v + amount,
               ifAbsent: () => amount);
         }
@@ -48,23 +41,13 @@ class TripDetailScreen extends ConsumerWidget {
               IconButton(
                 icon: const Icon(Icons.delete_outline),
                 onPressed: () async {
-                  final confirm = await showDialog<bool>(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: const Text('Delete Trip'),
-                      content: Text(
-                          'Delete "${trip.destination}" and all its expenses?'),
-                      actions: [
-                        TextButton(
-                            onPressed: () => Navigator.pop(ctx, false),
-                            child: const Text('Cancel')),
-                        TextButton(
-                            onPressed: () => Navigator.pop(ctx, true),
-                            child: const Text('Delete')),
-                      ],
-                    ),
+                  final confirm = await showDeleteConfirmDialog(
+                    context,
+                    title: 'Delete Trip',
+                    content:
+                        'Delete "${trip.destination}" and all its expenses?',
                   );
-                  if (confirm == true && context.mounted) {
+                  if (confirm && context.mounted) {
                     await ref
                         .read(travelRepositoryProvider)
                         .deleteTrip(tripId);
@@ -144,16 +127,6 @@ class TripDetailScreen extends ConsumerWidget {
                         itemCount: trip.expenses.length,
                         itemBuilder: (context, index) {
                           final expense = trip.expenses[index];
-                          final displayAmount =
-                              CurrencyUtils.getDisplayAmount(
-                            displayCurrency: displayCurrency,
-                            amountUsd: expense.amountUsd,
-                            amountCny: expense.amountCny,
-                            amountHkd: expense.amountHkd,
-                            amountSgd: expense.amountSgd,
-                            originalAmount: expense.amount,
-                            originalCurrency: expense.currency,
-                          );
                           return Slidable(
                             endActionPane: ActionPane(
                               motion: const BehindMotion(),
@@ -180,7 +153,8 @@ class TripDetailScreen extends ConsumerWidget {
                                 '${AppDateUtils.displayDate(expense.date)} | ${expense.category}',
                               ),
                               trailing: AmountDisplay(
-                                amount: displayAmount,
+                                amount:
+                                    expense.displayAmount(displayCurrency),
                                 currency: displayCurrency,
                                 originalAmount: expense.amount,
                                 originalCurrency: expense.currency,
