@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 
 /// Checks GitHub Releases for the latest Numi build.
@@ -19,9 +21,9 @@ class VersionApi {
           ),
         );
 
-  /// Returns the latest release's build number, page URL, and APK asset
-  /// download URL (GitHub API URL — requires Bearer auth + octet-stream).
-  /// Returns null if unavailable / token missing / parse error.
+  /// Returns the latest release's build number, page URL, and platform-specific
+  /// asset download URL (GitHub API URL — requires Accept: octet-stream).
+  /// Returns null if unavailable / no matching asset / parse error.
   Future<({int buildNumber, String htmlUrl, String assetApiUrl})?> getLatestRelease() async {
     try {
       final resp = await _dio.get(
@@ -40,12 +42,26 @@ class VersionApi {
 
       final htmlUrl = (resp.data['html_url'] as String?) ?? '';
       final assets = resp.data['assets'] as List?;
-      final assetApiUrl = (assets != null && assets.isNotEmpty)
-          ? (assets[0]['url'] as String?) ?? ''
-          : '';
+
+      // Find the right asset for this platform
+      final ext = Platform.isAndroid ? '.apk' : '.dmg';
+      final assetApiUrl = _findAssetUrl(assets, ext);
+
       return (buildNumber: buildNumber, htmlUrl: htmlUrl, assetApiUrl: assetApiUrl);
     } catch (_) {
       return null;
     }
+  }
+
+  String _findAssetUrl(List? assets, String extension) {
+    if (assets == null || assets.isEmpty) return '';
+    for (final asset in assets) {
+      final name = (asset['name'] as String?) ?? '';
+      if (name.endsWith(extension)) {
+        return (asset['url'] as String?) ?? '';
+      }
+    }
+    // Fallback to first asset
+    return (assets[0]['url'] as String?) ?? '';
   }
 }

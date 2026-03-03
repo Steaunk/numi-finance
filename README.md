@@ -1,8 +1,8 @@
 # Numi Finance
 
-A multi-currency personal finance app with a Django backend and Flutter (Android) frontend.
+A multi-currency personal finance app with a Django backend and Flutter (Android / macOS) frontend.
 
-Tracks expenses, travel trips, and asset accounts across CNY, HKD, USD, SGD, and JPY with daily exchange rates from [fawazahmed0/currency-api](https://github.com/fawazahmed0/currency-api).
+Tracks expenses, travel trips, and asset accounts across CNY, HKD, USD, SGD, and JPY with daily exchange rates from [fawazahmed0/exchange-api](https://github.com/fawazahmed0/exchange-api).
 
 ## Features
 
@@ -21,7 +21,8 @@ Tracks expenses, travel trips, and asset accounts across CNY, HKD, USD, SGD, and
 - Net worth calculation across all accounts
 - Historical balance snapshots and trend charts
 
-### Mobile App (Flutter)
+### Mobile & Desktop App (Flutter)
+- Android APK and macOS DMG builds
 - Offline-first with local SQLite (Drift) database
 - Background sync with Django backend when online
 - In-app auto-update via GitHub Releases
@@ -57,7 +58,12 @@ Open http://localhost:8000
 cd numi_app
 flutter pub get
 dart run build_runner build --delete-conflicting-outputs
+
+# Android
 flutter build apk --release
+
+# macOS
+flutter build macos --release
 ```
 
 ## API Endpoints
@@ -104,4 +110,4 @@ flutter build apk --release
 
 ## CI/CD
 
-GitHub Actions builds the Flutter APK on every push to `main` that changes `numi_app/`. Each build creates a GitHub Release tagged `v20260303.1` (date + daily sequence) with the APK attached. The mobile app checks for updates on launch via the GitHub Releases API.
+GitHub Actions builds the Flutter APK on every push to `main` that changes `numi_app/`. macOS DMG builds can be triggered manually via `workflow_dispatch` with the `build_macos` input. Each build creates a GitHub Release tagged `v20260303.1` (date + daily sequence) with artifacts attached. The mobile/desktop app checks for updates on launch via the GitHub Releases API.

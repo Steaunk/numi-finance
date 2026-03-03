@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../config/constants.dart';
 import '../../../providers/providers.dart';
 import '../../../data/remote/api_client.dart';
@@ -26,6 +29,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _updateChecking = false;
   String? _updateStatus; // null = not checked, 'none' = up to date, 'available' = update ready
   String? _updateAssetUrl;
+  String? _updateHtmlUrl;
 
   @override
   void initState() {
@@ -240,11 +244,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     const SizedBox(height: 12),
                     const Text('A new version of Numi is available!'),
                     const SizedBox(height: 8),
-                    FilledButton.icon(
-                      onPressed: () => _downloadAndInstall(_updateAssetUrl!),
-                      icon: const Icon(Icons.download),
-                      label: const Text('Download & Install'),
-                    ),
+                    if (Platform.isAndroid)
+                      FilledButton.icon(
+                        onPressed: () => _downloadAndInstall(_updateAssetUrl!),
+                        icon: const Icon(Icons.download),
+                        label: const Text('Download & Install'),
+                      )
+                    else
+                      FilledButton.icon(
+                        onPressed: () => _openReleasePage(_updateHtmlUrl!),
+                        icon: const Icon(Icons.open_in_new),
+                        label: const Text('Open Release Page'),
+                      ),
                   ],
                 ],
               ),
@@ -306,6 +317,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _updateChecking = true;
       _updateStatus = null;
       _updateAssetUrl = null;
+      _updateHtmlUrl = null;
     });
     ref.invalidate(updateCheckProvider);
     try {
@@ -315,6 +327,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         setState(() {
           _updateStatus = 'available';
           _updateAssetUrl = result.assetApiUrl;
+          _updateHtmlUrl = result.htmlUrl;
         });
       } else {
         setState(() => _updateStatus = 'none');
@@ -323,6 +336,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       if (mounted) setState(() => _updateStatus = 'none');
     } finally {
       if (mounted) setState(() => _updateChecking = false);
+    }
+  }
+
+  Future<void> _openReleasePage(String htmlUrl) async {
+    final uri = Uri.tryParse(htmlUrl);
+    if (uri != null) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 
