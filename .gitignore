@@ -3,3 +3,6 @@ __pycache__/
 venv/
 /data/
 .claude/
+db.sqlite3
+*.csv
+*.db

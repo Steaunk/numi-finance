@@ -25,7 +25,7 @@ class VersionApi {
   Future<({int buildNumber, String htmlUrl, String assetApiUrl})?> getLatestRelease() async {
     try {
       final resp = await _dio.get(
-          '/repos/Steaunk/expense-tracker/releases/latest');
+          '/repos/Steaunk/numi-finance/releases/latest');
       final tag = (resp.data['tag_name'] as String?) ?? '';
       // tag = "build-NNNN"
       final parts = tag.split('-');
