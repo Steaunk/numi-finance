@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:dio/dio.dart';
-import 'package:open_filex/open_filex.dart';
-import 'package:path_provider/path_provider.dart';
 import 'config/theme.dart';
 import 'config/router.dart';
 import 'providers/providers.dart';
@@ -30,8 +27,6 @@ class NumiApp extends ConsumerStatefulWidget {
 }
 
 class _NumiAppState extends ConsumerState<NumiApp> {
-  bool _updateDialogShown = false;
-
   @override
   void initState() {
     super.initState();
@@ -48,104 +43,6 @@ class _NumiAppState extends ConsumerState<NumiApp> {
     }
   }
 
-  void _showUpdateDialog(({String htmlUrl, String assetApiUrl}) update) {
-    if (_updateDialogShown || !mounted) return;
-    _updateDialogShown = true;
-    showDialog<void>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Update Available'),
-        content: const Text('A new version of Numi is ready.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Later'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _downloadAndInstall(update.assetApiUrl);
-            },
-            child: const Text('Update'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _downloadAndInstall(String assetApiUrl) async {
-    final token = ref.read(githubTokenProvider);
-    final progressNotifier = ValueNotifier<double>(0);
-    if (!mounted) return;
-
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        title: const Text('Downloading...'),
-        content: ValueListenableBuilder<double>(
-          valueListenable: progressNotifier,
-          builder: (_, value, __) => Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              LinearProgressIndicator(value: value > 0 ? value : null),
-              if (value > 0) ...[
-                const SizedBox(height: 8),
-                Text('${(value * 100).toInt()}%'),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-
-    try {
-      final dir = await getTemporaryDirectory();
-      final savePath = '${dir.path}/numi_update.apk';
-
-      // Step 1: Request the asset with Accept: octet-stream.
-      // GitHub responds with 302 → pre-signed CDN URL.
-      // We must NOT forward the Authorization header to the CDN,
-      // so disable followRedirects and resolve the location manually.
-      final redirectResp = await Dio(BaseOptions(
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Accept': 'application/octet-stream',
-        },
-        followRedirects: false,
-        validateStatus: (status) => status != null && status < 400,
-      )).get(assetApiUrl);
-
-      final downloadUrl = redirectResp.headers.value('location');
-      if (downloadUrl == null) {
-        throw Exception('GitHub did not return a download URL');
-      }
-
-      // Step 2: Download from CDN (no auth — URL is pre-signed)
-      await Dio().download(
-        downloadUrl,
-        savePath,
-        onReceiveProgress: (received, total) {
-          if (total > 0) progressNotifier.value = received / total;
-        },
-      );
-
-      progressNotifier.dispose();
-      if (mounted) {
-        Navigator.pop(context);
-        await OpenFilex.open(savePath);
-      }
-    } catch (e) {
-      progressNotifier.dispose();
-      if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Update failed: $e')),
-        );
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     ref.listen(connectivityProvider, (prev, next) {
@@ -154,12 +51,6 @@ class _NumiAppState extends ConsumerState<NumiApp> {
       if (wasOffline && isNowOnline) {
         ref.read(syncStateProvider.notifier).syncNow();
       }
-    });
-
-    // Reactively show update dialog when updateCheckProvider resolves
-    ref.listen(updateCheckProvider, (prev, next) {
-      final update = next.valueOrNull;
-      if (update != null) _showUpdateDialog(update);
     });
 
     return MaterialApp.router(

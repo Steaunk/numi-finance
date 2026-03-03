@@ -41,19 +41,13 @@ final nginxPasswordProvider = StateProvider<String>((ref) {
   return ref.watch(sharedPrefsProvider).getString('nginx_password') ?? '';
 });
 
-final githubTokenProvider = StateProvider<String>((ref) {
-  return ref.watch(sharedPrefsProvider).getString('github_token') ?? '';
-});
-
 /// Returns {htmlUrl, assetApiUrl} if a newer build is available, else null.
 final updateCheckProvider =
     FutureProvider<({String htmlUrl, String assetApiUrl})?>((ref) async {
-  final token = ref.watch(githubTokenProvider);
-  if (token.isEmpty) return null;
   try {
     final info = await PackageInfo.fromPlatform();
     final currentBuild = int.tryParse(info.buildNumber) ?? 0;
-    final latest = await VersionApi(token).getLatestRelease();
+    final latest = await VersionApi().getLatestRelease();
     if (latest == null || latest.buildNumber <= currentBuild) return null;
     return (htmlUrl: latest.htmlUrl, assetApiUrl: latest.assetApiUrl);
   } catch (_) {
