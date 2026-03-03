@@ -98,6 +98,10 @@ flutter build apk --release
 | `DATABASE_PATH` | `db.sqlite3` | SQLite database file path |
 | `ALLOWED_HOSTS` | `*` | Comma-separated allowed hosts |
 
+## TODO
+
+- [ ] Assets: add brand-specific account icons (IBKR, DBS, UOB, ICBC, BOC, CMB, Moomoo, OKX, Bond, Cash, Crypto)
+
 ## CI/CD
 
 GitHub Actions automatically builds the Flutter APK on every push to `main` that changes `numi_app/`. Each build creates a GitHub Release (`build-N`) with the APK attached. The mobile app checks for updates on launch via the GitHub Releases API.
