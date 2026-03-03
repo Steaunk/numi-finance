@@ -233,16 +233,6 @@ class AssetRepository {
     }
   }
 
-  /// Push all locally-modified accounts to the server before pulling.
-  Future<void> pushUnsyncedAccounts() async {
-    final all = await _db.accountDao.getAll();
-    for (final acc in all) {
-      if (!acc.synced && acc.remoteId != null) {
-        await _pushAccount(acc.id);
-      }
-    }
-  }
-
   Future<void> deleteAccount(int localId) async {
     final row = await _db.accountDao.getById(localId);
     await _db.accountDao.removeById(localId);
@@ -269,10 +259,6 @@ class AssetRepository {
   Future<void> syncFromServer(String currency) async {
     final api = _api;
     if (api == null) return;
-
-    // Push local changes first so the server has the latest data
-    await pushUnsyncedAccounts();
-
     try {
       final accounts = await api.getAccounts(currency: currency);
       for (final a in accounts) {
