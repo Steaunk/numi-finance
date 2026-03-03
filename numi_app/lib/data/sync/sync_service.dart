@@ -79,6 +79,15 @@ class SyncService {
         }
         if (handled) {
           await _db.syncQueueDao.removeById(op.id);
+        } else {
+          // Precondition not met (e.g. missing remoteId) — increment retry
+          // so it eventually gets cleaned up instead of staying stuck forever.
+          developer.log(
+            'Sync op ${op.id} (${op.entityType}/${op.operation}) '
+            'precondition not met, retry ${op.retryCount + 1}/$_maxRetries',
+            name: 'SyncService',
+          );
+          await _db.syncQueueDao.incrementRetry(op.id);
         }
       } catch (e, st) {
         developer.log(
