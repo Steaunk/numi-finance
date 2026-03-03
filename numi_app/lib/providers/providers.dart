@@ -167,6 +167,11 @@ class SyncStateNotifier extends StateNotifier<AsyncValue<void>> {
       final currency = _ref.read(displayCurrencyProvider);
       await service.fullSync(currency);
       state = const AsyncData(null);
+      // Invalidate data providers so charts re-read from local DB
+      _ref.invalidate(monthlyStatsProvider(null));
+      _ref.invalidate(netWorthTrendProvider);
+      _ref.invalidate(netWorthProvider);
+      _ref.invalidate(categoriesProvider);
     } catch (e, st) {
       state = AsyncError(e, st);
     }

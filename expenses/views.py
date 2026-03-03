@@ -62,6 +62,10 @@ def list_expenses(request):
             'category': exp.category,
             'name': exp.name,
             'notes': exp.notes,
+            'amount_usd': exp.amount_usd,
+            'amount_cny': exp.amount_cny,
+            'amount_hkd': exp.amount_hkd,
+            'amount_sgd': exp.amount_sgd,
             'converted_amount': converted,
             'display_currency': currency,
         })
