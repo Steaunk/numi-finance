@@ -160,6 +160,26 @@ class SyncService {
           synced: const Value(true),
         ));
         return true;
+      case 'update':
+        final localRow = await (_db.select(_db.travelExpenses)
+              ..where((e) => e.id.equals(op.localId)))
+            .getSingleOrNull();
+        if (localRow?.remoteId == null || localRow?.tripRemoteId == null) {
+          return false;
+        }
+        await _travelApi.updateTripExpense(
+            localRow!.tripRemoteId!, localRow.remoteId!, {
+          'amount': p['amount'],
+          'currency': p['currency'],
+          'date': _toDateStr(p['date']),
+          'category': p['category'],
+          'name': p['name'],
+          'notes': p['notes'] ?? '',
+        });
+        await (_db.update(_db.travelExpenses)
+              ..where((e) => e.id.equals(op.localId)))
+            .write(const TravelExpensesCompanion(synced: Value(true)));
+        return true;
       case 'delete':
         final remoteId = p['remote_id'] as int?;
         final tripRemoteId = p['trip_remote_id'] as int?;

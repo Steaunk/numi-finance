@@ -133,10 +133,19 @@ class TripDetailScreen extends ConsumerWidget {
                               children: [
                                 SlidableAction(
                                   onPressed: (_) async {
-                                    await ref
-                                        .read(travelRepositoryProvider)
-                                        .deleteTravelExpense(
-                                            expense.id, tripId);
+                                    final confirm =
+                                        await showDeleteConfirmDialog(
+                                      context,
+                                      title: 'Delete Expense',
+                                      content:
+                                          'Delete "${expense.name}"?',
+                                    );
+                                    if (confirm) {
+                                      await ref
+                                          .read(travelRepositoryProvider)
+                                          .deleteTravelExpense(
+                                              expense.id, tripId);
+                                    }
                                   },
                                   backgroundColor:
                                       Theme.of(context).colorScheme.error,
@@ -148,6 +157,17 @@ class TripDetailScreen extends ConsumerWidget {
                               ],
                             ),
                             child: ListTile(
+                              onTap: () => showModalBottomSheet(
+                                context: context,
+                                isScrollControlled: true,
+                                useSafeArea: true,
+                                builder: (_) => AddTravelExpenseScreen(
+                                  tripId: tripId,
+                                  tripStartDate: trip.startDate,
+                                  tripEndDate: trip.endDate,
+                                  expense: expense,
+                                ),
+                              ),
                               title: Text(expense.name),
                               subtitle: Text(
                                 '${AppDateUtils.displayDate(expense.date)} | ${expense.category}',
@@ -171,7 +191,11 @@ class TripDetailScreen extends ConsumerWidget {
               context: context,
               isScrollControlled: true,
               useSafeArea: true,
-              builder: (context) => AddTravelExpenseScreen(tripId: tripId),
+              builder: (context) => AddTravelExpenseScreen(
+                tripId: tripId,
+                tripStartDate: trip.startDate,
+                tripEndDate: trip.endDate,
+              ),
             ),
             child: const Icon(Icons.add),
           ),

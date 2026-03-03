@@ -231,6 +231,10 @@ class TripDao extends DatabaseAccessor<AppDatabase> with _$TripDaoMixin {
   Future<void> removeTravelExpenseById(int id) =>
       (delete(travelExpenses)..where((e) => e.id.equals(id))).go();
 
+  Future<void> updateTravelExpenseRow(
+          int id, TravelExpensesCompanion companion) =>
+      (update(travelExpenses)..where((e) => e.id.equals(id))).write(companion);
+
   Future<void> upsertTripByRemoteId(TripsCompanion entry) async {
     final remoteId = entry.remoteId.value;
     if (remoteId == null) return;
@@ -361,7 +365,11 @@ class AppDatabase extends _$AppDatabase {
 LazyDatabase _openConnection() {
   return LazyDatabase(() async {
     final dbFolder = await getApplicationDocumentsDirectory();
-    final file = File(p.join(dbFolder.path, 'expense_tracker.db'));
-    return NativeDatabase.createInBackground(file);
+    final oldFile = File(p.join(dbFolder.path, 'expense_tracker.db'));
+    final newFile = File(p.join(dbFolder.path, 'numi.db'));
+    if (oldFile.existsSync() && !newFile.existsSync()) {
+      oldFile.renameSync(newFile.path);
+    }
+    return NativeDatabase.createInBackground(newFile);
   });
 }

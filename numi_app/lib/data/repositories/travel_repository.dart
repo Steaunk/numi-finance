@@ -179,6 +179,96 @@ class TravelRepository {
     }
   }
 
+  Future<void> updateTravelExpense(
+    int localId, {
+    required double amount,
+    required String currency,
+    required DateTime date,
+    required String category,
+    required String name,
+    String notes = '',
+  }) async {
+    final rates = await _rateRepo.getCachedRates();
+    final computed = CurrencyUtils.computeAmounts(amount, currency, rates);
+
+    await _db.tripDao.updateTravelExpenseRow(
+      localId,
+      TravelExpensesCompanion(
+        amount: Value(amount),
+        currency: Value(currency),
+        date: Value(date),
+        category: Value(category),
+        name: Value(name),
+        notes: Value(notes),
+        amountUsd: Value(computed['amount_usd']!),
+        amountCny: Value(computed['amount_cny']!),
+        amountHkd: Value(computed['amount_hkd']!),
+        amountSgd: Value(computed['amount_sgd']!),
+        synced: const Value(false),
+      ),
+    );
+
+    final pushed = await _pushTravelExpense(
+        localId, amount, currency, date, category, name, notes);
+    if (!pushed) {
+      final row = await (_db.select(_db.travelExpenses)
+            ..where((e) => e.id.equals(localId)))
+          .getSingleOrNull();
+      await _db.syncQueueDao.enqueue(
+        SyncQueueCompanion.insert(
+          entityType: 'travel_expense',
+          operation: 'update',
+          localId: localId,
+          payload: jsonEncode({
+            'trip_id': row?.tripId,
+            'amount': amount,
+            'currency': currency,
+            'date': date.toIso8601String(),
+            'category': category,
+            'name': name,
+            'notes': notes,
+          }),
+          createdAt: Value(DateTime.now()),
+        ),
+      );
+    }
+  }
+
+  Future<bool> _pushTravelExpense(
+    int localId,
+    double amount,
+    String currency,
+    DateTime date,
+    String category,
+    String name,
+    String notes,
+  ) async {
+    final api = _api;
+    final row = await (_db.select(_db.travelExpenses)
+          ..where((e) => e.id.equals(localId)))
+        .getSingleOrNull();
+    if (api == null ||
+        row == null ||
+        row.remoteId == null ||
+        row.tripRemoteId == null) return false;
+    try {
+      await api.updateTripExpense(row.tripRemoteId!, row.remoteId!, {
+        'amount': amount,
+        'currency': currency,
+        'date': AppDateUtils.formatDate(date),
+        'category': category,
+        'name': name,
+        'notes': notes,
+      });
+      await (_db.update(_db.travelExpenses)
+            ..where((e) => e.id.equals(localId)))
+          .write(const TravelExpensesCompanion(synced: Value(true)));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> deleteTravelExpense(int localId, int tripId) async {
     final row = await (_db.select(_db.travelExpenses)
           ..where((e) => e.id.equals(localId)))
