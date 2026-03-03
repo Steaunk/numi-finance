@@ -186,6 +186,9 @@ class ExpenseDao extends DatabaseAccessor<AppDatabase>
     }
   }
 
+  Future<void> updateRow(int id, ExpensesCompanion companion) =>
+      (update(expenses)..where((e) => e.id.equals(id))).write(companion);
+
   Future<void> markSynced(int localId, int remoteId) async {
     await (update(expenses)..where((e) => e.id.equals(localId))).write(
       ExpensesCompanion(remoteId: Value(remoteId), synced: const Value(true)),

@@ -87,6 +87,23 @@ class SyncService {
         });
         await _db.expenseDao.markSynced(op.localId, remote['id'] as int);
         return true;
+      case 'update':
+        final row = await (_db.select(_db.expenses)
+              ..where((e) => e.id.equals(op.localId)))
+            .getSingleOrNull();
+        if (row?.remoteId == null) return false;
+        await _expenseApi.updateExpense(row!.remoteId!, {
+          'amount': p['amount'],
+          'currency': p['currency'],
+          'date': _toDateStr(p['date']),
+          'category': p['category'],
+          'name': p['name'],
+          'notes': p['notes'] ?? '',
+        });
+        await (_db.update(_db.expenses)
+              ..where((e) => e.id.equals(op.localId)))
+            .write(const ExpensesCompanion(synced: Value(true)));
+        return true;
       case 'delete':
         final remoteId = p['remote_id'] as int?;
         if (remoteId != null) await _expenseApi.deleteExpense(remoteId);
