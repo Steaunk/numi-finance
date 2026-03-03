@@ -30,7 +30,7 @@ final sharedPrefsProvider = Provider<SharedPreferences>((ref) {
 
 final serverUrlProvider = StateProvider<String>((ref) {
   final prefs = ref.watch(sharedPrefsProvider);
-  return prefs.getString('server_url') ?? 'https://your-server.com';
+  return prefs.getString('server_url') ?? '';
 });
 
 final nginxUsernameProvider = StateProvider<String>((ref) {
