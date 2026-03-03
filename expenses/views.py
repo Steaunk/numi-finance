@@ -8,7 +8,7 @@ from django.views.decorators.http import require_GET, require_POST, require_http
 
 from core.services import get_all_rates
 
-from .models import Expense, TRAVEL_CATEGORIES, Trip, TravelExpense
+from .models import Expense, EXPENSE_CATEGORIES, TRAVEL_CATEGORIES, Trip, TravelExpense
 
 DISPLAY_CURRENCIES = {'CNY', 'HKD', 'USD', 'SGD'}
 
@@ -64,6 +64,10 @@ def list_expenses(request):
             'notes': exp.notes,
             'converted_amount': converted,
             'display_currency': currency,
+            'amount_usd': exp.amount_usd,
+            'amount_cny': exp.amount_cny,
+            'amount_hkd': exp.amount_hkd,
+            'amount_sgd': exp.amount_sgd,
         })
 
     return JsonResponse({
@@ -153,6 +157,10 @@ def add_expense(request):
         'category': expense.category,
         'name': expense.name,
         'notes': expense.notes,
+        'amount_usd': expense.amount_usd,
+        'amount_cny': expense.amount_cny,
+        'amount_hkd': expense.amount_hkd,
+        'amount_sgd': expense.amount_sgd,
     }, status=201)
 
 
@@ -236,12 +244,7 @@ def delete_expense(request, expense_id):
 
 @require_GET
 def list_categories(request):
-    categories = (
-        Expense.objects.values_list('category', flat=True)
-        .distinct()
-        .order_by('category')
-    )
-    return JsonResponse({'categories': list(categories)})
+    return JsonResponse({'categories': EXPENSE_CATEGORIES})
 
 
 @require_GET
@@ -440,6 +443,10 @@ def list_trip_expenses(request, trip_id):
             'name': exp.name,
             'notes': exp.notes,
             'converted_amount': converted,
+            'amount_usd': exp.amount_usd,
+            'amount_cny': exp.amount_cny,
+            'amount_hkd': exp.amount_hkd,
+            'amount_sgd': exp.amount_sgd,
         })
 
     return JsonResponse({
