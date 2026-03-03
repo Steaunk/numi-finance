@@ -8,6 +8,7 @@ class ApiClient {
   final String baseUrl;
   late final Dio _dio;
   final CookieJar _cookieJar = CookieJar();
+  bool _csrfFetched = false;
 
   ApiClient(this.baseUrl, {String? username, String? password}) {
     final headers = <String, dynamic>{'Content-Type': 'application/json'};
@@ -25,19 +26,23 @@ class ApiClient {
     );
     _dio.interceptors.add(CookieManager(_cookieJar));
     // Forward Django's csrftoken cookie as X-CSRFToken header on write requests.
+    // If no CSRF cookie exists yet, make a lightweight GET to obtain one first.
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
         if (options.method != 'GET') {
           try {
             final uri = Uri.parse(baseUrl);
-            final cookies = await _cookieJar.loadForRequest(uri);
-            Cookie? csrf;
-            for (final c in cookies) {
-              if (c.name == 'csrftoken') {
-                csrf = c;
-                break;
-              }
+            var cookies = await _cookieJar.loadForRequest(uri);
+            Cookie? csrf = _findCsrf(cookies);
+
+            // Auto-fetch CSRF token if we don't have one yet.
+            if (csrf == null && !_csrfFetched) {
+              _csrfFetched = true;
+              await _dio.get('/api/rates/');
+              cookies = await _cookieJar.loadForRequest(uri);
+              csrf = _findCsrf(cookies);
             }
+
             if (csrf != null) {
               options.headers['X-CSRFToken'] = csrf.value;
             }
@@ -46,6 +51,13 @@ class ApiClient {
         handler.next(options);
       },
     ));
+  }
+
+  static Cookie? _findCsrf(List<Cookie> cookies) {
+    for (final c in cookies) {
+      if (c.name == 'csrftoken') return c;
+    }
+    return null;
   }
 
   Future<bool> testConnection() async {

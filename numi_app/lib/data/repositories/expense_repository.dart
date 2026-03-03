@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'package:drift/drift.dart';
 import '../../models/expense.dart' as model;
 import '../../utils/currency_utils.dart';
@@ -88,7 +89,8 @@ class ExpenseRepository {
           'notes': notes,
         });
         await _db.expenseDao.markSynced(localId, remote['id'] as int);
-      } catch (_) {
+      } catch (e, st) {
+        developer.log('addExpense push failed: $e', name: 'ExpenseRepo', error: e, stackTrace: st);
         await _db.syncQueueDao.enqueue(
           SyncQueueCompanion.insert(
             entityType: 'expense',
@@ -184,7 +186,8 @@ class ExpenseRepository {
       });
       await _db.expenseDao.markSynced(localId, row.remoteId!);
       return true;
-    } catch (_) {
+    } catch (e, st) {
+      developer.log('updateExpense push failed: $e', name: 'ExpenseRepo', error: e, stackTrace: st);
       return false;
     }
   }
@@ -199,7 +202,8 @@ class ExpenseRepository {
     if (api != null && row?.remoteId != null) {
       try {
         await api.deleteExpense(row!.remoteId!);
-      } catch (_) {
+      } catch (e, st) {
+        developer.log('deleteExpense push failed: $e', name: 'ExpenseRepo', error: e, stackTrace: st);
         await _db.syncQueueDao.enqueue(
           SyncQueueCompanion.insert(
             entityType: 'expense',
@@ -257,7 +261,9 @@ class ExpenseRepository {
           );
         }
       }
-    } catch (_) {}
+    } catch (e, st) {
+      developer.log('syncFromServer failed: $e', name: 'ExpenseRepo', error: e, stackTrace: st);
+    }
   }
 
   model.Expense _rowToModel(DbExpense row) => model.Expense(
