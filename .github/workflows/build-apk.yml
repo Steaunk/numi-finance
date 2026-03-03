@@ -1,4 +1,4 @@
-name: Build Flutter APK
+name: Build Numi
 
 on:
   push:
@@ -7,38 +7,49 @@ on:
       - 'numi_app/**'
       - '.github/workflows/build-apk.yml'
   workflow_dispatch:
+    inputs:
+      build_macos:
+        description: 'Also build macOS DMG'
+        type: boolean
+        default: false
 
 jobs:
-  build:
+  # ── Job 1: Compute version tag ──────────────────────────────────────
+  version:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    defaults:
-      run:
-        working-directory: numi_app
-
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      build_num: ${{ steps.version.outputs.build_num }}
+      title: ${{ steps.version.outputs.title }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Compute version tag
         id: version
-        working-directory: .
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TODAY=$(date -u +%Y%m%d)
-          # Count existing releases tagged with today's date
           EXISTING=$(gh release list --json tagName \
             -q "[.[] | select(.tagName | startswith(\"v${TODAY}.\"))] | length" \
             2>/dev/null || echo "0")
           SEQ=$((EXISTING + 1))
           TAG="v${TODAY}.${SEQ}"
-          # Build number = YYYYMMDD * 100 + seq (monotonically increasing int)
           BUILD_NUM="${TODAY}$(printf '%02d' $SEQ)"
           TITLE="Numi ${TODAY:0:4}.${TODAY:4:2}.${TODAY:6:2} #${SEQ}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "build_num=$BUILD_NUM" >> "$GITHUB_OUTPUT"
           echo "title=$TITLE" >> "$GITHUB_OUTPUT"
+
+  # ── Job 2: Build Android APK ────────────────────────────────────────
+  build-android:
+    runs-on: ubuntu-latest
+    needs: version
+    defaults:
+      run:
+        working-directory: numi_app
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -154,7 +165,7 @@ jobs:
         run: flutter analyze --no-fatal-infos
 
       - name: Build APK
-        run: flutter build apk --release --build-number=${{ steps.version.outputs.build_num }}
+        run: flutter build apk --release --build-number=${{ needs.version.outputs.build_num }}
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -162,12 +173,93 @@ jobs:
           name: numi-apk
           path: numi_app/build/app/outputs/flutter-apk/app-release.apk
 
+  # ── Job 3: Build macOS DMG (only on workflow_dispatch) ──────────────
+  build-macos:
+    if: inputs.build_macos == true
+    runs-on: macos-latest
+    needs: version
+    defaults:
+      run:
+        working-directory: numi_app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.1'
+          channel: stable
+          cache: true
+
+      - name: Generate macOS platform files
+        run: |
+          flutter create --platforms macos --org com.steaunk --no-pub .
+          git checkout macos/Runner/DebugProfile.entitlements \
+            macos/Runner/Release.entitlements
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run code generation (Drift + Freezed)
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build macOS app
+        run: flutter build macos --release --build-number=${{ needs.version.outputs.build_num }}
+
+      - name: Package DMG
+        run: |
+          brew install create-dmg
+          create-dmg \
+            --volname "Numi" \
+            --window-size 600 400 \
+            --icon-size 128 \
+            --app-drop-link 400 200 \
+            --icon "numi_app.app" 200 200 \
+            Numi.dmg \
+            build/macos/Build/Products/Release/numi_app.app
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: numi-dmg
+          path: numi_app/Numi.dmg
+
+  # ── Job 4: Create GitHub Release ────────────────────────────────────
+  release:
+    runs-on: ubuntu-latest
+    needs: [version, build-android, build-macos]
+    if: always() && needs.version.result == 'success' && needs.build-android.result == 'success'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Android APK
+        uses: actions/download-artifact@v4
+        with:
+          name: numi-apk
+          path: artifacts/
+
+      - name: Download macOS DMG
+        if: needs.build-macos.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: numi-dmg
+          path: artifacts/
+
+      - name: Rename artifacts
+        run: |
+          mv artifacts/app-release.apk artifacts/numi.apk
+          if [ -f artifacts/Numi.dmg ]; then
+            mv artifacts/Numi.dmg artifacts/numi.dmg
+          fi
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ steps.version.outputs.tag }}" \
+          gh release create "${{ needs.version.outputs.tag }}" \
             --repo "${{ github.repository }}" \
-            --title "${{ steps.version.outputs.title }}" \
-            --notes "Automated build ${{ steps.version.outputs.tag }}" \
-            build/app/outputs/flutter-apk/app-release.apk
+            --title "${{ needs.version.outputs.title }}" \
+            --notes "Automated build ${{ needs.version.outputs.tag }}" \
+            artifacts/*
