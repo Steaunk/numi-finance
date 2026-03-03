@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:developer' as developer;
+import '../sync/sync_logger.dart';
 import 'package:drift/drift.dart';
 import '../../models/travel_expense.dart' as model;
 import '../../models/trip.dart' as model;
@@ -71,7 +71,7 @@ class TravelRepository {
           synced: const Value(true),
         ));
       } catch (e, st) {
-        developer.log('addTrip push failed: $e', name: 'TravelRepo', error: e, stackTrace: st);
+        SyncLogger.instance.log('addTrip push failed: $e', name: 'TravelRepo', error: e, stackTrace: st);
         await _db.syncQueueDao.enqueue(
           SyncQueueCompanion.insert(
             entityType: 'trip',
@@ -99,7 +99,7 @@ class TravelRepository {
       try {
         await api.deleteTrip(row!.remoteId!);
       } catch (e, st) {
-        developer.log('deleteTrip push failed: $e', name: 'TravelRepo', error: e, stackTrace: st);
+        SyncLogger.instance.log('deleteTrip push failed: $e', name: 'TravelRepo', error: e, stackTrace: st);
         await _db.syncQueueDao.enqueue(
           SyncQueueCompanion.insert(
             entityType: 'trip',
@@ -161,7 +161,7 @@ class TravelRepository {
           synced: const Value(true),
         ));
       } catch (e, st) {
-        developer.log('addTravelExpense push failed: $e', name: 'TravelRepo', error: e, stackTrace: st);
+        SyncLogger.instance.log('addTravelExpense push failed: $e', name: 'TravelRepo', error: e, stackTrace: st);
         await _db.syncQueueDao.enqueue(
           SyncQueueCompanion.insert(
             entityType: 'travel_expense',
@@ -269,7 +269,7 @@ class TravelRepository {
           .write(const TravelExpensesCompanion(synced: Value(true)));
       return true;
     } catch (e, st) {
-      developer.log('updateTravelExpense push failed: $e', name: 'TravelRepo', error: e, stackTrace: st);
+      SyncLogger.instance.log('updateTravelExpense push failed: $e', name: 'TravelRepo', error: e, stackTrace: st);
       return false;
     }
   }
@@ -286,7 +286,7 @@ class TravelRepository {
       try {
         await api.deleteTripExpense(tripRow!.remoteId!, row!.remoteId!);
       } catch (e, st) {
-        developer.log('deleteTravelExpense push failed: $e', name: 'TravelRepo', error: e, stackTrace: st);
+        SyncLogger.instance.log('deleteTravelExpense push failed: $e', name: 'TravelRepo', error: e, stackTrace: st);
         await _db.syncQueueDao.enqueue(
           SyncQueueCompanion.insert(
             entityType: 'travel_expense',
@@ -360,7 +360,7 @@ class TravelRepository {
         }
       }
     } catch (e, st) {
-      developer.log('syncFromServer failed: $e', name: 'TravelRepo', error: e, stackTrace: st);
+      SyncLogger.instance.log('syncFromServer failed: $e', name: 'TravelRepo', error: e, stackTrace: st);
     }
   }
 
