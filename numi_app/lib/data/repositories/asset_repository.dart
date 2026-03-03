@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'package:drift/drift.dart';
 import '../../models/account.dart' as model;
 import '../../models/balance_snapshot.dart' as model;
@@ -51,7 +52,9 @@ class AssetRepository {
           result.add({'date': dates[i], 'total': values[i].toDouble()});
         }
         return result;
-      } catch (_) {}
+      } catch (e, st) {
+        developer.log('getNetWorthTrend API failed: $e', name: 'AssetRepo', error: e, stackTrace: st);
+      }
     }
 
     // Fall back to local snapshots
@@ -124,7 +127,8 @@ class AssetRepository {
           remoteId: Value(remote['id'] as int),
           synced: const Value(true),
         ));
-      } catch (_) {
+      } catch (e, st) {
+        developer.log('addAccount push failed: $e', name: 'AssetRepo', error: e, stackTrace: st);
         await _db.syncQueueDao.enqueue(
           SyncQueueCompanion.insert(
             entityType: 'account',
@@ -223,7 +227,8 @@ class AssetRepository {
             ..where((a) => a.id.equals(localId)))
           .write(const AccountsCompanion(synced: Value(true)));
       return true;
-    } catch (_) {
+    } catch (e, st) {
+      developer.log('updateAccount push failed: $e', name: 'AssetRepo', error: e, stackTrace: st);
       return false;
     }
   }
@@ -246,7 +251,8 @@ class AssetRepository {
     if (api != null && row?.remoteId != null) {
       try {
         await api.deleteAccount(row!.remoteId!);
-      } catch (_) {
+      } catch (e, st) {
+        developer.log('deleteAccount push failed: $e', name: 'AssetRepo', error: e, stackTrace: st);
         await _db.syncQueueDao.enqueue(
           SyncQueueCompanion.insert(
             entityType: 'account',
@@ -289,7 +295,9 @@ class AssetRepository {
           ),
         );
       }
-    } catch (_) {}
+    } catch (e, st) {
+      developer.log('syncFromServer failed: $e', name: 'AssetRepo', error: e, stackTrace: st);
+    }
   }
 
   model.Account _rowToModel(DbAccount row, {double convertedBalance = 0}) =>
