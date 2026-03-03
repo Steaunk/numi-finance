@@ -186,20 +186,38 @@ class AssetRepository {
       synced: false,
     ));
 
+    await _pushAccount(localId);
+  }
+
+  /// Push a single account to the server. Returns true on success.
+  Future<bool> _pushAccount(int localId) async {
     final api = _api;
-    if (api != null && existing.remoteId != null) {
-      try {
-        await api.updateAccount(existing.remoteId!, {
-          'name': name,
-          'currency': currency,
-          'balance': newBalance,
-          'include_in_total': includeInTotal,
-          'notes': notes,
-        });
-        await (_db.update(_db.accounts)
-              ..where((a) => a.id.equals(localId)))
-            .write(AccountsCompanion(synced: const Value(true)));
-      } catch (_) {}
+    final row = await _db.accountDao.getById(localId);
+    if (api == null || row == null || row.remoteId == null) return false;
+    try {
+      await api.updateAccount(row.remoteId!, {
+        'name': row.name,
+        'currency': row.currency,
+        'balance': row.balance,
+        'include_in_total': row.includeInTotal,
+        'notes': row.notes,
+      });
+      await (_db.update(_db.accounts)
+            ..where((a) => a.id.equals(localId)))
+          .write(const AccountsCompanion(synced: Value(true)));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Push all locally-modified accounts to the server before pulling.
+  Future<void> pushUnsyncedAccounts() async {
+    final all = await _db.accountDao.getAll();
+    for (final acc in all) {
+      if (!acc.synced && acc.remoteId != null) {
+        await _pushAccount(acc.id);
+      }
     }
   }
 
@@ -218,12 +236,23 @@ class AssetRepository {
   Future<void> syncFromServer(String currency) async {
     final api = _api;
     if (api == null) return;
+
+    // Push local changes first so the server has the latest data
+    await pushUnsyncedAccounts();
+
     try {
       final accounts = await api.getAccounts(currency: currency);
       for (final a in accounts) {
+        final remoteId = a['id'] as int;
+        // Skip overwriting accounts with pending local changes
+        final existing = await ((_db.select(_db.accounts))
+              ..where((row) => row.remoteId.equals(remoteId)))
+            .getSingleOrNull();
+        if (existing != null && !existing.synced) continue;
+
         await _db.accountDao.upsertByRemoteId(
           AccountsCompanion(
-            remoteId: Value(a['id'] as int),
+            remoteId: Value(remoteId),
             name: Value(a['name'] as String),
             currency: Value(a['currency'] as String),
             balance: Value((a['balance'] as num).toDouble()),
