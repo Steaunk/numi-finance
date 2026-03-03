@@ -24,9 +24,9 @@ class ApiClient {
         headers: headers,
       ),
     );
-    _dio.interceptors.add(CookieManager(_cookieJar));
-    // Forward Django's csrftoken cookie as X-CSRFToken header on write requests.
-    // If no CSRF cookie exists yet, make a lightweight GET to obtain one first.
+    // CSRF interceptor MUST be added before CookieManager so it can
+    // populate the cookie jar (via a GET) before CookieManager sets the
+    // Cookie header on the outgoing request.
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
         if (options.method != 'GET') {
@@ -51,6 +51,7 @@ class ApiClient {
         handler.next(options);
       },
     ));
+    _dio.interceptors.add(CookieManager(_cookieJar));
   }
 
   static Cookie? _findCsrf(List<Cookie> cookies) {
