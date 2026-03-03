@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../config/constants.dart';
 import '../../../providers/providers.dart';
 import '../../common/widgets/loading_button.dart';
+import '../widgets/api_sync_config.dart';
 
 class AddAccountScreen extends ConsumerStatefulWidget {
   const AddAccountScreen({super.key});
@@ -13,6 +14,7 @@ class AddAccountScreen extends ConsumerStatefulWidget {
 
 class _AddAccountScreenState extends ConsumerState<AddAccountScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _apiSyncKey = GlobalKey<ApiSyncConfigState>();
   final _nameController = TextEditingController();
   final _balanceController = TextEditingController(text: '0');
   final _notesController = TextEditingController();
@@ -96,6 +98,8 @@ class _AddAccountScreenState extends ConsumerState<AddAccountScreen> {
                 decoration: const InputDecoration(labelText: 'Notes'),
                 maxLines: 2,
               ),
+              const SizedBox(height: 12),
+              ApiSyncConfig(key: _apiSyncKey),
               const SizedBox(height: 20),
               LoadingButton(
                 loading: _saving,
@@ -113,12 +117,16 @@ class _AddAccountScreenState extends ConsumerState<AddAccountScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
     try {
+      final syncState = _apiSyncKey.currentState;
       await ref.read(assetRepositoryProvider).addAccount(
             name: _nameController.text.trim(),
             currency: _currency,
             balance: double.parse(_balanceController.text),
             includeInTotal: _includeInTotal,
             notes: _notesController.text.trim(),
+            apiUrl: syncState?.apiUrl,
+            apiValuePath: syncState?.apiValuePath,
+            apiAuth: syncState?.apiAuth,
           );
       if (mounted) {
         Navigator.pop(context);
