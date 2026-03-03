@@ -87,19 +87,48 @@ jobs:
           EOF
           # Strip leading whitespace from key.properties (YAML heredoc artifact)
           sed -i 's/^[[:space:]]*//' android/key.properties
-          # Patch build.gradle to use release signing
+          # Patch build.gradle.kts to use release signing
           python3 - <<'PYEOF'
           import re, pathlib
-          f = pathlib.Path('android/app/build.gradle')
-          t = f.read_text()
-          header = """def keystoreProperties = new Properties()
+          # Flutter 3.29+ generates Kotlin DSL; fall back to Groovy if needed
+          kts = pathlib.Path('android/app/build.gradle.kts')
+          groovy = pathlib.Path('android/app/build.gradle')
+          if kts.exists():
+              t = kts.read_text()
+              header = """import java.util.Properties
+          import java.io.FileInputStream
+
+          val keystoreProperties = Properties()
+          val keystorePropertiesFile = rootProject.file("key.properties")
+          if (keystorePropertiesFile.exists()) {
+              keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+          }
+
+          """
+              t = header + t
+              signing = """    signingConfigs {
+                  create("release") {
+                      keyAlias = keystoreProperties["keyAlias"] as String?
+                      keyPassword = keystoreProperties["keyPassword"] as String?
+                      storeFile = keystoreProperties["storeFile"]?.let { file(it as String) }
+                      storePassword = keystoreProperties["storePassword"] as String?
+                  }
+              }
+          """
+              t = t.replace('    buildTypes {', signing + '    buildTypes {')
+              t = t.replace('signingConfig = signingConfigs.getByName("debug")',
+                            'signingConfig = signingConfigs.getByName("release")')
+              kts.write_text(t)
+          elif groovy.exists():
+              t = groovy.read_text()
+              header = """def keystoreProperties = new Properties()
           def keystorePropertiesFile = rootProject.file('key.properties')
           if (keystorePropertiesFile.exists()) {
               keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
           }
           """
-          t = header + t
-          signing = """
+              t = header + t
+              signing = """
               signingConfigs {
                   release {
                       keyAlias keystoreProperties['keyAlias']
@@ -109,10 +138,10 @@ jobs:
                   }
               }
           """
-          t = t.replace('    buildTypes {', signing + '    buildTypes {')
-          t = re.sub(r'(release \{[^}]*?)signingConfig signingConfigs\.debug',
-                     r'\1signingConfig signingConfigs.release', t)
-          f.write_text(t)
+              t = t.replace('    buildTypes {', signing + '    buildTypes {')
+              t = re.sub(r'(release \{[^}]*?)signingConfig signingConfigs\.debug',
+                         r'\1signingConfig signingConfigs.release', t)
+              groovy.write_text(t)
           PYEOF
 
       - name: Install dependencies
