@@ -142,7 +142,6 @@ final syncServiceProvider = Provider<SyncService?>((ref) {
   if (client == null) return null;
   return SyncService(
     db: ref.watch(databaseProvider),
-    apiClient: client,
     expenseApi: ref.watch(expenseApiProvider)!,
     travelApi: ref.watch(travelApiProvider)!,
     assetApi: ref.watch(assetApiProvider)!,

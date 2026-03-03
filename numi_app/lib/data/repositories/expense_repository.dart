@@ -152,6 +152,12 @@ class ExpenseRepository {
           currency: currency,
         );
         for (final e in expenses) {
+          final remoteId = e['id'] as int;
+          final existing = await (_db.select(_db.expenses)
+                ..where((row) => row.remoteId.equals(remoteId)))
+              .getSingleOrNull();
+          if (existing != null && !existing.synced) continue;
+
           final date = DateTime.parse(e['date'] as String);
           await _db.expenseDao.upsertByRemoteId(
             ExpensesCompanion(

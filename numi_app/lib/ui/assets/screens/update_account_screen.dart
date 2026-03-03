@@ -4,6 +4,7 @@ import '../../../config/constants.dart';
 import '../../../models/account.dart';
 import '../../../providers/providers.dart';
 import '../../common/widgets/loading_button.dart';
+import '../../common/widgets/dialogs.dart';
 import '../../../utils/currency_utils.dart';
 
 class UpdateAccountScreen extends ConsumerStatefulWidget {
@@ -63,23 +64,12 @@ class _UpdateAccountScreenState extends ConsumerState<UpdateAccountScreen> {
                   icon: Icon(Icons.delete,
                       color: Theme.of(context).colorScheme.error),
                   onPressed: () async {
-                    final confirm = await showDialog<bool>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('Delete Account'),
-                        content:
-                            Text('Delete "${widget.account.name}"?'),
-                        actions: [
-                          TextButton(
-                              onPressed: () => Navigator.pop(ctx, false),
-                              child: const Text('Cancel')),
-                          TextButton(
-                              onPressed: () => Navigator.pop(ctx, true),
-                              child: const Text('Delete')),
-                        ],
-                      ),
+                    final confirm = await showDeleteConfirmDialog(
+                      context,
+                      title: 'Delete Account',
+                      content: 'Delete "${widget.account.name}"?',
                     );
-                    if (confirm == true && context.mounted) {
+                    if (confirm && context.mounted) {
                       await ref
                           .read(assetRepositoryProvider)
                           .deleteAccount(widget.account.id);

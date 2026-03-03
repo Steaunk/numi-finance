@@ -186,7 +186,24 @@ class AssetRepository {
       synced: false,
     ));
 
-    await _pushAccount(localId);
+    final pushed = await _pushAccount(localId);
+    if (!pushed) {
+      await _db.syncQueueDao.enqueue(
+        SyncQueueCompanion.insert(
+          entityType: 'account',
+          operation: 'update',
+          localId: localId,
+          payload: jsonEncode({
+            'name': name,
+            'currency': currency,
+            'balance': newBalance,
+            'include_in_total': includeInTotal,
+            'notes': notes,
+          }),
+          createdAt: Value(DateTime.now()),
+        ),
+      );
+    }
   }
 
   /// Push a single account to the server. Returns true on success.
@@ -229,7 +246,17 @@ class AssetRepository {
     if (api != null && row?.remoteId != null) {
       try {
         await api.deleteAccount(row!.remoteId!);
-      } catch (_) {}
+      } catch (_) {
+        await _db.syncQueueDao.enqueue(
+          SyncQueueCompanion.insert(
+            entityType: 'account',
+            operation: 'delete',
+            localId: localId,
+            payload: jsonEncode({'remote_id': row!.remoteId}),
+            createdAt: Value(DateTime.now()),
+          ),
+        );
+      }
     }
   }
 
