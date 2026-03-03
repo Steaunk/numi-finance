@@ -1,5 +1,18 @@
 from django.db import models
 
+EXPENSE_CATEGORIES = [
+    'Bills, Utilities & Taxes',
+    'Education',
+    'Entertainment',
+    'Food & Drinks',
+    'Groceries',
+    'Health & Fitness',
+    'Housing',
+    'Others',
+    'Transport',
+    'Travel',
+]
+
 
 class Expense(models.Model):
     amount = models.FloatField()
