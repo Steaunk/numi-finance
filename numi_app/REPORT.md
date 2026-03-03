@@ -165,10 +165,11 @@ GET    /assets/api/accounts/{id}/history/ # Balance snapshots
 
 | # | Issue | Status |
 |---|---|---|
-| 1 | Expense edit not available — only delete (swipe) | Not implemented |
-| 2 | `SyncQueue.retryCount` field exists but never incremented; stuck items accumulate indefinitely | Not implemented |
-| 3 | Local database file still named `expense_tracker.db` | Cosmetic (changing would require migration) |
-| 4 | `ExchangeRates` table has a `jpy` column but JPY was removed from display currencies | Cosmetic |
+| 1 | Expense edit not available — only delete (swipe) | Fixed (tap row to open edit sheet) |
+| 2 | `SyncQueue.retryCount` field exists but never incremented; stuck items accumulate indefinitely | Deferred — needs max-retry cap logic |
+| 3 | Local database file still named `expense_tracker.db` | Fixed (renamed to `numi.db` at open time) |
+| 4 | `ExchangeRates` table has a `jpy` column but JPY was removed from display currencies | Cosmetic — left as-is |
+| 5 | Travel expense edit not available — only swipe-delete | Fixed (tap row to open edit sheet) |
 
 ---
 

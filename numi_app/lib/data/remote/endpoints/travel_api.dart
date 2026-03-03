@@ -47,6 +47,18 @@ class TravelApi {
     return response.data as Map<String, dynamic>;
   }
 
+  Future<Map<String, dynamic>> updateTripExpense(
+    int tripId,
+    int expenseId,
+    Map<String, dynamic> payload,
+  ) async {
+    final response = await _client.put<Map<String, dynamic>>(
+      '/expenses/api/travel/trips/$tripId/expenses/$expenseId/',
+      data: payload,
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
   Future<void> deleteTripExpense(int tripId, int expenseId) =>
       _client.delete(
           '/expenses/api/travel/trips/$tripId/expenses/$expenseId/delete/');
