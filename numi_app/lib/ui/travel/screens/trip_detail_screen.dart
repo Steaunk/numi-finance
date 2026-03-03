@@ -33,6 +33,8 @@ class TripDetailScreen extends ConsumerWidget {
             amountCny: e.amountCny,
             amountHkd: e.amountHkd,
             amountSgd: e.amountSgd,
+            originalAmount: e.amount,
+            originalCurrency: e.currency,
           );
           categoryTotals.update(e.category, (v) => v + amount,
               ifAbsent: () => amount);

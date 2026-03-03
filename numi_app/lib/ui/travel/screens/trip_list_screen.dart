@@ -45,6 +45,8 @@ class TripListScreen extends ConsumerWidget {
                     amountCny: e.amountCny,
                     amountHkd: e.amountHkd,
                     amountSgd: e.amountSgd,
+                    originalAmount: e.amount,
+                    originalCurrency: e.currency,
                   ),
                 );
                 return Card(

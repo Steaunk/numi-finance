@@ -39,10 +39,25 @@ class AssetRepository {
 
   Future<List<Map<String, dynamic>>> getNetWorthTrend(
       String displayCurrency) async {
+    // Try fetching from API (has full historical data)
+    final api = _api;
+    if (api != null) {
+      try {
+        final data = await api.getTrend(currency: displayCurrency);
+        final dates = List<String>.from(data['dates'] as List);
+        final values = List<num>.from(data['values'] as List);
+        final result = <Map<String, dynamic>>[];
+        for (var i = 0; i < dates.length; i++) {
+          result.add({'date': dates[i], 'total': values[i].toDouble()});
+        }
+        return result;
+      } catch (_) {}
+    }
+
+    // Fall back to local snapshots
     final snapshots = await _db.accountDao.getAllSnapshots();
     if (snapshots.isEmpty) return [];
 
-    // Group by date, sum amounts for accounts included in total
     final byDate = <String, double>{};
     final accountMap = <int, DbAccount>{};
     final allAccounts = await _db.accountDao.getAll();

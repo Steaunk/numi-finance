@@ -91,17 +91,27 @@ class CurrencyUtils {
         originalCurrency.toUpperCase() == displayCurrency.toUpperCase()) {
       return originalAmount ?? amountUsd;
     }
+    double result;
     switch (displayCurrency.toUpperCase()) {
       case 'USD':
-        return amountUsd;
+        result = amountUsd;
       case 'CNY':
-        return amountCny;
+        result = amountCny;
       case 'HKD':
-        return amountHkd;
+        result = amountHkd;
       case 'SGD':
-        return amountSgd;
+        result = amountSgd;
       default:
-        return amountUsd;
+        result = amountUsd;
     }
+    // Fallback: estimate using fallback rates when pre-computed amounts are 0
+    if (result == 0 &&
+        originalAmount != null &&
+        originalAmount > 0 &&
+        originalCurrency != null) {
+      return convert(originalAmount, originalCurrency, displayCurrency,
+          AppConstants.fallbackRates);
+    }
+    return result;
   }
 }
