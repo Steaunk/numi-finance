@@ -56,6 +56,11 @@ class SyncService {
   Future<void> _processSyncQueue() async {
     final pending = await _db.syncQueueDao.getPending();
     for (final op in pending) {
+      // If the record was already synced (e.g. by syncFromServer), drop the op.
+      if (op.operation != 'delete' && await _isAlreadySynced(op)) {
+        await _db.syncQueueDao.removeById(op.id);
+        continue;
+      }
       if (op.retryCount >= _maxRetries) {
         developer.log(
           'Sync op ${op.id} (${op.entityType}/${op.operation}) exceeded '
@@ -80,8 +85,6 @@ class SyncService {
         if (handled) {
           await _db.syncQueueDao.removeById(op.id);
         } else {
-          // Precondition not met (e.g. missing remoteId) — increment retry
-          // so it eventually gets cleaned up instead of staying stuck forever.
           developer.log(
             'Sync op ${op.id} (${op.entityType}/${op.operation}) '
             'precondition not met, retry ${op.retryCount + 1}/$_maxRetries',
@@ -98,6 +101,31 @@ class SyncService {
         );
         await _db.syncQueueDao.incrementRetry(op.id);
       }
+    }
+  }
+
+  /// Check if the local record is already synced (has remoteId + synced=true).
+  /// If so, the queue entry is redundant — syncFromServer already handled it.
+  Future<bool> _isAlreadySynced(DbSyncOperation op) async {
+    switch (op.entityType) {
+      case 'expense':
+        final row = await (_db.select(_db.expenses)
+              ..where((e) => e.id.equals(op.localId)))
+            .getSingleOrNull();
+        return row != null && row.synced && row.remoteId != null;
+      case 'trip':
+        final row = await _db.tripDao.getById(op.localId);
+        return row != null && row.synced && row.remoteId != null;
+      case 'travel_expense':
+        final row = await (_db.select(_db.travelExpenses)
+              ..where((e) => e.id.equals(op.localId)))
+            .getSingleOrNull();
+        return row != null && row.synced && row.remoteId != null;
+      case 'account':
+        final row = await _db.accountDao.getById(op.localId);
+        return row != null && row.synced && row.remoteId != null;
+      default:
+        return false;
     }
   }
 
