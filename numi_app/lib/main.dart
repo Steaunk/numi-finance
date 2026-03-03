@@ -103,15 +103,27 @@ class _NumiAppState extends ConsumerState<NumiApp> {
       final dir = await getTemporaryDirectory();
       final savePath = '${dir.path}/numi_update.apk';
 
-      await Dio(BaseOptions(
+      // Step 1: Request the asset with Accept: octet-stream.
+      // GitHub responds with 302 → pre-signed CDN URL.
+      // We must NOT forward the Authorization header to the CDN,
+      // so disable followRedirects and resolve the location manually.
+      final redirectResp = await Dio(BaseOptions(
         headers: {
           'Authorization': 'Bearer $token',
           'Accept': 'application/octet-stream',
         },
-        followRedirects: true,
-        maxRedirects: 5,
-      )).download(
-        assetApiUrl,
+        followRedirects: false,
+        validateStatus: (status) => status != null && status < 400,
+      )).get(assetApiUrl);
+
+      final downloadUrl = redirectResp.headers.value('location');
+      if (downloadUrl == null) {
+        throw Exception('GitHub did not return a download URL');
+      }
+
+      // Step 2: Download from CDN (no auth — URL is pre-signed)
+      await Dio().download(
+        downloadUrl,
         savePath,
         onReceiveProgress: (received, total) {
           if (total > 0) progressNotifier.value = received / total;
