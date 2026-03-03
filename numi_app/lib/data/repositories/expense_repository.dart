@@ -109,6 +109,86 @@ class ExpenseRepository {
     }
   }
 
+  Future<void> updateExpense(
+    int localId, {
+    required double amount,
+    required String currency,
+    required DateTime date,
+    required String category,
+    required String name,
+    String notes = '',
+  }) async {
+    final rates = await _rateRepo.getCachedRates();
+    final computed = CurrencyUtils.computeAmounts(amount, currency, rates);
+
+    await _db.expenseDao.updateRow(
+      localId,
+      ExpensesCompanion(
+        amount: Value(amount),
+        currency: Value(currency),
+        date: Value(date),
+        category: Value(category),
+        name: Value(name),
+        notes: Value(notes),
+        amountUsd: Value(computed['amount_usd']!),
+        amountCny: Value(computed['amount_cny']!),
+        amountHkd: Value(computed['amount_hkd']!),
+        amountSgd: Value(computed['amount_sgd']!),
+        synced: const Value(false),
+      ),
+    );
+
+    final pushed = await _pushExpense(localId, amount, currency, date, category, name, notes);
+    if (!pushed) {
+      await _db.syncQueueDao.enqueue(
+        SyncQueueCompanion.insert(
+          entityType: 'expense',
+          operation: 'update',
+          localId: localId,
+          payload: jsonEncode({
+            'amount': amount,
+            'currency': currency,
+            'date': date.toIso8601String(),
+            'category': category,
+            'name': name,
+            'notes': notes,
+          }),
+          createdAt: Value(DateTime.now()),
+        ),
+      );
+    }
+  }
+
+  Future<bool> _pushExpense(
+    int localId,
+    double amount,
+    String currency,
+    DateTime date,
+    String category,
+    String name,
+    String notes,
+  ) async {
+    final api = _api;
+    final row = await (_db.select(_db.expenses)
+          ..where((e) => e.id.equals(localId)))
+        .getSingleOrNull();
+    if (api == null || row == null || row.remoteId == null) return false;
+    try {
+      await api.updateExpense(row.remoteId!, {
+        'amount': amount,
+        'currency': currency,
+        'date': AppDateUtils.formatDate(date),
+        'category': category,
+        'name': name,
+        'notes': notes,
+      });
+      await _db.expenseDao.markSynced(localId, row.remoteId!);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> deleteExpense(int localId) async {
     final row = await (_db.select(_db.expenses)
           ..where((e) => e.id.equals(localId)))

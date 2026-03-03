@@ -96,6 +96,13 @@ class ExpenseListScreen extends ConsumerWidget {
                           ],
                         ),
                         child: ListTile(
+                          onTap: () => showModalBottomSheet(
+                            context: context,
+                            isScrollControlled: true,
+                            useSafeArea: true,
+                            builder: (_) =>
+                                AddExpenseScreen(expense: expense),
+                          ),
                           leading: CircleAvatar(
                             backgroundColor: Theme.of(context)
                                 .colorScheme

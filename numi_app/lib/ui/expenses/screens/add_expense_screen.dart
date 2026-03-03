@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../config/constants.dart';
+import '../../../models/expense.dart';
 import '../../../providers/providers.dart';
 import '../../../utils/date_utils.dart';
 import '../../common/widgets/loading_button.dart';
+import '../../common/widgets/dialogs.dart';
 
 class AddExpenseScreen extends ConsumerStatefulWidget {
-  const AddExpenseScreen({super.key});
+  /// Pass an existing expense to open in edit mode.
+  final Expense? expense;
+
+  const AddExpenseScreen({super.key, this.expense});
 
   @override
   ConsumerState<AddExpenseScreen> createState() => _AddExpenseScreenState();
@@ -14,13 +19,28 @@ class AddExpenseScreen extends ConsumerStatefulWidget {
 
 class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _amountController = TextEditingController();
-  final _nameController = TextEditingController();
-  final _categoryController = TextEditingController();
-  final _notesController = TextEditingController();
-  String _currency = AppConstants.defaultCurrency;
-  DateTime _date = DateTime.now();
+  late final TextEditingController _amountController;
+  late final TextEditingController _nameController;
+  late final TextEditingController _categoryController;
+  late final TextEditingController _notesController;
+  late String _currency;
+  late DateTime _date;
   bool _saving = false;
+
+  bool get _isEditing => widget.expense != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.expense;
+    _amountController = TextEditingController(
+        text: e != null ? e.amount.toString() : '');
+    _nameController = TextEditingController(text: e?.name ?? '');
+    _categoryController = TextEditingController(text: e?.category ?? '');
+    _notesController = TextEditingController(text: e?.notes ?? '');
+    _currency = e?.currency ?? AppConstants.defaultCurrency;
+    _date = e?.date ?? DateTime.now();
+  }
 
   @override
   void dispose() {
@@ -49,8 +69,33 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Add Expense',
-                  style: Theme.of(context).textTheme.headlineSmall),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    _isEditing ? 'Edit Expense' : 'Add Expense',
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  if (_isEditing)
+                    IconButton(
+                      icon: Icon(Icons.delete,
+                          color: Theme.of(context).colorScheme.error),
+                      onPressed: () async {
+                        final confirm = await showDeleteConfirmDialog(
+                          context,
+                          title: 'Delete Expense',
+                          content: 'Delete "${widget.expense!.name}"?',
+                        );
+                        if (confirm && context.mounted) {
+                          await ref
+                              .read(expenseRepositoryProvider)
+                              .deleteExpense(widget.expense!.id);
+                          if (context.mounted) Navigator.pop(context);
+                        }
+                      },
+                    ),
+                ],
+              ),
               const SizedBox(height: 16),
               // Amount + Currency row
               Row(
@@ -105,6 +150,8 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
               // Category with autocomplete
               categoriesAsync.when(
                 data: (categories) => Autocomplete<String>(
+                  initialValue:
+                      TextEditingValue(text: _categoryController.text),
                   optionsBuilder: (value) {
                     if (value.text.isEmpty) return categories;
                     return categories.where((c) =>
@@ -113,7 +160,6 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                   onSelected: (v) => _categoryController.text = v,
                   fieldViewBuilder:
                       (context, controller, focusNode, onSubmitted) {
-                    // Sync with our controller
                     controller.addListener(
                         () => _categoryController.text = controller.text);
                     return TextFormField(
@@ -156,7 +202,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
               LoadingButton(
                 loading: _saving,
                 onPressed: _save,
-                label: 'Add Expense',
+                label: _isEditing ? 'Save Changes' : 'Add Expense',
               ),
             ],
           ),
@@ -169,18 +215,38 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
     try {
-      await ref.read(expenseRepositoryProvider).addExpense(
-            amount: double.parse(_amountController.text),
-            currency: _currency,
-            date: _date,
-            category: _categoryController.text.trim(),
-            name: _nameController.text.trim(),
-            notes: _notesController.text.trim(),
-          );
+      final amount = double.parse(_amountController.text);
+      final category = _categoryController.text.trim();
+      final name = _nameController.text.trim();
+      final notes = _notesController.text.trim();
+
+      if (_isEditing) {
+        await ref.read(expenseRepositoryProvider).updateExpense(
+              widget.expense!.id,
+              amount: amount,
+              currency: _currency,
+              date: _date,
+              category: category,
+              name: name,
+              notes: notes,
+            );
+      } else {
+        await ref.read(expenseRepositoryProvider).addExpense(
+              amount: amount,
+              currency: _currency,
+              date: _date,
+              category: category,
+              name: name,
+              notes: notes,
+            );
+      }
+
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Expense added')),
+          SnackBar(
+              content:
+                  Text(_isEditing ? 'Expense updated' : 'Expense added')),
         );
       }
     } catch (e) {
