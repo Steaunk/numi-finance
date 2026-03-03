@@ -5,6 +5,7 @@ import '../../../models/account.dart';
 import '../../../providers/providers.dart';
 import '../../common/widgets/loading_button.dart';
 import '../../../utils/currency_utils.dart';
+import '../widgets/api_sync_config.dart';
 
 class UpdateAccountScreen extends ConsumerStatefulWidget {
   final Account account;
@@ -16,6 +17,7 @@ class UpdateAccountScreen extends ConsumerStatefulWidget {
 }
 
 class _UpdateAccountScreenState extends ConsumerState<UpdateAccountScreen> {
+  final _apiSyncKey = GlobalKey<ApiSyncConfigState>();
   late final TextEditingController _nameController;
   late final TextEditingController _balanceController;
   late final TextEditingController _notesController;
@@ -141,6 +143,13 @@ class _UpdateAccountScreenState extends ConsumerState<UpdateAccountScreen> {
               decoration: const InputDecoration(labelText: 'Notes'),
               maxLines: 2,
             ),
+            const SizedBox(height: 12),
+            ApiSyncConfig(
+              key: _apiSyncKey,
+              initialApiUrl: widget.account.apiUrl,
+              initialApiValuePath: widget.account.apiValuePath,
+              initialApiAuth: widget.account.apiAuth,
+            ),
             const SizedBox(height: 20),
             LoadingButton(
               loading: _saving,
@@ -157,6 +166,7 @@ class _UpdateAccountScreenState extends ConsumerState<UpdateAccountScreen> {
     setState(() => _saving = true);
     try {
       final newBalance = double.tryParse(_balanceController.text);
+      final syncState = _apiSyncKey.currentState;
       await ref.read(assetRepositoryProvider).updateAccount(
             widget.account.id,
             name: _nameController.text.trim(),
@@ -164,6 +174,9 @@ class _UpdateAccountScreenState extends ConsumerState<UpdateAccountScreen> {
             balance: newBalance,
             includeInTotal: _includeInTotal,
             notes: _notesController.text.trim(),
+            apiUrl: syncState?.apiUrl,
+            apiValuePath: syncState?.apiValuePath,
+            apiAuth: syncState?.apiAuth,
           );
       if (mounted) {
         Navigator.pop(context);

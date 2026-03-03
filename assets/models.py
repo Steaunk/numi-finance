@@ -9,6 +9,9 @@ class Account(models.Model):
     balance = models.FloatField(default=0)
     include_in_total = models.BooleanField(default=True)
     notes = models.TextField(blank=True, default='')
+    api_url = models.URLField(max_length=500, blank=True, null=True, default=None)
+    api_value_path = models.CharField(max_length=200, blank=True, null=True, default=None)
+    api_auth = models.TextField(blank=True, null=True, default=None)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

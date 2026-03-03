@@ -61,4 +61,13 @@ class AssetApi {
     final data = response.data as Map<String, dynamic>;
     return List<Map<String, dynamic>>.from(data['snapshots'] as List? ?? []);
   }
+
+  Future<List<Map<String, dynamic>>> syncApiAccounts({int? id}) async {
+    final path = id != null
+        ? '/assets/api/accounts/sync/?id=$id'
+        : '/assets/api/accounts/sync/';
+    final response = await _client.post<Map<String, dynamic>>(path);
+    final data = response.data as Map<String, dynamic>;
+    return List<Map<String, dynamic>>.from(data['results'] as List);
+  }
 }

@@ -67,6 +67,9 @@ class Accounts extends Table {
   RealColumn get balance => real().withDefault(const Constant(0))();
   BoolColumn get includeInTotal => boolean().withDefault(const Constant(true))();
   TextColumn get notes => text().withDefault(const Constant(''))();
+  TextColumn get apiUrl => text().nullable()();
+  TextColumn get apiValuePath => text().nullable()();
+  TextColumn get apiAuth => text().nullable()();
   DateTimeColumn get createdAt => dateTime().nullable()();
   DateTimeColumn get updatedAt => dateTime().nullable()();
   BoolColumn get synced => boolean().withDefault(const Constant(false))();
@@ -346,7 +349,19 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onCreate: (m) => m.createAll(),
+        onUpgrade: (m, from, to) async {
+          if (from < 2) {
+            await m.addColumn(accounts, accounts.apiUrl);
+            await m.addColumn(accounts, accounts.apiValuePath);
+            await m.addColumn(accounts, accounts.apiAuth);
+          }
+        },
+      );
 }
 
 LazyDatabase _openConnection() {
