@@ -5,6 +5,7 @@ import '../../../providers/providers.dart';
 import '../../../utils/currency_utils.dart';
 import '../../../utils/date_utils.dart';
 import '../../common/widgets/currency_selector.dart';
+import '../../common/widgets/empty_state.dart';
 import '../../common/widgets/sync_status_indicator.dart';
 import 'add_trip_screen.dart';
 
@@ -24,17 +25,9 @@ class TripListScreen extends ConsumerWidget {
       body: tripsAsync.when(
         data: (trips) {
           if (trips.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.flight, size: 64,
-                      color: Theme.of(context).colorScheme.outline),
-                  const SizedBox(height: 16),
-                  Text('No trips yet',
-                      style: Theme.of(context).textTheme.bodyLarge),
-                ],
-              ),
+            return const EmptyState(
+              icon: Icons.flight,
+              message: 'No trips yet',
             );
           }
           return RefreshIndicator(

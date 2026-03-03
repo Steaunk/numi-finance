@@ -3,11 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:go_router/go_router.dart';
 import '../../../providers/providers.dart';
+import '../../../utils/category_utils.dart';
 import '../../../utils/currency_utils.dart';
 import '../../../utils/date_utils.dart';
 import '../../common/widgets/currency_selector.dart';
 import '../../common/widgets/sync_status_indicator.dart';
 import '../../common/widgets/amount_display.dart';
+import '../../common/widgets/empty_state.dart';
+import '../../common/widgets/loading_button.dart';
 import 'add_expense_screen.dart';
 
 class ExpenseListScreen extends ConsumerWidget {
@@ -61,18 +64,9 @@ class ExpenseListScreen extends ConsumerWidget {
             child: expensesAsync.when(
               data: (expenses) {
                 if (expenses.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.receipt_long,
-                            size: 64,
-                            color: Theme.of(context).colorScheme.outline),
-                        const SizedBox(height: 16),
-                        Text('No expenses this month',
-                            style: Theme.of(context).textTheme.bodyLarge),
-                      ],
-                    ),
+                  return const EmptyState(
+                    icon: Icons.receipt_long,
+                    message: 'No expenses this month',
                   );
                 }
                 return RefreshIndicator(
@@ -138,7 +132,7 @@ class ExpenseListScreen extends ConsumerWidget {
                                 .colorScheme
                                 .primaryContainer,
                             child: Icon(
-                              _categoryIcon(expense.category),
+                              CategoryUtils.icon(expense.category),
                               color: Theme.of(context)
                                   .colorScheme
                                   .onPrimaryContainer,
@@ -263,32 +257,5 @@ class _TotalCard extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-IconData _categoryIcon(String category) {
-  switch (category) {
-    case 'Bills, Utilities & Taxes':
-      return Icons.receipt_long;
-    case 'Education':
-      return Icons.school;
-    case 'Entertainment':
-      return Icons.movie;
-    case 'Food & Drinks':
-      return Icons.restaurant;
-    case 'Groceries':
-      return Icons.shopping_cart;
-    case 'Health & Fitness':
-      return Icons.fitness_center;
-    case 'Housing':
-      return Icons.home;
-    case 'Others':
-      return Icons.more_horiz;
-    case 'Transport':
-      return Icons.directions_bus;
-    case 'Travel':
-      return Icons.flight;
-    default:
-      return Icons.attach_money;
   }
 }

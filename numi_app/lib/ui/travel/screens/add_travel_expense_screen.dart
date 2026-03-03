@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../config/constants.dart';
 import '../../../providers/providers.dart';
 import '../../../utils/date_utils.dart';
+import '../../common/widgets/loading_button.dart';
 
 class AddTravelExpenseScreen extends ConsumerStatefulWidget {
   final int tripId;
@@ -121,13 +122,10 @@ class _AddTravelExpenseScreenState
                 maxLines: 2,
               ),
               const SizedBox(height: 20),
-              FilledButton(
-                onPressed: _saving ? null : _save,
-                child: _saving
-                    ? const SizedBox(
-                        height: 20, width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('Add Expense'),
+              LoadingButton(
+                loading: _saving,
+                onPressed: _save,
+                label: 'Add Expense',
               ),
             ],
           ),

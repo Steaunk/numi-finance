@@ -2,14 +2,17 @@ import 'dart:convert';
 import 'package:drift/drift.dart';
 import '../../models/expense.dart' as model;
 import '../../utils/currency_utils.dart';
+import '../../utils/date_utils.dart';
 import '../local/database.dart';
 import '../remote/endpoints/expense_api.dart';
+import 'rate_repository.dart';
 
 class ExpenseRepository {
   final AppDatabase _db;
   final ExpenseApi? _api;
+  final RateRepository _rateRepo;
 
-  ExpenseRepository(this._db, this._api);
+  ExpenseRepository(this._db, this._api, this._rateRepo);
 
   Stream<List<model.Expense>> watchByMonth(int year, int month) {
     return _db.expenseDao.watchByMonth(year, month).map(
@@ -27,8 +30,7 @@ class ExpenseRepository {
     final rows = await _db.expenseDao.getAll(year: year);
     final result = <String, Map<String, double>>{};
     for (final row in rows) {
-      final monthKey =
-          '${row.date.year}-${row.date.month.toString().padLeft(2, '0')}';
+      final monthKey = AppDateUtils.monthKey(row.date);
       final amount = CurrencyUtils.getDisplayAmount(
         displayCurrency: displayCurrency,
         amountUsd: row.amountUsd,
@@ -56,7 +58,7 @@ class ExpenseRepository {
     required String name,
     String notes = '',
   }) async {
-    final rates = await _getCachedRates();
+    final rates = await _rateRepo.getCachedRates();
     final computed = CurrencyUtils.computeAmounts(amount, currency, rates);
 
     final companion = ExpensesCompanion.insert(
@@ -80,7 +82,7 @@ class ExpenseRepository {
         final remote = await api.addExpense({
           'amount': amount,
           'currency': currency,
-          'date': '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}',
+          'date': AppDateUtils.formatDate(date),
           'category': category,
           'name': name,
           'notes': notes,
@@ -170,15 +172,6 @@ class ExpenseRepository {
         }
       }
     } catch (_) {}
-  }
-
-  Future<Map<String, double>> _getCachedRates() async {
-    final rate = await _db.exchangeRateDao.getLatest();
-    if (rate != null) {
-      return {'cny': rate.cny, 'hkd': rate.hkd, 'sgd': rate.sgd, 'jpy': rate.jpy};
-    }
-    // Fallback
-    return {'cny': 7.25, 'hkd': 7.82, 'sgd': 1.34, 'jpy': 150.0};
   }
 
   model.Expense _rowToModel(DbExpense row) => model.Expense(
