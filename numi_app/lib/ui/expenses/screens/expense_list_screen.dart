@@ -10,7 +10,6 @@ import '../../common/widgets/currency_selector.dart';
 import '../../common/widgets/sync_status_indicator.dart';
 import '../../common/widgets/amount_display.dart';
 import '../../common/widgets/empty_state.dart';
-import '../../common/widgets/loading_button.dart';
 import 'add_expense_screen.dart';
 
 class ExpenseListScreen extends ConsumerWidget {
