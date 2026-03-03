@@ -70,6 +70,51 @@ jobs:
             android/app/src/main/AndroidManifest.xml \
             android/app/src/main/res/xml/open_filex_provider_paths.xml
 
+      - name: Set up release signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/numi-release.p12
+          cat > android/key.properties << EOF
+          storePassword=$STORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
+          storeFile=numi-release.p12
+          EOF
+          # Patch build.gradle to use release signing
+          python3 - << 'PYEOF'
+          import re, pathlib
+          f = pathlib.Path('android/app/build.gradle')
+          t = f.read_text()
+          # Prepend key.properties loader
+          header = '''def keystoreProperties = new Properties()
+          def keystorePropertiesFile = rootProject.file('key.properties')
+          if (keystorePropertiesFile.exists()) {
+              keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+          }
+          '''
+          t = header + t
+          # Insert signingConfigs block before buildTypes
+          signingCfg = '''
+              signingConfigs {
+                  release {
+                      keyAlias keystoreProperties['keyAlias']
+                      keyPassword keystoreProperties['keyPassword']
+                      storeFile keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
+                      storePassword keystoreProperties['storePassword']
+                  }
+              }
+          '''
+          t = t.replace('    buildTypes {', signingCfg + '    buildTypes {')
+          # Use release signing in release build type
+          t = re.sub(r'(release \{[^}]*?)signingConfig signingConfigs\.debug',
+                     r'\1signingConfig signingConfigs.release', t)
+          f.write_text(t)
+          PYEOF
+
       - name: Install dependencies
         run: flutter pub get
 
