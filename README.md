@@ -1,4 +1,4 @@
-# Expense Tracker
+# Numi Finance
 
 A multi-currency personal finance app with a Django backend and Flutter (Android) frontend.
 
@@ -93,6 +93,7 @@ flutter build apk --release
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `DJANGO_SECRET_KEY` | dev placeholder | Django secret key (set in production) |
 | `DEBUG` | `true` | Enable Django debug mode |
 | `DATABASE_PATH` | `db.sqlite3` | SQLite database file path |
 | `ALLOWED_HOSTS` | `*` | Comma-separated allowed hosts |
