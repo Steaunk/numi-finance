@@ -1,15 +1,31 @@
 # Expense Tracker
 
-A multi-currency expense tracking web app built with Django and SQLite.
+A multi-currency personal finance app with a Django backend and Flutter (Android) frontend.
 
-Supports CNY, HKD, USD, SGD with daily exchange rates from [fawazahmed0/currency-api](https://github.com/fawazahmed0/currency-api).
+Tracks expenses, travel trips, and asset accounts across CNY, HKD, USD, SGD, and JPY with daily exchange rates from [fawazahmed0/currency-api](https://github.com/fawazahmed0/currency-api).
 
 ## Features
 
-- Add expenses via web form or bulk JSON import
-- Automatic exchange rate fetching (cached daily)
-- Convert and display all amounts in a selected currency
-- Monthly bar chart and category breakdown doughnut chart
+### Expenses
+- Add/edit/delete expenses with 10 categories
+- Monthly totals and category breakdown charts
+- Bulk JSON import
+- Pre-computed multi-currency amounts for fast display
+
+### Travel
+- Create trips with destination, dates, and notes
+- Track per-trip expenses (Transportation, Accommodation, Sightseeing, Food & Drinks, Shopping, Other)
+
+### Assets
+- Manage accounts in different currencies
+- Net worth calculation across all accounts
+- Historical balance snapshots and trend charts
+
+### Mobile App (Flutter)
+- Offline-first with local SQLite (Drift) database
+- Background sync with Django backend when online
+- In-app auto-update via GitHub Releases
+- Display amounts in any supported currency
 
 ## Quick Start
 
@@ -35,11 +51,40 @@ python manage.py runserver
 
 Open http://localhost:8000
 
+### Flutter App
+
+```bash
+cd numi_app
+flutter pub get
+dart run build_runner build --delete-conflicting-outputs
+flutter build apk --release
+```
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/rates/` | Current exchange rates |
+| GET | `/api/geo/currency/` | Detect currency by geolocation |
+| GET/POST | `/api/expenses/` | List / add expenses |
+| DELETE | `/api/expenses/<id>/` | Delete expense |
+| POST | `/api/expenses/import/` | Bulk JSON import |
+| GET | `/api/expenses/monthly-stats/` | Monthly statistics |
+| GET | `/api/expenses/categories/` | Expense categories |
+| GET/POST | `/api/travel/trips/` | List / add trips |
+| GET/PUT/DELETE | `/api/travel/trips/<id>/` | Trip detail |
+| GET/POST | `/api/travel/trips/<id>/expenses/` | Trip expenses |
+| DELETE | `/api/travel/expenses/<id>/` | Delete trip expense |
+| GET/POST | `/api/accounts/` | List / add accounts |
+| PUT/DELETE | `/api/accounts/<id>/` | Update / delete account |
+| GET | `/api/accounts/net-worth/` | Net worth summary |
+| GET | `/api/accounts/trends/` | Historical balance trends |
+
 ## Bulk Import Format
 
 ```json
 [
-  {"amount": 50, "currency": "USD", "date": "2026-03-01", "category": "Food", "name": "Lunch", "notes": ""},
+  {"amount": 50, "currency": "USD", "date": "2026-03-01", "category": "Food & Drinks", "name": "Lunch", "notes": ""},
   {"amount": 200, "currency": "HKD", "date": "2026-03-02", "category": "Transport", "name": "Taxi", "notes": ""}
 ]
 ```
@@ -48,6 +93,10 @@ Open http://localhost:8000
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DEBUG` | `false` | Enable Django debug mode |
+| `DEBUG` | `true` | Enable Django debug mode |
 | `DATABASE_PATH` | `db.sqlite3` | SQLite database file path |
 | `ALLOWED_HOSTS` | `*` | Comma-separated allowed hosts |
+
+## CI/CD
+
+GitHub Actions automatically builds the Flutter APK on every push to `main` that changes `numi_app/`. Each build creates a GitHub Release (`build-N`) with the APK attached. The mobile app checks for updates on launch via the GitHub Releases API.
