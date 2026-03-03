@@ -34,6 +34,12 @@ class TravelRepository {
     return _tripToModel(tripRow, expenseRows);
   }
 
+  Stream<model.Trip?> watchTripWithExpenses(int tripId) {
+    return _db.tripDao.watchExpensesForTrip(tripId).asyncMap((_) async {
+      return getTripWithExpenses(tripId);
+    });
+  }
+
   Future<void> addTrip({
     required String destination,
     required DateTime startDate,

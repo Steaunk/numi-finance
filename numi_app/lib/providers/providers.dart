@@ -218,8 +218,8 @@ final tripListProvider = StreamProvider<List<model.Trip>>((ref) {
 });
 
 final tripDetailProvider =
-    FutureProvider.family<model.Trip?, int>((ref, tripId) {
-  return ref.watch(travelRepositoryProvider).getTripWithExpenses(tripId);
+    StreamProvider.family<model.Trip?, int>((ref, tripId) {
+  return ref.watch(travelRepositoryProvider).watchTripWithExpenses(tripId);
 });
 
 // --- Asset Providers ---

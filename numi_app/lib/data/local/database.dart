@@ -211,6 +211,12 @@ class TripDao extends DatabaseAccessor<AppDatabase> with _$TripDaoMixin {
             ..orderBy([(e) => OrderingTerm.desc(e.date)]))
           .get();
 
+  Stream<List<DbTravelExpense>> watchExpensesForTrip(int tripId) =>
+      (select(travelExpenses)
+            ..where((e) => e.tripId.equals(tripId))
+            ..orderBy([(e) => OrderingTerm.desc(e.date)]))
+          .watch();
+
   Future<int> insertTrip(TripsCompanion entry) => into(trips).insert(entry);
 
   Future<void> removeTripById(int id) =>
