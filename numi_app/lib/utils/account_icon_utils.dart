@@ -7,22 +7,6 @@ class AccountIconUtils {
   static const _prefsKeyVersion = 'account_icons_version';
   static const _prefsKeyIcons = 'account_icons_data';
 
-  /// Bundled fallback mappings (used when no server data is cached).
-  static const _bundledMappings = [
-    (key: 'moomoo', keywords: ['moomoo']),
-    (key: 'ibkr', keywords: ['ibkr', 'interactive brokers']),
-    (key: 'dbs', keywords: ['\u661f\u5c55', 'dbs']),
-    (key: 'uob', keywords: ['united overseas', 'uob']),
-    (key: 'icbc', keywords: ['icbc', '\u5de5\u5546\u94f6\u884c']),
-    (key: 'boc', keywords: ['\u4e2d\u56fd\u94f6\u884c', 'bank of china', 'boc']),
-    (key: 'cmb', keywords: ['\u62db\u5546\u94f6\u884c', '\u62db\u5546', 'cmb']),
-    (key: 'okx', keywords: ['okx', 'okex']),
-    (key: 'bond', keywords: ['sgs', 'bond', 'treasury']),
-    (key: 'crypto', keywords: ['crypto', 'bitcoin', 'btc', 'eth']),
-    (key: 'cash', keywords: ['cash']),
-    (key: 'lend', keywords: ['lend', 'receivable', 'owe', '\u501f\u51fa', '\u5e94\u6536']),
-  ];
-
   /// Remote icons: key → SVG string (populated from server or cache).
   static final Map<String, String> _remoteSvgs = {};
 
@@ -72,51 +56,25 @@ class AccountIconUtils {
     }
   }
 
-  /// Build the icon widget for an account. Uses remote SVG if available,
-  /// falls back to bundled asset, then to null (caller shows currency text).
+  /// Build the icon widget for an account. Uses server-provided SVG icons,
+  /// returns null if no match (caller shows currency text).
   static Widget? getIconWidget(String accountName, Color iconColor) {
     final lower = accountName.toLowerCase();
 
-    // Try remote mappings first (server-provided, may include new icons).
-    if (_remoteMappings.isNotEmpty) {
-      for (final m in _remoteMappings) {
-        if (m.keywords.any((k) => lower.contains(k))) {
-          final svg = _remoteSvgs[m.key];
-          if (svg != null && svg.isNotEmpty) {
-            return SvgPicture.string(
-              svg,
-              width: 20,
-              height: 20,
-              colorFilter: ColorFilter.mode(iconColor, BlendMode.srcIn),
-            );
-          }
+    for (final m in _remoteMappings) {
+      if (m.keywords.any((k) => lower.contains(k))) {
+        final svg = _remoteSvgs[m.key];
+        if (svg != null && svg.isNotEmpty) {
+          return SvgPicture.string(
+            svg,
+            width: 20,
+            height: 20,
+            colorFilter: ColorFilter.mode(iconColor, BlendMode.srcIn),
+          );
         }
       }
     }
 
-    // Fallback: bundled asset.
-    for (final m in _bundledMappings) {
-      if (m.keywords.any((k) => lower.contains(k))) {
-        return SvgPicture.asset(
-          'assets/icons/${m.key}.svg',
-          width: 20,
-          height: 20,
-          colorFilter: ColorFilter.mode(iconColor, BlendMode.srcIn),
-        );
-      }
-    }
-
-    return null;
-  }
-
-  /// Legacy method for backward compatibility.
-  static String? logoAssetPath(String accountName) {
-    final lower = accountName.toLowerCase();
-    for (final m in _bundledMappings) {
-      if (m.keywords.any((k) => lower.contains(k))) {
-        return 'assets/icons/${m.key}.svg';
-      }
-    }
     return null;
   }
 }
