@@ -104,10 +104,6 @@ flutter build macos --release
 | `DATABASE_PATH` | `db.sqlite3` | SQLite database file path |
 | `ALLOWED_HOSTS` | `*` | Comma-separated allowed hosts |
 
-## TODO
-
-- [ ] Assets: add brand-specific account icons (IBKR, DBS, UOB, ICBC, BOC, CMB, Moomoo, OKX, Bond, Cash, Crypto)
-
 ## CI/CD
 
 GitHub Actions builds the Flutter APK on every push to `main` that changes `numi_app/`. macOS DMG builds can be triggered manually via `workflow_dispatch` with the `build_macos` input. Each build creates a GitHub Release tagged `v20260303.1` (date + daily sequence) with artifacts attached. The mobile/desktop app checks for updates on launch via the GitHub Releases API.
