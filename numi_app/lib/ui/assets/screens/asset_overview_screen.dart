@@ -70,10 +70,11 @@ class AssetOverviewScreen extends ConsumerWidget {
                 Text(
                     'Target ${CurrencyUtils.format(fire.fireNumber, currency)}',
                     style: dimStyle),
-                Text('Runway ${_formatRunway(fire.runwayMonths)}',
-                    style: dimStyle),
               ],
             ),
+            const SizedBox(height: 2),
+            Text('Runway ${_formatRunway(fire.runwayMonths)}',
+                style: dimStyle),
           ],
         );
       },
