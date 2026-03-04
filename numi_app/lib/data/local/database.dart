@@ -283,7 +283,12 @@ class AccountDao extends DatabaseAccessor<AppDatabase>
   AccountDao(super.db);
 
   Stream<List<DbAccount>> watchAll() =>
-      (select(accounts)..orderBy([(a) => OrderingTerm.asc(a.name)])).watch();
+      (select(accounts)
+            ..orderBy([
+              (a) => OrderingTerm.desc(a.includeInTotal),
+              (a) => OrderingTerm.asc(a.name),
+            ]))
+          .watch();
 
   Future<DbAccount?> getById(int id) =>
       (select(accounts)..where((a) => a.id.equals(id))).getSingleOrNull();
