@@ -23,6 +23,7 @@ Unknown accounts fall back to showing the currency code as text.
 | crypto.svg | Bitcoin/Crypto | [Simple Icons](https://simpleicons.org/?q=bitcoin) |
 | cash.svg | Cash | [Lucide Icons](https://lucide.dev/icons/banknote) |
 | bond.svg | Bond/Treasury | [Lucide Icons](https://lucide.dev/icons/file-badge) |
+| lend.svg | Lend/Receivable | [Lucide Icons](https://lucide.dev/icons/hand-coins) |
 
 ## Adding a new icon
 

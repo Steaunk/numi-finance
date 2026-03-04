@@ -3,6 +3,7 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 
 from .services import get_rates
+from . import account_icons
 
 COUNTRY_CURRENCY_MAP = {'CN': 'CNY', 'HK': 'HKD', 'SG': 'SGD', 'JP': 'JPY'}
 
@@ -47,3 +48,19 @@ def detect_currency(request):
         currency = 'SGD'
 
     return JsonResponse({'currency': currency})
+
+
+@require_GET
+def account_icon_list(request):
+    """Return account icon mappings + inline SVGs.
+
+    Pass ?v=<cached_version> to skip transfer when nothing changed.
+    """
+    client_version = request.GET.get('v', '')
+    current_version = account_icons.get_version()
+    if client_version == current_version:
+        return JsonResponse({'changed': False})
+    return JsonResponse({
+        'version': current_version,
+        'icons': account_icons.get_icons(),
+    })

@@ -4,10 +4,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'config/theme.dart';
 import 'config/router.dart';
 import 'providers/providers.dart';
+import 'utils/account_icon_utils.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
+  await AccountIconUtils.restoreFromCache(prefs);
 
   runApp(
     ProviderScope(

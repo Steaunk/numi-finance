@@ -85,6 +85,7 @@ flutter build macos --release
 | PUT/DELETE | `/api/accounts/<id>/` | Update / delete account |
 | GET | `/api/accounts/net-worth/` | Net worth summary |
 | GET | `/api/accounts/trends/` | Historical balance trends |
+| GET | `/api/account-icons/` | Account icon mappings + SVGs (versioned) |
 
 ## Bulk Import Format
 
