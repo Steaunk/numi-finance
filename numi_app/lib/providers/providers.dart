@@ -274,6 +274,7 @@ typedef FireProgress = ({
   double fireNumber,
   double netWorth,
   double progress,
+  double runwayMonths,
 });
 
 final fireProgressProvider = FutureProvider<FireProgress>((ref) async {
@@ -282,10 +283,13 @@ final fireProgressProvider = FutureProvider<FireProgress>((ref) async {
   final rate = ref.watch(fireWithdrawalRateProvider);
   final fireNumber = rate > 0 ? annualSpending / rate : 0.0;
   final progress = fireNumber > 0 ? netWorth / fireNumber : 0.0;
+  final monthlySpending = annualSpending / 12;
+  final runwayMonths = monthlySpending > 0 ? netWorth / monthlySpending : 0.0;
   return (
     annualSpending: annualSpending,
     fireNumber: fireNumber,
     netWorth: netWorth,
     progress: progress,
+    runwayMonths: runwayMonths,
   );
 });

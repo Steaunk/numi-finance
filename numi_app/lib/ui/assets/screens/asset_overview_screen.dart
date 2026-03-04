@@ -13,6 +13,15 @@ import 'update_account_screen.dart';
 class AssetOverviewScreen extends ConsumerWidget {
   const AssetOverviewScreen({super.key});
 
+  static String _formatRunway(double months) {
+    if (months <= 0) return '0 months';
+    final years = (months / 12).floor();
+    final rem = (months % 12).round();
+    if (years == 0) return '$rem months';
+    if (rem == 0) return '$years years';
+    return '$years years $rem months';
+  }
+
   Widget _buildFireCard(
       BuildContext context, WidgetRef ref, String currency) {
     final fireAsync = ref.watch(fireProgressProvider);
@@ -55,7 +64,7 @@ class AssetOverviewScreen extends ConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Spending: ${CurrencyUtils.format(fire.annualSpending, currency)}',
+                      'Spending: ${CurrencyUtils.format(fire.annualSpending, currency)}/yr',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     Text(
@@ -63,6 +72,13 @@ class AssetOverviewScreen extends ConsumerWidget {
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Runway: ${_formatRunway(fire.runwayMonths)}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
                 ),
               ],
             ),
