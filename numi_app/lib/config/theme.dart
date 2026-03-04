@@ -41,13 +41,15 @@ class AppTheme {
 
   // Chart colors matching web UI
   static const List<Color> chartColors = [
-    Color(0xFFFF6384),
-    Color(0xFF36A2EB),
-    Color(0xFFFFCE56),
-    Color(0xFF4BC0C0),
-    Color(0xFF9966FF),
-    Color(0xFFFF9F40),
-    Color(0xFFE7E9ED),
-    Color(0xFF7CB342),
+    Color(0xFFFF6384), // pink
+    Color(0xFF36A2EB), // blue
+    Color(0xFFFFCE56), // yellow
+    Color(0xFF4BC0C0), // teal
+    Color(0xFF9966FF), // purple
+    Color(0xFFFF9F40), // orange
+    Color(0xFFE7E9ED), // grey
+    Color(0xFF7CB342), // green
+    Color(0xFFD4526E), // dark rose
+    Color(0xFF2B908F), // dark teal
   ];
 }
