@@ -267,4 +267,5 @@ jobs:
             --repo "${{ github.repository }}" \
             --title "${{ needs.version.outputs.title }}" \
             --notes "Automated build ${{ needs.version.outputs.tag }}" \
+            --clobber \
             artifacts/*
