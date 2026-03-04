@@ -64,12 +64,21 @@ class SyncService {
       final data = await _assetApi.getAccountIcons(
         version: AccountIconUtils.version,
       );
-      if (data['changed'] == false) return;
+      if (data['changed'] == false) {
+        SyncLogger.instance.log(
+          'Account icons up-to-date (v=${AccountIconUtils.version})',
+          name: 'SyncService',
+        );
+        return;
+      }
       final icons = data['icons'] as List<dynamic>;
       final version = data['version'] as String;
       await AccountIconUtils.loadFromServer(icons, version, _prefs);
+      SyncLogger.instance.log(
+        'Account icons updated: v=$version, ${icons.length} icons',
+        name: 'SyncService',
+      );
     } catch (e) {
-      // Non-critical — bundled icons still work as fallback.
       SyncLogger.instance.log(
         'Account icon sync failed: $e',
         name: 'SyncService',
