@@ -143,6 +143,7 @@ final syncServiceProvider = Provider<SyncService?>((ref) {
     travelRepo: ref.watch(travelRepositoryProvider),
     assetRepo: ref.watch(assetRepositoryProvider),
     rateRepo: ref.watch(rateRepositoryProvider),
+    prefs: ref.watch(sharedPrefsProvider),
   );
 });
 

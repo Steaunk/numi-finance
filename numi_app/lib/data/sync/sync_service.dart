@@ -9,6 +9,8 @@ import '../repositories/expense_repository.dart';
 import '../repositories/travel_repository.dart';
 import '../repositories/asset_repository.dart';
 import '../repositories/rate_repository.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../utils/account_icon_utils.dart';
 
 class SyncService {
   static const _maxRetries = 5;
@@ -20,6 +22,7 @@ class SyncService {
   final TravelRepository _travelRepo;
   final AssetRepository _assetRepo;
   final RateRepository _rateRepo;
+  final SharedPreferences _prefs;
 
   SyncService({
     required AppDatabase db,
@@ -30,6 +33,7 @@ class SyncService {
     required TravelRepository travelRepo,
     required AssetRepository assetRepo,
     required RateRepository rateRepo,
+    required SharedPreferences prefs,
   })  : _db = db,
         _expenseApi = expenseApi,
         _travelApi = travelApi,
@@ -37,7 +41,8 @@ class SyncService {
         _expenseRepo = expenseRepo,
         _travelRepo = travelRepo,
         _assetRepo = assetRepo,
-        _rateRepo = rateRepo;
+        _rateRepo = rateRepo,
+        _prefs = prefs;
 
   /// Strip ISO8601 time portion for date-only API fields.
   static String _toDateStr(dynamic v) =>
@@ -49,8 +54,27 @@ class SyncService {
       _expenseRepo.syncFromServer(currency),
       _travelRepo.syncFromServer(currency),
       _assetRepo.syncFromServer(currency),
+      _syncAccountIcons(),
     ]);
     await _processSyncQueue();
+  }
+
+  Future<void> _syncAccountIcons() async {
+    try {
+      final data = await _assetApi.getAccountIcons(
+        version: AccountIconUtils.version,
+      );
+      if (data['changed'] == false) return;
+      final icons = data['icons'] as List<dynamic>;
+      final version = data['version'] as String;
+      await AccountIconUtils.loadFromServer(icons, version, _prefs);
+    } catch (e) {
+      // Non-critical — bundled icons still work as fallback.
+      SyncLogger.instance.log(
+        'Account icon sync failed: $e',
+        name: 'SyncService',
+      );
+    }
   }
 
   Future<void> _processSyncQueue() async {

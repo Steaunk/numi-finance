@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
-import '../../../models/account.dart';
 import '../../../providers/providers.dart';
 import '../../../utils/currency_utils.dart';
 import '../../../utils/date_utils.dart';
 import '../../../config/theme.dart';
+import 'update_account_screen.dart';
 
 class AccountHistoryScreen extends ConsumerWidget {
   final int accountId;
@@ -161,73 +161,16 @@ class AccountHistoryScreen extends ConsumerWidget {
       ),
       floatingActionButton: account != null
           ? FloatingActionButton(
-              onPressed: () =>
-                  _showModifyBalanceDialog(context, ref, account),
+              onPressed: () => showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                useSafeArea: true,
+                builder: (ctx) =>
+                    UpdateAccountScreen(account: account),
+              ),
               child: const Icon(Icons.edit),
             )
           : null,
-    );
-  }
-
-  void _showModifyBalanceDialog(
-      BuildContext context, WidgetRef ref, Account account) {
-    final controller =
-        TextEditingController(text: account.balance.toString());
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Modify Balance'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Current: ${CurrencyUtils.format(account.balance, account.currency)}',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.outline,
-                  ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(
-                labelText: 'New Balance',
-                suffixText: account.currency,
-              ),
-              autofocus: true,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              final newBalance = double.tryParse(controller.text);
-              if (newBalance == null) return;
-              Navigator.pop(ctx);
-              await ref.read(assetRepositoryProvider).updateAccount(
-                    account.id,
-                    name: account.name,
-                    currency: account.currency,
-                    balance: newBalance,
-                    includeInTotal: account.includeInTotal,
-                    notes: account.notes,
-                  );
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Balance updated')),
-                );
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
     );
   }
 }

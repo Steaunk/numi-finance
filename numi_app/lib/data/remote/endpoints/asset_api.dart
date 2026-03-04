@@ -54,6 +54,14 @@ class AssetApi {
     return response.data as Map<String, dynamic>;
   }
 
+  Future<Map<String, dynamic>> getAccountIcons({String? version}) async {
+    final response = await _client.get<Map<String, dynamic>>(
+      '/api/account-icons/',
+      queryParameters: {if (version != null) 'v': version},
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
   Future<List<Map<String, dynamic>>> getAccountHistory(int accountId) async {
     final response = await _client.get<Map<String, dynamic>>(
       '/assets/api/accounts/$accountId/history/',

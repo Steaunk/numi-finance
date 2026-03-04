@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import '../../../providers/providers.dart';
 import '../../../utils/account_icon_utils.dart';
@@ -21,16 +20,11 @@ class AssetOverviewScreen extends ConsumerWidget {
     final iconColor = account.includeInTotal
         ? Theme.of(context).colorScheme.onPrimaryContainer
         : Theme.of(context).colorScheme.onSurfaceVariant;
-    final logoPath = AccountIconUtils.logoAssetPath(account.name);
-    if (logoPath != null) {
+    final iconWidget = AccountIconUtils.getIconWidget(account.name, iconColor);
+    if (iconWidget != null) {
       return CircleAvatar(
         backgroundColor: bgColor,
-        child: SvgPicture.asset(
-          logoPath,
-          width: 20,
-          height: 20,
-          colorFilter: ColorFilter.mode(iconColor, BlendMode.srcIn),
-        ),
+        child: iconWidget,
       );
     }
     return CircleAvatar(
