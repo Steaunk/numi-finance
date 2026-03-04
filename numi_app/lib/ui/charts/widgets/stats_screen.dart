@@ -100,7 +100,12 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     for (final m in stats.values) {
       allCategories.addAll(m.keys);
     }
-    final categoryList = allCategories.toList();
+    final categoryList = allCategories.toList()..sort();
+    final categoryColorMap = {
+      for (int i = 0; i < categoryList.length; i++)
+        categoryList[i]:
+            AppTheme.chartColors[i % AppTheme.chartColors.length],
+    };
 
     return BarChart(
       BarChartData(
@@ -176,7 +181,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
               rodStackItems.add(BarChartRodStackItem(
                 cumulative,
                 cumulative + amount,
-                AppTheme.chartColors[i % AppTheme.chartColors.length],
+                categoryColorMap[categoryList[i]]!,
               ));
               cumulative += amount;
             }
@@ -220,6 +225,18 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
       return const Center(child: Text('No data'));
     }
     final total = categoryTotals.values.fold<double>(0, (a, b) => a + b);
+    // Build stable color map from all stats categories
+    final allCats = <String>{};
+    for (final m in stats.values) {
+      allCats.addAll(m.keys);
+    }
+    final sortedCats = allCats.toList()..sort();
+    final pieColorMap = {
+      for (int i = 0; i < sortedCats.length; i++)
+        sortedCats[i]:
+            AppTheme.chartColors[i % AppTheme.chartColors.length],
+    };
+
     final entries = categoryTotals.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
@@ -230,14 +247,12 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
             PieChartData(
               centerSpaceRadius: 40,
               sectionsSpace: 2,
-              sections: entries.asMap().entries.map((e) {
-                final idx = e.key;
-                final entry = e.value;
+              sections: entries.map((entry) {
                 final percentage = (entry.value / total * 100);
                 return PieChartSectionData(
                   value: entry.value,
-                  color: AppTheme
-                      .chartColors[idx % AppTheme.chartColors.length],
+                  color: pieColorMap[entry.key] ??
+                      AppTheme.chartColors[0],
                   radius: 50,
                   title: percentage >= 5
                       ? '${percentage.toStringAsFixed(0)}%'
@@ -256,9 +271,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: entries.asMap().entries.map((e) {
-              final idx = e.key;
-              final entry = e.value;
+            children: entries.map((entry) {
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 2),
                 child: Row(
@@ -266,8 +279,8 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                     Container(
                       width: 12, height: 12,
                       decoration: BoxDecoration(
-                        color: AppTheme.chartColors[
-                            idx % AppTheme.chartColors.length],
+                        color: pieColorMap[entry.key] ??
+                            AppTheme.chartColors[0],
                         shape: BoxShape.circle,
                       ),
                     ),

@@ -15,6 +15,11 @@ ICON_MAPPINGS = [
     {"key": "crypto", "keywords": ["crypto", "bitcoin", "btc", "eth"]},
     {"key": "cash", "keywords": ["cash"]},
     {"key": "lend", "keywords": ["lend", "receivable", "owe", "\u501f\u51fa", "\u5e94\u6536"]},
+    {"key": "house", "keywords": ["house", "rent", "mortgage", "\u623f"]},
+    {"key": "weixin", "keywords": ["weixin", "wechat", "\u5fae\u4fe1"]},
+    {"key": "alipay", "keywords": ["alipay", "\u652f\u4ed8\u5b9d"]},
+    {"key": "tax", "keywords": ["tax", "cpf", "\u7a0e"]},
+    {"key": "debt", "keywords": ["debt", "loan", "borrow", "\u501f\u5165", "\u8d37\u6b3e", "\u6b20\u6b3e"]},
 ]
 
 _icons_dir = Path(__file__).parent / "static_icons"

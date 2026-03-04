@@ -13,6 +13,67 @@ import 'update_account_screen.dart';
 class AssetOverviewScreen extends ConsumerWidget {
   const AssetOverviewScreen({super.key});
 
+  Widget _buildFireCard(
+      BuildContext context, WidgetRef ref, String currency) {
+    final fireAsync = ref.watch(fireProgressProvider);
+    return fireAsync.when(
+      data: (fire) {
+        if (fire.annualSpending <= 0) return const SizedBox.shrink();
+        final pct = (fire.progress * 100).clamp(0, 9999);
+        final progressClamped = fire.progress.clamp(0.0, 1.0);
+        return Card(
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text('FIRE Progress',
+                        style: Theme.of(context).textTheme.titleSmall),
+                    const Spacer(),
+                    Text(
+                      '${pct.toStringAsFixed(1)}%',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: progressClamped,
+                    minHeight: 8,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Spending: ${CurrencyUtils.format(fire.annualSpending, currency)}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    Text(
+                      'Target: ${CurrencyUtils.format(fire.fireNumber, currency)}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+
   Widget _buildAccountAvatar(BuildContext context, dynamic account) {
     final bgColor = account.includeInTotal
         ? Theme.of(context).colorScheme.primaryContainer
@@ -80,6 +141,8 @@ class AssetOverviewScreen extends ConsumerWidget {
             ),
             error: (e, _) => const SizedBox.shrink(),
           ),
+          // FIRE progress card
+          _buildFireCard(context, ref, displayCurrency),
           // Account list
           Expanded(
             child: accountsAsync.when(
