@@ -20,6 +20,8 @@ Tracks expenses, travel trips, and asset accounts across CNY, HKD, USD, SGD, and
 - Manage accounts in different currencies
 - Net worth calculation across all accounts
 - Historical balance snapshots and trend charts
+- FIRE progress tracker (configurable withdrawal rate, runway estimate)
+- 17 auto-matched account icons served from the backend (banks, brokers, wallets, crypto, etc.)
 
 ### Mobile & Desktop App (Flutter)
 - Android APK and macOS DMG builds
@@ -27,6 +29,7 @@ Tracks expenses, travel trips, and asset accounts across CNY, HKD, USD, SGD, and
 - Background sync with Django backend when online
 - In-app auto-update via GitHub Releases
 - Display amounts in any supported currency
+- Consistent category colors across chart views
 
 ## Quick Start
 
@@ -107,4 +110,4 @@ flutter build macos --release
 
 ## CI/CD
 
-GitHub Actions builds the Flutter APK on every push to `main` that changes `numi_app/`. macOS DMG builds can be triggered manually via `workflow_dispatch` with the `build_macos` input. Each build creates a GitHub Release tagged `v20260303.1` (date + daily sequence) with artifacts attached. The mobile/desktop app checks for updates on launch via the GitHub Releases API.
+GitHub Actions builds the Flutter APK on every push to `main` that changes `numi_app/`. macOS DMG builds can be triggered manually via `workflow_dispatch` with the `build_macos` input. Each build creates a GitHub Release tagged `vYYYYMMDD.N` (date + daily sequence) with artifacts attached. The mobile/desktop app checks for updates on launch via the GitHub Releases API. Concurrent runs on the same branch are auto-cancelled.
