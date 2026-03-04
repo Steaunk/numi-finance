@@ -99,6 +99,9 @@ class AssetRepository {
     required double balance,
     bool includeInTotal = true,
     String notes = '',
+    String? apiUrl,
+    String? apiValuePath,
+    String? apiAuth,
   }) async {
     final companion = AccountsCompanion.insert(
       name: name,
@@ -106,6 +109,9 @@ class AssetRepository {
       balance: Value(balance),
       includeInTotal: Value(includeInTotal),
       notes: Value(notes),
+      apiUrl: Value(apiUrl),
+      apiValuePath: Value(apiValuePath),
+      apiAuth: Value(apiAuth),
       createdAt: Value(DateTime.now()),
       updatedAt: Value(DateTime.now()),
     );
@@ -120,6 +126,9 @@ class AssetRepository {
           'balance': balance,
           'include_in_total': includeInTotal,
           'notes': notes,
+          if (apiUrl != null) 'api_url': apiUrl,
+          if (apiValuePath != null) 'api_value_path': apiValuePath,
+          if (apiAuth != null) 'api_auth': apiAuth,
         });
         await (_db.update(_db.accounts)
               ..where((a) => a.id.equals(localId)))
@@ -140,6 +149,9 @@ class AssetRepository {
               'balance': balance,
               'include_in_total': includeInTotal,
               'notes': notes,
+              if (apiUrl != null) 'api_url': apiUrl,
+              if (apiValuePath != null) 'api_value_path': apiValuePath,
+              if (apiAuth != null) 'api_auth': apiAuth,
             }),
             createdAt: Value(DateTime.now()),
           ),
@@ -155,6 +167,9 @@ class AssetRepository {
     double? balance,
     required bool includeInTotal,
     required String notes,
+    String? apiUrl,
+    String? apiValuePath,
+    String? apiAuth,
   }) async {
     final existing = await _db.accountDao.getById(localId);
     if (existing == null) return;
@@ -186,6 +201,9 @@ class AssetRepository {
       balance: newBalance,
       includeInTotal: includeInTotal,
       notes: notes,
+      apiUrl: Value(apiUrl),
+      apiValuePath: Value(apiValuePath),
+      apiAuth: Value(apiAuth),
       updatedAt: Value(now),
       synced: false,
     ));
@@ -203,6 +221,9 @@ class AssetRepository {
             'balance': newBalance,
             'include_in_total': includeInTotal,
             'notes': notes,
+            if (apiUrl != null) 'api_url': apiUrl,
+            if (apiValuePath != null) 'api_value_path': apiValuePath,
+            if (apiAuth != null) 'api_auth': apiAuth,
           }),
           createdAt: Value(DateTime.now()),
         ),
@@ -222,6 +243,9 @@ class AssetRepository {
         'balance': row.balance,
         'include_in_total': row.includeInTotal,
         'notes': row.notes,
+        'api_url': row.apiUrl ?? '',
+        'api_value_path': row.apiValuePath ?? '',
+        'api_auth': row.apiAuth ?? '',
       });
       await (_db.update(_db.accounts)
             ..where((a) => a.id.equals(localId)))
@@ -269,6 +293,9 @@ class AssetRepository {
             .getSingleOrNull();
         if (existing != null && !existing.synced) continue;
 
+        final apiUrl = a['api_url'] as String?;
+        final apiValuePath = a['api_value_path'] as String?;
+        final apiAuth = a['api_auth'] as String?;
         await _db.accountDao.upsertByRemoteId(
           AccountsCompanion(
             remoteId: Value(remoteId),
@@ -277,6 +304,9 @@ class AssetRepository {
             balance: Value((a['balance'] as num).toDouble()),
             includeInTotal: Value(a['include_in_total'] as bool? ?? true),
             notes: Value(a['notes'] as String? ?? ''),
+            apiUrl: Value(apiUrl != null && apiUrl.isNotEmpty ? apiUrl : null),
+            apiValuePath: Value(apiValuePath != null && apiValuePath.isNotEmpty ? apiValuePath : null),
+            apiAuth: Value(apiAuth != null && apiAuth.isNotEmpty ? apiAuth : null),
             synced: const Value(true),
           ),
         );
@@ -295,11 +325,24 @@ class AssetRepository {
         balance: row.balance,
         includeInTotal: row.includeInTotal,
         notes: row.notes,
+        apiUrl: row.apiUrl,
+        apiValuePath: row.apiValuePath,
+        apiAuth: row.apiAuth,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
         synced: row.synced,
         convertedBalance: convertedBalance,
       );
+
+  Future<void> syncApiAccounts() async {
+    final api = _api;
+    if (api == null) return;
+    try {
+      await api.syncApiAccounts();
+    } catch (e, st) {
+      SyncLogger.instance.log('syncApiAccounts failed: $e', name: 'AssetRepo', error: e, stackTrace: st);
+    }
+  }
 
   model.BalanceSnapshot _snapshotToModel(DbBalanceSnapshot row) =>
       model.BalanceSnapshot(

@@ -193,10 +193,25 @@ class AssetOverviewScreen extends ConsumerWidget {
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      Text(account.name,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .titleSmall),
+                                      Row(
+                                        children: [
+                                          Flexible(
+                                            child: Text(account.name,
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .titleSmall),
+                                          ),
+                                          if (account.apiUrl != null &&
+                                              account.apiUrl!.isNotEmpty) ...[
+                                            const SizedBox(width: 4),
+                                            Icon(Icons.sync,
+                                                size: 14,
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .primary),
+                                          ],
+                                        ],
+                                      ),
                                       Text(
                                         CurrencyUtils.format(
                                             account.balance,

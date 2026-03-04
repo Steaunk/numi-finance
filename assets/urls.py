@@ -9,6 +9,7 @@ urlpatterns = [
     path('api/accounts/<int:account_id>/', views.update_account, name='update_account'),
     path('api/accounts/<int:account_id>/delete/', views.delete_account, name='delete_account'),
     path('api/accounts/<int:account_id>/history/', views.account_history, name='account_history'),
+    path('api/accounts/sync/', views.sync_api_accounts, name='sync_api_accounts'),
     path('api/net-worth/', views.net_worth, name='net_worth'),
     path('api/trend/', views.trend, name='trend'),
 ]

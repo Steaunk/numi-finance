@@ -50,6 +50,8 @@ class SyncService {
 
   Future<void> fullSync(String currency) async {
     await _rateRepo.fetchAndCacheRates();
+    // Trigger backend to fetch external API balances first
+    await _assetRepo.syncApiAccounts();
     await Future.wait([
       _expenseRepo.syncFromServer(currency),
       _travelRepo.syncFromServer(currency),
