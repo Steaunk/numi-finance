@@ -11,6 +11,8 @@ class AppConstants {
     'Other',
   ];
 
+  static const double defaultFireRate = 0.04;
+
   static const Map<String, double> fallbackRates = {
     'cny': 7.25,
     'hkd': 7.82,

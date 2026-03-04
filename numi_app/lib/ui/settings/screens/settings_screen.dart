@@ -155,6 +155,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             },
           ),
           const SizedBox(height: 24),
+          // FIRE Settings
+          Text('FIRE Settings',
+              style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          _buildFireRateSlider(context, ref),
+          const SizedBox(height: 24),
           // Sync
           Text('Sync', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
@@ -272,6 +278,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             label: const Text('View Sync Logs'),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildFireRateSlider(BuildContext context, WidgetRef ref) {
+    final rate = ref.watch(fireWithdrawalRateProvider);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            const Text('Withdrawal Rate'),
+            Expanded(
+              child: Slider(
+                value: (rate * 100).clamp(1, 10),
+                min: 1,
+                max: 10,
+                divisions: 18,
+                label: '${(rate * 100).toStringAsFixed(1)}%',
+                onChanged: (v) {
+                  final newRate = v / 100;
+                  ref.read(fireWithdrawalRateProvider.notifier).state = newRate;
+                  ref
+                      .read(sharedPrefsProvider)
+                      .setDouble('fire_withdrawal_rate', newRate);
+                },
+              ),
+            ),
+            Text('${(rate * 100).toStringAsFixed(1)}%'),
+          ],
+        ),
       ),
     );
   }
