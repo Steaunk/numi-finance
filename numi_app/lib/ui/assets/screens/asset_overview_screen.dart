@@ -22,7 +22,8 @@ class AssetOverviewScreen extends ConsumerWidget {
     return '$years years $rem months';
   }
 
-  Widget _buildFireCard(
+  /// FIRE section rendered inside the net worth card (below the amount).
+  Widget _buildFireSection(
       BuildContext context, WidgetRef ref, String currency) {
     final fireAsync = ref.watch(fireProgressProvider);
     return fireAsync.when(
@@ -30,59 +31,50 @@ class AssetOverviewScreen extends ConsumerWidget {
         if (fire.annualSpending <= 0) return const SizedBox.shrink();
         final pct = (fire.progress * 100).clamp(0, 9999);
         final progressClamped = fire.progress.clamp(0.0, 1.0);
-        return Card(
-          margin: const EdgeInsets.symmetric(horizontal: 16),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        final dimStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.outline,
+            );
+        return Column(
+          children: [
+            const Divider(height: 24),
+            Row(
               children: [
-                Row(
-                  children: [
-                    Text('FIRE Progress',
-                        style: Theme.of(context).textTheme.titleSmall),
-                    const Spacer(),
-                    Text(
-                      '${pct.toStringAsFixed(1)}%',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
+                Text('FIRE', style: Theme.of(context).textTheme.bodySmall),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: progressClamped,
+                      minHeight: 6,
                     ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: progressClamped,
-                    minHeight: 8,
                   ),
                 ),
-                const SizedBox(height: 10),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Spending: ${CurrencyUtils.format(fire.annualSpending, currency)}/yr',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    Text(
-                      'Target: ${CurrencyUtils.format(fire.fireNumber, currency)}',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
+                const SizedBox(width: 8),
                 Text(
-                  'Runway: ${_formatRunway(fire.runwayMonths)}',
+                  '${pct.toStringAsFixed(1)}%',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.outline,
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.primary,
                       ),
                 ),
               ],
             ),
-          ),
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                    '${CurrencyUtils.format(fire.annualSpending, currency)}/yr',
+                    style: dimStyle),
+                Text(
+                    'Target ${CurrencyUtils.format(fire.fireNumber, currency)}',
+                    style: dimStyle),
+                Text('Runway ${_formatRunway(fire.runwayMonths)}',
+                    style: dimStyle),
+              ],
+            ),
+          ],
         );
       },
       loading: () => const SizedBox.shrink(),
@@ -126,17 +118,17 @@ class AssetOverviewScreen extends ConsumerWidget {
       ),
       body: Column(
         children: [
-          // Net worth card
+          // Net worth + FIRE progress card
           netWorthAsync.when(
             data: (netWorth) => Card(
-              margin: const EdgeInsets.all(16),
+              margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Padding(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
                     Text('Net Worth',
                         style: Theme.of(context).textTheme.titleSmall),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 4),
                     Text(
                       CurrencyUtils.format(netWorth, displayCurrency),
                       style: Theme.of(context)
@@ -144,21 +136,20 @@ class AssetOverviewScreen extends ConsumerWidget {
                           .headlineMedium
                           ?.copyWith(fontWeight: FontWeight.bold),
                     ),
+                    _buildFireSection(context, ref, displayCurrency),
                   ],
                 ),
               ),
             ),
             loading: () => const Card(
-              margin: EdgeInsets.all(16),
+              margin: EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Padding(
-                padding: EdgeInsets.all(20),
+                padding: EdgeInsets.all(16),
                 child: Center(child: CircularProgressIndicator()),
               ),
             ),
             error: (e, _) => const SizedBox.shrink(),
           ),
-          // FIRE progress card
-          _buildFireCard(context, ref, displayCurrency),
           // Account list
           Expanded(
             child: accountsAsync.when(
