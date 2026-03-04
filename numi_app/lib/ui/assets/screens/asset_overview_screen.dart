@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import '../../../providers/providers.dart';
+import '../../../utils/account_icon_utils.dart';
 import '../../../utils/currency_utils.dart';
 import '../../common/widgets/currency_selector.dart';
 import '../../common/widgets/empty_state.dart';
@@ -11,6 +13,34 @@ import 'update_account_screen.dart';
 
 class AssetOverviewScreen extends ConsumerWidget {
   const AssetOverviewScreen({super.key});
+
+  Widget _buildAccountAvatar(BuildContext context, dynamic account) {
+    final bgColor = account.includeInTotal
+        ? Theme.of(context).colorScheme.primaryContainer
+        : Theme.of(context).colorScheme.surfaceContainerHighest;
+    final iconColor = account.includeInTotal
+        ? Theme.of(context).colorScheme.onPrimaryContainer
+        : Theme.of(context).colorScheme.onSurfaceVariant;
+    final logoPath = AccountIconUtils.logoAssetPath(account.name);
+    if (logoPath != null) {
+      return CircleAvatar(
+        backgroundColor: bgColor,
+        child: SvgPicture.asset(
+          logoPath,
+          width: 20,
+          height: 20,
+          colorFilter: ColorFilter.mode(iconColor, BlendMode.srcIn),
+        ),
+      );
+    }
+    return CircleAvatar(
+      backgroundColor: bgColor,
+      child: Text(
+        account.currency,
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -91,21 +121,7 @@ class AssetOverviewScreen extends ConsumerWidget {
                             padding: const EdgeInsets.all(16),
                             child: Row(
                               children: [
-                                CircleAvatar(
-                                  backgroundColor: account.includeInTotal
-                                      ? Theme.of(context)
-                                          .colorScheme
-                                          .primaryContainer
-                                      : Theme.of(context)
-                                          .colorScheme
-                                          .surfaceContainerHighest,
-                                  child: Text(
-                                    account.currency,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall,
-                                  ),
-                                ),
+                                _buildAccountAvatar(context, account),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
