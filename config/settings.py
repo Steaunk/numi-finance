@@ -123,13 +123,11 @@ USE_TZ = True
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
-# Warn if running in production with insecure default SECRET_KEY
+# Refuse to run in production with insecure default SECRET_KEY
 if not DEBUG and SECRET_KEY == 'django-insecure-dev-only-change-in-production':
-    import warnings
-    warnings.warn(
-        "Running with insecure default SECRET_KEY! "
-        "Set DJANGO_SECRET_KEY environment variable in production.",
-        stacklevel=1,
+    raise RuntimeError(
+        "Refusing to start: insecure default SECRET_KEY in production. "
+        "Set the DJANGO_SECRET_KEY environment variable."
     )
 
 # Logging

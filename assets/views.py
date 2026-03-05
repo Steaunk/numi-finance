@@ -117,7 +117,7 @@ def list_accounts(request):
             'notes': acc.notes,
             'api_url': acc.api_url or '',
             'api_value_path': acc.api_value_path or '',
-            'api_auth': acc.api_auth or '',
+            'has_api_auth': bool(acc.api_auth),
         })
 
     return JsonResponse({
@@ -244,7 +244,7 @@ def update_account(request, account_id):
         'balance': account.balance,
         'api_url': account.api_url or '',
         'api_value_path': account.api_value_path or '',
-        'api_auth': account.api_auth or '',
+        'has_api_auth': bool(account.api_auth),
     })
 
 
