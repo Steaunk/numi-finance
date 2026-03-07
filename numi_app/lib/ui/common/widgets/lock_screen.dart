@@ -58,7 +58,7 @@ class _LockScreenState extends ConsumerState<LockScreen>
     try {
       final auth = LocalAuthentication();
       final success = await auth.authenticate(
-        localizedReason: '请验证身份以访问 Numi',
+        localizedReason: 'Authenticate to access Numi',
         options: const AuthenticationOptions(
           stickyAuth: true,
           biometricOnly: false,
@@ -67,10 +67,10 @@ class _LockScreenState extends ConsumerState<LockScreen>
       if (success) {
         ref.read(biometricAuthenticatedProvider.notifier).state = true;
       } else {
-        setState(() => _error = '验证失败，请重试');
+        setState(() => _error = 'Authentication failed, please try again');
       }
     } catch (e) {
-      setState(() => _error = '验证出错: $e');
+      setState(() => _error = 'Authentication error: $e');
     } finally {
       setState(() => _authenticating = false);
     }
@@ -107,7 +107,7 @@ class _LockScreenState extends ConsumerState<LockScreen>
               ),
               const SizedBox(height: 8),
               Text(
-                '请验证身份以继续',
+                'Authenticate to continue',
                 style: theme.textTheme.bodyLarge?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -130,7 +130,7 @@ class _LockScreenState extends ConsumerState<LockScreen>
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.fingerprint),
-                label: Text(_authenticating ? '验证中...' : '验证身份'),
+                label: Text(_authenticating ? 'Authenticating...' : 'Authenticate'),
               ),
             ],
           ),

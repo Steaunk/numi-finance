@@ -74,10 +74,7 @@ final biometricAuthenticatedProvider = StateProvider<bool>((ref) => false);
 
 final biometricAvailableProvider = FutureProvider<bool>((ref) async {
   final auth = LocalAuthentication();
-  final canCheck = await auth.canCheckBiometrics || await auth.isDeviceSupported();
-  if (!canCheck) return false;
-  final available = await auth.getAvailableBiometrics();
-  return available.isNotEmpty;
+  return await auth.canCheckBiometrics || await auth.isDeviceSupported();
 });
 
 // --- API Client ---
