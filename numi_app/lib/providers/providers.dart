@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:local_auth/local_auth.dart';
 import '../data/local/database.dart';
 import '../data/remote/api_client.dart';
 import '../data/remote/endpoints/expense_api.dart';
@@ -61,6 +62,23 @@ final displayCurrencyProvider = StateProvider<String>((ref) {
 });
 
 final selectedMonthProvider = StateProvider<DateTime>((ref) => DateTime.now());
+
+// --- Biometric Auth ---
+
+final biometricEnabledProvider = StateProvider<bool>((ref) {
+  final prefs = ref.watch(sharedPrefsProvider);
+  return prefs.getBool('biometric_enabled') ?? false;
+});
+
+final biometricAuthenticatedProvider = StateProvider<bool>((ref) => false);
+
+final biometricAvailableProvider = FutureProvider<bool>((ref) async {
+  final auth = LocalAuthentication();
+  final canCheck = await auth.canCheckBiometrics || await auth.isDeviceSupported();
+  if (!canCheck) return false;
+  final available = await auth.getAvailableBiometrics();
+  return available.isNotEmpty;
+});
 
 // --- API Client ---
 

@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../config/constants.dart';
 import '../../../providers/providers.dart';
+import 'package:local_auth/local_auth.dart';
 import '../../../data/remote/api_client.dart';
 import '../../../data/sync/sync_logger.dart';
 
@@ -161,6 +162,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 8),
           _buildFireRateSlider(context, ref),
           const SizedBox(height: 24),
+          // Biometric Lock
+          Text('Security', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          _buildBiometricToggle(context, ref),
+          const SizedBox(height: 24),
           // Sync
           Text('Sync', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
@@ -310,6 +316,73 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildBiometricToggle(BuildContext context, WidgetRef ref) {
+    final biometricEnabled = ref.watch(biometricEnabledProvider);
+    final biometricAvailable = ref.watch(biometricAvailableProvider);
+
+    return biometricAvailable.when(
+      data: (available) {
+        if (!available) {
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Icon(Icons.fingerprint, color: Theme.of(context).disabledColor),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      '此设备不支持生物识别',
+                      style: TextStyle(color: Theme.of(context).disabledColor),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        return Card(
+          child: SwitchListTile(
+            secondary: const Icon(Icons.fingerprint),
+            title: const Text('生物识别锁定'),
+            subtitle: const Text('每次打开应用时需要验证'),
+            value: biometricEnabled,
+            onChanged: (value) async {
+              if (value) {
+                // Verify biometric works before enabling
+                final auth = LocalAuthentication();
+                try {
+                  final success = await auth.authenticate(
+                    localizedReason: '验证身份以启用生物识别锁定',
+                    options: const AuthenticationOptions(
+                      stickyAuth: true,
+                      biometricOnly: false,
+                    ),
+                  );
+                  if (!success) return;
+                } catch (_) {
+                  return;
+                }
+              }
+              ref.read(biometricEnabledProvider.notifier).state = value;
+              ref.read(sharedPrefsProvider).setBool('biometric_enabled', value);
+              if (value) {
+                ref.read(biometricAuthenticatedProvider.notifier).state = true;
+              }
+            },
+          ),
+        );
+      },
+      loading: () => const Card(
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ),
+      error: (_, __) => const SizedBox.shrink(),
     );
   }
 

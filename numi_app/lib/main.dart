@@ -5,6 +5,7 @@ import 'config/theme.dart';
 import 'config/router.dart';
 import 'providers/providers.dart';
 import 'utils/account_icon_utils.dart';
+import 'ui/common/widgets/lock_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -62,6 +63,7 @@ class _NumiAppState extends ConsumerState<NumiApp> {
       themeMode: ThemeMode.system,
       routerConfig: router,
       debugShowCheckedModeBanner: false,
+      builder: (context, child) => LockScreen(child: child!),
     );
   }
 }
