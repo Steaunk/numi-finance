@@ -335,7 +335,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      '此设备不支持生物识别',
+                      'Biometric authentication not available on this device',
                       style: TextStyle(color: Theme.of(context).disabledColor),
                     ),
                   ),
@@ -347,8 +347,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         return Card(
           child: SwitchListTile(
             secondary: const Icon(Icons.fingerprint),
-            title: const Text('生物识别锁定'),
-            subtitle: const Text('每次打开应用时需要验证'),
+            title: const Text('Biometric Lock'),
+            subtitle: const Text('Require authentication when opening the app'),
             value: biometricEnabled,
             onChanged: (value) async {
               if (value) {
@@ -356,7 +356,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 final auth = LocalAuthentication();
                 try {
                   final success = await auth.authenticate(
-                    localizedReason: '验证身份以启用生物识别锁定',
+                    localizedReason: 'Verify identity to enable biometric lock',
                     options: const AuthenticationOptions(
                       stickyAuth: true,
                       biometricOnly: false,
