@@ -1,4 +1,4 @@
-package com.numifinance.app
+package com.steaunk.numi_app
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 
