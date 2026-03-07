@@ -33,7 +33,7 @@ class _LockScreenState extends ConsumerState<LockScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    if (state == AppLifecycleState.resumed && !_authenticating) {
       final enabled = ref.read(biometricEnabledProvider);
       if (enabled) {
         ref.read(biometricAuthenticatedProvider.notifier).state = false;
