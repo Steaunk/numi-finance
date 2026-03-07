@@ -14,6 +14,7 @@ class LockScreen extends ConsumerStatefulWidget {
 class _LockScreenState extends ConsumerState<LockScreen>
     with WidgetsBindingObserver {
   bool _authenticating = false;
+  bool _pendingLock = false;
   String? _error;
 
   @override
@@ -33,12 +34,16 @@ class _LockScreenState extends ConsumerState<LockScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && !_authenticating) {
-      final enabled = ref.read(biometricEnabledProvider);
-      if (enabled) {
-        ref.read(biometricAuthenticatedProvider.notifier).state = false;
-        _authenticateIfNeeded();
-      }
+    final enabled = ref.read(biometricEnabledProvider);
+    if (!enabled) return;
+
+    if (state == AppLifecycleState.paused && !_authenticating) {
+      // App actually went to background (not just showing biometric dialog)
+      _pendingLock = true;
+    } else if (state == AppLifecycleState.resumed && _pendingLock) {
+      _pendingLock = false;
+      ref.read(biometricAuthenticatedProvider.notifier).state = false;
+      _authenticateIfNeeded();
     }
   }
 
