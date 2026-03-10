@@ -2,27 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 import '../../../models/portfolio.dart';
 import '../../../providers/providers.dart';
 import '../../../utils/currency_utils.dart';
 import '../../common/widgets/empty_state.dart';
 
-class PortfolioOverviewScreen extends ConsumerStatefulWidget {
+class PortfolioOverviewScreen extends ConsumerWidget {
   const PortfolioOverviewScreen({super.key});
 
   @override
-  ConsumerState<PortfolioOverviewScreen> createState() =>
-      _PortfolioOverviewScreenState();
-}
-
-class _PortfolioOverviewScreenState
-    extends ConsumerState<PortfolioOverviewScreen> {
-  int _chartDays = 30;
-  static const _dayOptions = [7, 30, 90, 180, 365];
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final summaryAsync = ref.watch(portfolioSummaryProvider);
 
     return Scaffold(
@@ -41,7 +30,6 @@ class _PortfolioOverviewScreenState
             onRefresh: () async {
               ref.read(portfolioRepositoryProvider).invalidateCache();
               ref.invalidate(portfolioSummaryProvider);
-              ref.invalidate(portfolioHistoryProvider(_chartDays));
             },
             child: CustomScrollView(
               slivers: [
@@ -49,11 +37,7 @@ class _PortfolioOverviewScreenState
                   child: _PortfolioSummaryCard(summary: summary),
                 ),
                 SliverToBoxAdapter(
-                  child: _PortfolioChart(
-                    days: _chartDays,
-                    dayOptions: _dayOptions,
-                    onDaysChanged: (d) => setState(() => _chartDays = d),
-                  ),
+                  child: _AllocationPieChart(summary: summary),
                 ),
                 SliverPadding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -151,147 +135,153 @@ class _PortfolioSummaryCard extends StatelessWidget {
   }
 }
 
-class _PortfolioChart extends ConsumerWidget {
-  final int days;
-  final List<int> dayOptions;
-  final ValueChanged<int> onDaysChanged;
+enum _AssetType {
+  cash(Icons.payments_outlined, Color(0xFF607D8B), 'Cash'),
+  fund(Icons.account_balance, Color(0xFF4CAF50), 'Fund'),
+  etf(Icons.pie_chart_outline, Color(0xFF2196F3), 'ETF'),
+  stock(Icons.show_chart, Color(0xFFFF9800), 'Stock'),
+  bond(Icons.shield_outlined, Color(0xFF9C27B0), 'Bond'),
+  reit(Icons.apartment, Color(0xFFE91E63), 'REIT'),
+  crypto(Icons.currency_bitcoin, Color(0xFFF57C00), 'Crypto'),
+  commodity(Icons.diamond_outlined, Color(0xFF00BCD4), 'Commodity');
 
-  const _PortfolioChart({
-    required this.days,
-    required this.dayOptions,
-    required this.onDaysChanged,
-  });
+  final IconData icon;
+  final Color color;
+  final String label;
+  const _AssetType(this.icon, this.color, this.label);
+}
 
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final historyAsync = ref.watch(portfolioHistoryProvider(days));
+_AssetType _classifyHolding(PortfolioHolding h) {
+  final code = h.code.toUpperCase();
+  if (code == 'CASH') return _AssetType.cash;
+  if (code == 'FUND') return _AssetType.fund;
+  if (code == 'BOND') return _AssetType.bond;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: dayOptions.map((d) {
-              final label = d < 365 ? '${d}d' : '1y';
-              return Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: ChoiceChip(
-                  label: Text(label),
-                  selected: d == days,
-                  onSelected: (_) => onDaysChanged(d),
-                ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 200,
-            child: historyAsync.when(
-              data: (history) {
-                if (history.isEmpty) {
-                  return const Center(child: Text('No history data'));
-                }
-                return _buildChart(context, history);
-              },
-              loading: () =>
-                  const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(
-                child: Text('Unable to load chart',
-                    style: Theme.of(context).textTheme.bodySmall),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-        ],
-      ),
-    );
+  final name = h.longName.toLowerCase() + h.stockName.toLowerCase();
+  final industry = h.industry.toLowerCase();
+
+  // Crypto ETFs
+  if (name.contains('bitcoin') || name.contains('ethereum') ||
+      name.contains('ether') || name.contains('crypto') ||
+      code.contains('IBIT') || code.contains('ETHA')) {
+    return _AssetType.crypto;
   }
 
-  Widget _buildChart(
-      BuildContext context, List<PortfolioHistorySnapshot> history) {
-    final spots = <FlSpot>[];
-    for (var i = 0; i < history.length; i++) {
-      spots.add(FlSpot(i.toDouble(), history[i].totalUsd));
+  // REIT
+  if (name.contains('reit') || industry.contains('reit')) {
+    return _AssetType.reit;
+  }
+
+  // Bond ETFs
+  if (name.contains('bond') || code.contains('BNDW') ||
+      code.contains('HYDB')) {
+    return _AssetType.bond;
+  }
+
+  // Commodity
+  if (name.contains('gold') || name.contains('silver') ||
+      name.contains('commodity') || industry.contains('commodity')) {
+    return _AssetType.commodity;
+  }
+
+  // ETF (remaining "Investment Trusts/Mutual Funds")
+  if (industry.contains('investment trusts') ||
+      industry.contains('mutual fund') ||
+      name.contains(' etf')) {
+    return _AssetType.etf;
+  }
+
+  return _AssetType.stock;
+}
+
+class _AllocationPieChart extends StatelessWidget {
+  final PortfolioSummary summary;
+  const _AllocationPieChart({required this.summary});
+
+  @override
+  Widget build(BuildContext context) {
+    final total = summary.totalUsd;
+
+    // Group holdings by asset type
+    final Map<_AssetType, double> groups = {};
+    for (final h in summary.holdings) {
+      final type = _classifyHolding(h);
+      groups[type] = (groups[type] ?? 0) + h.usdMarketVal;
     }
 
-    final minY = spots.map((s) => s.y).reduce((a, b) => a < b ? a : b);
-    final maxY = spots.map((s) => s.y).reduce((a, b) => a > b ? a : b);
-    final padding = (maxY - minY) * 0.1;
+    // Sort by value descending
+    final sorted = groups.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
 
-    return LineChart(
-      LineChartData(
-        gridData: const FlGridData(show: false),
-        titlesData: FlTitlesData(
-          leftTitles: const AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
-          ),
-          rightTitles: const AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
-          ),
-          topTitles: const AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
-          ),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 30,
-              interval: (history.length / 4).ceilToDouble().clamp(1, 999),
-              getTitlesWidget: (value, meta) {
-                final idx = value.toInt();
-                if (idx < 0 || idx >= history.length) {
-                  return const SizedBox.shrink();
-                }
-                return Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    DateFormat('M/d').format(history[idx].timestamp),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.outline,
-                          fontSize: 10,
-                        ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
-        borderData: FlBorderData(show: false),
-        minY: (minY - padding).clamp(0, double.infinity),
-        maxY: maxY + padding,
-        lineTouchData: LineTouchData(
-          touchTooltipData: LineTouchTooltipData(
-            getTooltipItems: (touchedSpots) {
-              return touchedSpots.map((spot) {
-                final idx = spot.x.toInt();
-                final date = idx < history.length
-                    ? DateFormat('yyyy-MM-dd')
-                        .format(history[idx].timestamp)
-                    : '';
-                return LineTooltipItem(
-                  '$date\n${CurrencyUtils.format(spot.y, 'USD')}',
-                  Theme.of(context).textTheme.bodySmall!.copyWith(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: SizedBox(
+        height: 200,
+        child: Row(
+          children: [
+            Expanded(
+              child: PieChart(
+                PieChartData(
+                  sectionsSpace: 2,
+                  centerSpaceRadius: 36,
+                  sections: sorted.map((e) {
+                    final pct = total > 0 ? e.value / total * 100 : 0;
+                    return PieChartSectionData(
+                      value: e.value,
+                      color: e.key.color,
+                      radius: 50,
+                      title: pct >= 5 ? '${pct.toStringAsFixed(0)}%' : '',
+                      titleStyle: const TextStyle(
                         color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
                       ),
-                );
-              }).toList();
-            },
-          ),
-        ),
-        lineBarsData: [
-          LineChartBarData(
-            spots: spots,
-            isCurved: true,
-            preventCurveOverShooting: true,
-            color: Theme.of(context).colorScheme.primary,
-            barWidth: 2,
-            dotData: const FlDotData(show: false),
-            belowBarData: BarAreaData(
-              show: true,
-              color: Theme.of(context).colorScheme.primary.withAlpha(30),
+                    );
+                  }).toList(),
+                ),
+              ),
             ),
-          ),
-        ],
+            const SizedBox(width: 12),
+            SizedBox(
+              width: 120,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: sorted.map((e) {
+                  final pct = total > 0 ? e.value / total * 100 : 0;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(
+                      children: [
+                        Icon(e.key.icon, size: 14, color: e.key.color),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            e.key.label,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(fontSize: 11),
+                          ),
+                        ),
+                        Text(
+                          '${pct.toStringAsFixed(0)}%',
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
