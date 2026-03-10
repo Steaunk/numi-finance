@@ -162,7 +162,7 @@ _AssetType _classifyHolding(PortfolioHolding h) {
 
   // Crypto ETFs
   if (name.contains('bitcoin') || name.contains('ethereum') ||
-      name.contains('ether') || name.contains('crypto') ||
+      RegExp(r'\bether\b').hasMatch(name) || name.contains('crypto') ||
       code.contains('IBIT') || code.contains('ETHA')) {
     return _AssetType.crypto;
   }
@@ -179,7 +179,7 @@ _AssetType _classifyHolding(PortfolioHolding h) {
   }
 
   // Commodity
-  if (name.contains('gold') || name.contains('silver') ||
+  if (RegExp(r'\bgold\b').hasMatch(name) || RegExp(r'\bsilver\b').hasMatch(name) ||
       name.contains('commodity') || industry.contains('commodity')) {
     return _AssetType.commodity;
   }
