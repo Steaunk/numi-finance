@@ -318,6 +318,7 @@ class _HoldingListTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final pct = totalUsd > 0 ? (holding.usdMarketVal / totalUsd * 100) : 0.0;
     final synthetic = _isSynthetic(holding.code);
+    final assetType = _classifyHolding(holding);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -329,29 +330,12 @@ class _HoldingListTile extends StatelessWidget {
           child: Row(
             children: [
               CircleAvatar(
-                backgroundColor: synthetic
-                    ? Theme.of(context).colorScheme.tertiaryContainer
-                    : Theme.of(context).colorScheme.primaryContainer,
-                child: synthetic
-                    ? Icon(
-                        _syntheticIcon(holding.code),
-                        size: 18,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onTertiaryContainer,
-                      )
-                    : Text(
-                        holding.code.length >= 2
-                            ? holding.code.substring(0, 2)
-                            : holding.code,
-                        style: TextStyle(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onPrimaryContainer,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
+                backgroundColor: assetType.color.withAlpha(40),
+                child: Icon(
+                  assetType.icon,
+                  size: 18,
+                  color: assetType.color,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
