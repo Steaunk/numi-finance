@@ -18,8 +18,14 @@ class PortfolioRepository {
   Future<PortfolioSummary?> getPortfolioSummary() async {
     if (_cacheValid) return _cachedSummary;
     if (_api == null) return null;
-    final json = await _api.getHoldings();
-    final summary = PortfolioSummary.fromJson(json);
+    final results = await Future.wait([
+      _api.getHoldings(),
+      _api.getAccount(),
+    ]);
+    final summary = PortfolioSummary.fromJson(
+      results[0],
+      accountJson: results[1],
+    );
     _cachedSummary = summary;
     _lastFetch = DateTime.now();
     return summary;

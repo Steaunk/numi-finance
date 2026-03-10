@@ -58,13 +58,72 @@ class PortfolioSummary {
     required this.timestamp,
   });
 
-  factory PortfolioSummary.fromJson(Map<String, dynamic> json) {
+  factory PortfolioSummary.fromJson(
+    Map<String, dynamic> json, {
+    Map<String, dynamic>? accountJson,
+  }) {
     final holdingsList = (json['holdings'] as List? ?? [])
         .map((h) => PortfolioHolding.fromJson(h as Map<String, dynamic>))
         .toList();
+
+    double totalUsd = (json['total_usd'] as num?)?.toDouble() ?? 0;
+
+    // Add fund, bond, cash from account data as synthetic holdings
+    if (accountJson != null) {
+      final fund = (accountJson['fund_assets'] as num?)?.toDouble() ?? 0;
+      final bond = (accountJson['bond_assets'] as num?)?.toDouble() ?? 0;
+      final cash = (accountJson['cash'] as num?)?.toDouble() ?? 0;
+
+      if (fund > 0) {
+        holdingsList.add(PortfolioHolding(
+          code: 'FUND',
+          stockName: 'Fund',
+          longName: 'Fund Assets',
+          qty: fund,
+          nominalPrice: 1,
+          marketValue: fund,
+          usdMarketVal: fund,
+          currency: 'USD',
+          sector: 'Fund',
+        ));
+        totalUsd += fund;
+      }
+      if (bond > 0) {
+        holdingsList.add(PortfolioHolding(
+          code: 'BOND',
+          stockName: 'Bond',
+          longName: 'Bond Assets',
+          qty: bond,
+          nominalPrice: 1,
+          marketValue: bond,
+          usdMarketVal: bond,
+          currency: 'USD',
+          sector: 'Bond',
+        ));
+        totalUsd += bond;
+      }
+      if (cash > 0) {
+        holdingsList.add(PortfolioHolding(
+          code: 'CASH',
+          stockName: 'Cash',
+          longName: 'Cash',
+          qty: cash,
+          nominalPrice: 1,
+          marketValue: cash,
+          usdMarketVal: cash,
+          currency: 'USD',
+          sector: 'Cash',
+        ));
+        totalUsd += cash;
+      }
+    }
+
+    // Sort by USD value descending
+    holdingsList.sort((a, b) => b.usdMarketVal.compareTo(a.usdMarketVal));
+
     return PortfolioSummary(
       holdings: holdingsList,
-      totalUsd: (json['total_usd'] as num?)?.toDouble() ?? 0,
+      totalUsd: totalUsd,
       timestamp: json['timestamp'] as String? ?? '',
     );
   }

@@ -13,6 +13,7 @@ services:
       - QINIU_BUCKET=${QINIU_BUCKET}
       - QINIU_ENDPOINT=${QINIU_ENDPOINT:-s3-cn-east-1.qiniucs.com}
       - PORTFOLIO_SERVICE_URL=${PORTFOLIO_SERVICE_URL:-http://stock:8051}
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/rates/')"]
       interval: 60s
