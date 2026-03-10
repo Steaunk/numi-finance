@@ -301,19 +301,6 @@ class _HoldingListTile extends StatelessWidget {
   static bool _isSynthetic(String code) =>
       code == 'FUND' || code == 'BOND' || code == 'CASH';
 
-  static IconData _syntheticIcon(String code) {
-    switch (code) {
-      case 'FUND':
-        return Icons.account_balance;
-      case 'BOND':
-        return Icons.shield_outlined;
-      case 'CASH':
-        return Icons.payments_outlined;
-      default:
-        return Icons.attach_money;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final pct = totalUsd > 0 ? (holding.usdMarketVal / totalUsd * 100) : 0.0;
