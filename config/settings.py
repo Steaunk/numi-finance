@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'core',
     'expenses',
     'assets',
+    'portfolio',
 ]
 
 MIDDLEWARE = [
@@ -154,5 +155,9 @@ LOGGING = {
         'core': {'level': 'DEBUG' if DEBUG else 'INFO'},
         'expenses': {'level': 'DEBUG' if DEBUG else 'INFO'},
         'assets': {'level': 'DEBUG' if DEBUG else 'INFO'},
+        'portfolio': {'level': 'DEBUG' if DEBUG else 'INFO'},
     },
 }
+
+# Internal portfolio data service (Docker network only)
+PORTFOLIO_SERVICE_URL = os.environ.get('PORTFOLIO_SERVICE_URL', 'http://stock:8051')
