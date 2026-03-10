@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../models/portfolio.dart';
 import '../ui/expenses/screens/expense_list_screen.dart';
 import '../ui/travel/screens/trip_list_screen.dart';
 import '../ui/travel/screens/trip_detail_screen.dart';
 import '../ui/assets/screens/asset_overview_screen.dart';
 import '../ui/assets/screens/account_history_screen.dart';
+import '../ui/portfolio/screens/portfolio_overview_screen.dart';
+import '../ui/portfolio/screens/stock_detail_screen.dart';
 import '../ui/charts/widgets/stats_screen.dart';
 import '../ui/settings/screens/settings_screen.dart';
 
@@ -55,6 +58,25 @@ final router = GoRouter(
           ],
         ),
         GoRoute(
+          path: '/portfolio',
+          pageBuilder: (context, state) =>
+              const NoTransitionPage(child: PortfolioOverviewScreen()),
+          routes: [
+            GoRoute(
+              path: 'stock/:stockName',
+              builder: (context, state) {
+                final name = Uri.decodeComponent(
+                    state.pathParameters['stockName']!);
+                final holding = state.extra as PortfolioHolding?;
+                return StockDetailScreen(
+                  stockName: name,
+                  holding: holding,
+                );
+              },
+            ),
+          ],
+        ),
+        GoRoute(
           path: '/charts',
           pageBuilder: (context, state) =>
               const NoTransitionPage(child: StatsScreen()),
@@ -77,7 +99,8 @@ class ScaffoldWithNav extends StatelessWidget {
     if (location.startsWith('/expenses')) return 0;
     if (location.startsWith('/travel')) return 1;
     if (location.startsWith('/assets')) return 2;
-    if (location.startsWith('/charts')) return 3;
+    if (location.startsWith('/portfolio')) return 3;
+    if (location.startsWith('/charts')) return 4;
     return 0;
   }
 
@@ -97,6 +120,8 @@ class ScaffoldWithNav extends StatelessWidget {
             case 2:
               context.go('/assets');
             case 3:
+              context.go('/portfolio');
+            case 4:
               context.go('/charts');
           }
         },
@@ -115,6 +140,11 @@ class ScaffoldWithNav extends StatelessWidget {
             icon: Icon(Icons.account_balance_outlined),
             selectedIcon: Icon(Icons.account_balance),
             label: 'Assets',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.show_chart_outlined),
+            selectedIcon: Icon(Icons.show_chart),
+            label: 'Stocks',
           ),
           NavigationDestination(
             icon: Icon(Icons.bar_chart_outlined),

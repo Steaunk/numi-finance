@@ -8,12 +8,15 @@ import '../data/remote/endpoints/expense_api.dart';
 import '../data/remote/endpoints/travel_api.dart';
 import '../data/remote/endpoints/asset_api.dart';
 import '../data/remote/endpoints/rate_api.dart';
+import '../data/remote/endpoints/portfolio_api.dart';
 import '../data/remote/endpoints/version_api.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../data/repositories/expense_repository.dart';
 import '../data/repositories/travel_repository.dart';
 import '../data/repositories/asset_repository.dart';
 import '../data/repositories/rate_repository.dart';
+import '../data/repositories/portfolio_repository.dart';
+import '../models/portfolio.dart';
 import '../data/sync/sync_service.dart';
 import '../models/expense.dart' as model;
 import '../models/trip.dart' as model;
@@ -111,6 +114,11 @@ final rateApiProvider = Provider<RateApi?>((ref) {
   return client != null ? RateApi(client) : null;
 });
 
+final portfolioApiProvider = Provider<PortfolioApi?>((ref) {
+  final client = ref.watch(apiClientProvider);
+  return client != null ? PortfolioApi(client) : null;
+});
+
 // --- Repositories ---
 
 final rateRepositoryProvider = Provider<RateRepository>((ref) {
@@ -142,6 +150,10 @@ final assetRepositoryProvider = Provider<AssetRepository>((ref) {
     ref.watch(assetApiProvider),
     ref.watch(rateRepositoryProvider),
   );
+});
+
+final portfolioRepositoryProvider = Provider<PortfolioRepository>((ref) {
+  return PortfolioRepository(ref.watch(portfolioApiProvider));
 });
 
 // --- Sync ---
@@ -308,4 +320,22 @@ final fireProgressProvider = FutureProvider<FireProgress>((ref) async {
     progress: progress,
     runwayMonths: runwayMonths,
   );
+});
+
+// --- Portfolio Providers ---
+
+final portfolioSummaryProvider = FutureProvider<PortfolioSummary?>((ref) {
+  return ref.watch(portfolioRepositoryProvider).getPortfolioSummary();
+});
+
+final portfolioHistoryProvider =
+    FutureProvider.family<List<PortfolioHistorySnapshot>, int>((ref, days) {
+  return ref.watch(portfolioRepositoryProvider).getPortfolioHistory(days: days);
+});
+
+final stockHistoryProvider = FutureProvider.family<List<StockHistoryPoint>,
+    ({String stockName, int days})>((ref, params) {
+  return ref
+      .watch(portfolioRepositoryProvider)
+      .getStockHistory(params.stockName, days: params.days);
 });
