@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as dev;
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
@@ -73,8 +74,21 @@ class ApiClient {
   Future<Response<T>> get<T>(
     String path, {
     Map<String, dynamic>? queryParameters,
-  }) =>
-      _dio.get<T>(path, queryParameters: queryParameters);
+  }) async {
+    try {
+      return await _dio.get<T>(path, queryParameters: queryParameters);
+    } catch (e) {
+      // Log raw response body on parse failures for debugging
+      if (e is DioException) {
+        final body = e.response?.data?.toString() ?? 'null';
+        dev.log('API GET $path failed: status=${e.response?.statusCode} '
+            'body=${body.substring(0, body.length.clamp(0, 200))}');
+      } else {
+        dev.log('API GET $path error: $e');
+      }
+      rethrow;
+    }
+  }
 
   Future<Response<T>> post<T>(String path, {dynamic data}) =>
       _dio.post<T>(path, data: data);
