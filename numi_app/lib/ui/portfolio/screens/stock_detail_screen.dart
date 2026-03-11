@@ -104,7 +104,9 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                 Text(holding.code,
                     style: Theme.of(context).textTheme.titleMedium),
                 Text(
-                  CurrencyUtils.format(holding.usdMarketVal, 'USD'),
+                  holding.currency.isNotEmpty && holding.currency != 'USD'
+                      ? CurrencyUtils.format(holding.marketValue, holding.currency)
+                      : CurrencyUtils.format(holding.usdMarketVal, 'USD'),
                   style: Theme.of(context)
                       .textTheme
                       .headlineSmall
@@ -122,13 +124,12 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                         color: Theme.of(context).colorScheme.outline,
                       ),
                 ),
-                if (holding.currency.isNotEmpty)
-                  Text(
-                    CurrencyUtils.format(holding.marketValue, holding.currency),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.outline,
-                        ),
-                  ),
+                Text(
+                  CurrencyUtils.format(holding.usdMarketVal, 'USD'),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
+                ),
               ],
             ),
           ],
@@ -138,9 +139,12 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
   }
 
   Widget _buildChart(BuildContext context, List<StockHistoryPoint> history) {
+    final currency = widget.holding?.currency ?? '';
+    final useOriginal = currency.isNotEmpty && currency != 'USD';
     final spots = <FlSpot>[];
     for (var i = 0; i < history.length; i++) {
-      spots.add(FlSpot(i.toDouble(), history[i].usdMarketVal));
+      final val = useOriginal ? history[i].marketValue : history[i].usdMarketVal;
+      spots.add(FlSpot(i.toDouble(), val));
     }
 
     final minY = spots.map((s) => s.y).reduce((a, b) => a < b ? a : b);
@@ -197,7 +201,7 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                     ? DateFormat('yyyy-MM-dd').format(history[idx].timestamp)
                     : '';
                 return LineTooltipItem(
-                  '$date\n${CurrencyUtils.format(spot.y, 'USD')}',
+                  '$date\n${CurrencyUtils.format(spot.y, useOriginal ? currency : 'USD')}',
                   Theme.of(context).textTheme.bodySmall!.copyWith(
                         color: Colors.white,
                       ),
