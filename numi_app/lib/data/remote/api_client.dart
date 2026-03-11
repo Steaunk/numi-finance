@@ -1,9 +1,9 @@
 import 'dart:convert';
-import 'dart:developer' as dev;
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:cookie_jar/cookie_jar.dart';
+import '../sync/sync_logger.dart';
 
 class ApiClient {
   final String baseUrl;
@@ -25,6 +25,22 @@ class ApiClient {
         headers: headers,
       ),
     );
+    // Log response type for debugging parse failures
+    _dio.interceptors.add(InterceptorsWrapper(
+      onResponse: (response, handler) {
+        final ct = response.headers.value('content-type') ?? 'unknown';
+        if (!ct.contains('json')) {
+          final body = response.data?.toString() ?? '';
+          final snippet = body.substring(0, body.length.clamp(0, 200));
+          SyncLogger.instance.log(
+            '${response.requestOptions.path} returned non-JSON: '
+            'content-type=$ct body=$snippet',
+            name: 'API',
+          );
+        }
+        handler.next(response);
+      },
+    ));
     // CSRF interceptor MUST be added before CookieManager so it can
     // populate the cookie jar (via a GET) before CookieManager sets the
     // Cookie header on the outgoing request.
@@ -78,13 +94,14 @@ class ApiClient {
     try {
       return await _dio.get<T>(path, queryParameters: queryParameters);
     } catch (e) {
-      // Log raw response body on parse failures for debugging
+      final log = SyncLogger.instance;
       if (e is DioException) {
         final body = e.response?.data?.toString() ?? 'null';
-        dev.log('API GET $path failed: status=${e.response?.statusCode} '
-            'body=${body.substring(0, body.length.clamp(0, 200))}');
+        final snippet = body.substring(0, body.length.clamp(0, 300));
+        log.log('GET $path failed: status=${e.response?.statusCode} '
+            'type=${e.type} body=$snippet', name: 'API');
       } else {
-        dev.log('API GET $path error: $e');
+        log.log('GET $path error: $e', name: 'API');
       }
       rethrow;
     }
