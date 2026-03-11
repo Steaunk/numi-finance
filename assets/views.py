@@ -327,28 +327,15 @@ def trend(request):
     })
 
 
-@require_POST
-def sync_api_accounts(request):
-    """Sync accounts that have api_url configured.
+def _do_sync_api_accounts(accounts, create_snapshot=False):
+    """Sync balances from external APIs for the given accounts.
 
-    Optional query param ?id=123 to sync a single account.
-    Without id, syncs all accounts with api_url configured.
+    When create_snapshot=True (scheduled daily job), also records a
+    BalanceSnapshot for history tracking.  When False (app-triggered),
+    only updates the live balance.
     """
-    account_id = request.GET.get('id')
-    if account_id:
-        try:
-            accounts = [Account.objects.get(id=int(account_id))]
-        except (Account.DoesNotExist, ValueError):
-            return JsonResponse({'error': 'Account not found'}, status=404)
-        if not accounts[0].api_url:
-            return JsonResponse({'error': 'No API sync configured for this account'}, status=400)
-    else:
-        accounts = list(
-            Account.objects.exclude(api_url__isnull=True).exclude(api_url='')
-        )
-
     results = []
-    rates = get_all_rates()
+    rates = get_all_rates() if create_snapshot else None
 
     for account in accounts:
         if not account.api_value_path:
@@ -370,14 +357,16 @@ def sync_api_accounts(request):
         account.balance = new_balance
         account.save()
 
-        amounts = _compute_snapshot_amounts(new_balance, account.currency, rates)
-        BalanceSnapshot.objects.create(
-            account=account,
-            balance=new_balance,
-            change=change,
-            snapshot_date=date.today(),
-            **amounts,
-        )
+        if create_snapshot:
+            amounts = _compute_snapshot_amounts(new_balance, account.currency, rates)
+            BalanceSnapshot.objects.create(
+                account=account,
+                balance=new_balance,
+                change=change,
+                snapshot_date=date.today(),
+                **amounts,
+            )
+
         results.append({
             'id': account.id,
             'name': account.name,
@@ -385,6 +374,34 @@ def sync_api_accounts(request):
             'change': change,
         })
 
+    return results
+
+
+@require_POST
+def sync_api_accounts(request):
+    """Sync accounts that have api_url configured.
+
+    Optional query params:
+      ?id=123        — sync a single account
+      ?snapshot=true — also create a BalanceSnapshot (used by daily cron)
+    Without snapshot param, only updates balances (no history entry).
+    """
+    account_id = request.GET.get('id')
+    create_snapshot = request.GET.get('snapshot', '').lower() in ('true', '1')
+
+    if account_id:
+        try:
+            accounts = [Account.objects.get(id=int(account_id))]
+        except (Account.DoesNotExist, ValueError):
+            return JsonResponse({'error': 'Account not found'}, status=404)
+        if not accounts[0].api_url:
+            return JsonResponse({'error': 'No API sync configured for this account'}, status=400)
+    else:
+        accounts = list(
+            Account.objects.exclude(api_url__isnull=True).exclude(api_url='')
+        )
+
+    results = _do_sync_api_accounts(accounts, create_snapshot=create_snapshot)
     return JsonResponse({'results': results})
 
 
