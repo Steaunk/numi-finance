@@ -75,3 +75,8 @@ def exchange_rates(request):
 @require_GET
 def broker_values(request):
     return _proxy_get('/api/broker_values')
+
+
+@require_GET
+def broker_status(request):
+    return _proxy_get('/api/broker_status')
