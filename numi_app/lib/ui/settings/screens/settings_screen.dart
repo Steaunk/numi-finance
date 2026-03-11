@@ -364,7 +364,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   );
                   if (!success) return;
                 } catch (e) {
-                  if (mounted) {
+                  if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('Biometric error: $e')),
                     );

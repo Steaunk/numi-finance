@@ -254,7 +254,9 @@ class TravelRepository {
     if (api == null ||
         row == null ||
         row.remoteId == null ||
-        row.tripRemoteId == null) return false;
+        row.tripRemoteId == null) {
+      return false;
+    }
     try {
       await api.updateTripExpense(row.tripRemoteId!, row.remoteId!, {
         'amount': amount,
