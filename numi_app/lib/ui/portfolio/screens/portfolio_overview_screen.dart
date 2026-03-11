@@ -99,12 +99,23 @@ class PortfolioOverviewScreen extends ConsumerWidget {
   }
 }
 
-class _PortfolioSummaryCard extends StatelessWidget {
+class _PortfolioSummaryCard extends ConsumerWidget {
   final PortfolioSummary summary;
   const _PortfolioSummaryCard({required this.summary});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final displayCurrency = ref.watch(displayCurrencyProvider);
+    final ratesAsync = ref.watch(cachedRatesProvider);
+
+    final displayTotal = ratesAsync.when(
+      data: (rates) =>
+          CurrencyUtils.convert(summary.totalUsd, 'USD', displayCurrency, rates),
+      loading: () => summary.totalUsd,
+      error: (_, __) => summary.totalUsd,
+    );
+    final currencyLabel = ratesAsync.hasValue ? displayCurrency : 'USD';
+
     return Card(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Padding(
@@ -115,7 +126,7 @@ class _PortfolioSummaryCard extends StatelessWidget {
                 style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 4),
             Text(
-              CurrencyUtils.format(summary.totalUsd, 'USD'),
+              CurrencyUtils.format(displayTotal, currencyLabel),
               style: Theme.of(context)
                   .textTheme
                   .headlineMedium
@@ -287,7 +298,7 @@ class _AllocationPieChart extends StatelessWidget {
   }
 }
 
-class _HoldingListTile extends StatelessWidget {
+class _HoldingListTile extends ConsumerWidget {
   final PortfolioHolding holding;
   final double totalUsd;
   final VoidCallback onTap;
@@ -302,10 +313,20 @@ class _HoldingListTile extends StatelessWidget {
       code == 'FUND' || code == 'BOND' || code == 'CASH';
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final pct = totalUsd > 0 ? (holding.usdMarketVal / totalUsd * 100) : 0.0;
     final synthetic = _isSynthetic(holding.code);
     final assetType = _classifyHolding(holding);
+    final displayCurrency = ref.watch(displayCurrencyProvider);
+    final ratesAsync = ref.watch(cachedRatesProvider);
+
+    final displayVal = ratesAsync.when(
+      data: (rates) => CurrencyUtils.convert(
+          holding.usdMarketVal, 'USD', displayCurrency, rates),
+      loading: () => holding.usdMarketVal,
+      error: (_, __) => holding.usdMarketVal,
+    );
+    final currencyLabel = ratesAsync.hasValue ? displayCurrency : 'USD';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -350,7 +371,7 @@ class _HoldingListTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    CurrencyUtils.format(holding.usdMarketVal, 'USD'),
+                    CurrencyUtils.format(displayVal, currencyLabel),
                     style: Theme.of(context)
                         .textTheme
                         .titleMedium

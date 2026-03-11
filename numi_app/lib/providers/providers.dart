@@ -322,6 +322,12 @@ final fireProgressProvider = FutureProvider<FireProgress>((ref) async {
   );
 });
 
+// --- Rates ---
+
+final cachedRatesProvider = FutureProvider<Map<String, double>>((ref) {
+  return ref.watch(rateRepositoryProvider).getCachedRates();
+});
+
 // --- Portfolio Providers ---
 
 final portfolioSummaryProvider = FutureProvider<PortfolioSummary?>((ref) {

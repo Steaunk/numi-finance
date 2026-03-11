@@ -28,6 +28,8 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final holding = widget.holding;
+    final displayCurrency = ref.watch(displayCurrencyProvider);
+    final ratesAsync = ref.watch(cachedRatesProvider);
     final historyAsync = ref.watch(
       stockHistoryProvider(
         (stockName: widget.stockName, days: _selectedDays),
@@ -44,7 +46,15 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Header card
-            if (holding != null) _buildHeaderCard(context, holding),
+            if (holding != null)
+              ratesAsync.when(
+                data: (rates) =>
+                    _buildHeaderCard(context, holding, displayCurrency, rates),
+                loading: () =>
+                    _buildHeaderCard(context, holding, 'USD', {}),
+                error: (_, __) =>
+                    _buildHeaderCard(context, holding, 'USD', {}),
+              ),
             const SizedBox(height: 16),
 
             // Time range selector
@@ -72,7 +82,14 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                   if (history.isEmpty) {
                     return const Center(child: Text('No history data'));
                   }
-                  return _buildChart(context, history);
+                  return ratesAsync.when(
+                    data: (rates) => _buildChart(
+                        context, history, displayCurrency, rates),
+                    loading: () => _buildChart(
+                        context, history, 'USD', {}),
+                    error: (_, __) => _buildChart(
+                        context, history, 'USD', {}),
+                  );
                 },
                 loading: () =>
                     const Center(child: CircularProgressIndicator()),
@@ -91,7 +108,14 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     );
   }
 
-  Widget _buildHeaderCard(BuildContext context, PortfolioHolding holding) {
+  double _toDisplay(double usdVal, String displayCurrency,
+      Map<String, double> rates) {
+    return CurrencyUtils.convert(usdVal, 'USD', displayCurrency, rates);
+  }
+
+  Widget _buildHeaderCard(BuildContext context, PortfolioHolding holding,
+      String displayCurrency, Map<String, double> rates) {
+    final displayVal = _toDisplay(holding.usdMarketVal, displayCurrency, rates);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -104,9 +128,7 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                 Text(holding.code,
                     style: Theme.of(context).textTheme.titleMedium),
                 Text(
-                  holding.currency.isNotEmpty && holding.currency != 'USD'
-                      ? CurrencyUtils.format(holding.marketValue, holding.currency)
-                      : CurrencyUtils.format(holding.usdMarketVal, 'USD'),
+                  CurrencyUtils.format(displayVal, displayCurrency),
                   style: Theme.of(context)
                       .textTheme
                       .headlineSmall
@@ -124,12 +146,15 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                         color: Theme.of(context).colorScheme.outline,
                       ),
                 ),
-                Text(
-                  CurrencyUtils.format(holding.usdMarketVal, 'USD'),
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.outline,
-                      ),
-                ),
+                if (holding.currency.isNotEmpty &&
+                    holding.currency != displayCurrency)
+                  Text(
+                    CurrencyUtils.format(
+                        holding.marketValue, holding.currency),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
+                  ),
               ],
             ),
           ],
@@ -138,12 +163,12 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     );
   }
 
-  Widget _buildChart(BuildContext context, List<StockHistoryPoint> history) {
-    final currency = widget.holding?.currency ?? '';
-    final useOriginal = currency.isNotEmpty && currency != 'USD';
+  Widget _buildChart(BuildContext context, List<StockHistoryPoint> history,
+      String displayCurrency, Map<String, double> rates) {
     final spots = <FlSpot>[];
     for (var i = 0; i < history.length; i++) {
-      final val = useOriginal ? history[i].marketValue : history[i].usdMarketVal;
+      final val =
+          _toDisplay(history[i].usdMarketVal, displayCurrency, rates);
       spots.add(FlSpot(i.toDouble(), val));
     }
 
@@ -198,10 +223,11 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
               return spots.map((spot) {
                 final idx = spot.x.toInt();
                 final date = idx < history.length
-                    ? DateFormat('yyyy-MM-dd').format(history[idx].timestamp)
+                    ? DateFormat('yyyy-MM-dd')
+                        .format(history[idx].timestamp)
                     : '';
                 return LineTooltipItem(
-                  '$date\n${CurrencyUtils.format(spot.y, useOriginal ? currency : 'USD')}',
+                  '$date\n${CurrencyUtils.format(spot.y, displayCurrency)}',
                   Theme.of(context).textTheme.bodySmall!.copyWith(
                         color: Colors.white,
                       ),
