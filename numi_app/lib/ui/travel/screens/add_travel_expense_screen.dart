@@ -126,7 +126,7 @@ class _AddTravelExpenseScreenState
                   const SizedBox(width: 12),
                   Expanded(
                     child: DropdownButtonFormField<String>(
-                      initialValue: _currency,
+                      value: _currency,
                       decoration:
                           const InputDecoration(labelText: 'Currency'),
                       items: AppConstants.currencies
@@ -140,7 +140,7 @@ class _AddTravelExpenseScreenState
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                initialValue: _category,
+                value: _category,
                 decoration: const InputDecoration(labelText: 'Category'),
                 items: AppConstants.travelCategories
                     .map((c) =>

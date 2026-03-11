@@ -74,7 +74,7 @@ class _AddAccountScreenState extends ConsumerState<AddAccountScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: DropdownButtonFormField<String>(
-                      initialValue: _currency,
+                      value: _currency,
                       decoration:
                           const InputDecoration(labelText: 'Currency'),
                       items: AppConstants.currencies

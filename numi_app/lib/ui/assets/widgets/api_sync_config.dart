@@ -139,7 +139,7 @@ class ApiSyncConfigState extends State<ApiSyncConfig> {
         ),
         const SizedBox(height: 12),
         DropdownButtonFormField<ApiAuthType>(
-          initialValue: _authType,
+          value: _authType,
           decoration: const InputDecoration(labelText: 'Authentication'),
           items: const [
             DropdownMenuItem(value: ApiAuthType.none, child: Text('None')),
