@@ -13,7 +13,7 @@ class RateRepository {
     if (api == null) return;
     try {
       final rates = await api.getRates();
-      final fb = AppConstants.fallbackRates;
+      const fb = AppConstants.fallbackRates;
       await _db.exchangeRateDao.insertRow(
         ExchangeRatesCompanion.insert(
           rateDate: DateTime.now(),
