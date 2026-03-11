@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../models/portfolio.dart';
 import '../../../providers/providers.dart';
 import '../../../utils/currency_utils.dart';
+import '../../common/widgets/currency_selector.dart';
 import '../../common/widgets/empty_state.dart';
 
 class PortfolioOverviewScreen extends ConsumerWidget {
@@ -17,6 +18,7 @@ class PortfolioOverviewScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Portfolio'),
+        actions: const [CurrencySelector()],
       ),
       body: summaryAsync.when(
         data: (summary) {
