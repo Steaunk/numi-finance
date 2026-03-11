@@ -118,7 +118,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: DropdownButtonFormField<String>(
-                      initialValue: _currency,
+                      value: _currency,
                       decoration: const InputDecoration(labelText: 'Currency'),
                       items: AppConstants.currencies
                           .map((c) =>
