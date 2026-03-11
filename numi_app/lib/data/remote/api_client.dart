@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:cookie_jar/cookie_jar.dart';
-import '../sync/sync_logger.dart';
+import '../../utils/app_logger.dart';
 
 class ApiClient {
   final String baseUrl;
@@ -32,7 +32,7 @@ class ApiClient {
         if (!ct.contains('json')) {
           final body = response.data?.toString() ?? '';
           final snippet = body.substring(0, body.length.clamp(0, 200));
-          SyncLogger.instance.log(
+          AppLogger.instance.log(
             '${response.requestOptions.path} returned non-JSON: '
             'content-type=$ct body=$snippet',
             name: 'API',
@@ -94,7 +94,7 @@ class ApiClient {
     try {
       return await _dio.get<T>(path, queryParameters: queryParameters);
     } catch (e) {
-      final log = SyncLogger.instance;
+      final log = AppLogger.instance;
       if (e is DioException) {
         final body = e.response?.data?.toString() ?? 'null';
         final snippet = body.substring(0, body.length.clamp(0, 300));
