@@ -1,4 +1,6 @@
+import json
 import logging
+import math
 import re
 
 import requests as http_requests
@@ -12,6 +14,17 @@ _UPSTREAM_URL = getattr(settings, 'PORTFOLIO_SERVICE_URL', '')
 _TIMEOUT = 10
 
 
+def _sanitize(obj):
+    """Replace NaN/Infinity with None so the result is valid JSON."""
+    if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize(v) for v in obj]
+    return obj
+
+
 def _proxy_get(path, query_params=None):
     """Proxy a GET request to the internal portfolio data service."""
     if not _UPSTREAM_URL:
@@ -20,7 +33,8 @@ def _proxy_get(path, query_params=None):
     try:
         resp = http_requests.get(url, params=query_params, timeout=_TIMEOUT)
         resp.raise_for_status()
-        return JsonResponse(resp.json(), safe=False)
+        data = resp.json()
+        return JsonResponse(_sanitize(data), safe=False)
     except http_requests.ConnectionError:
         logger.warning('Portfolio data service unreachable')
         return JsonResponse({'error': 'Portfolio service unavailable'}, status=503)
