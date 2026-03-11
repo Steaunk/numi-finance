@@ -10,7 +10,7 @@ import '../../../config/constants.dart';
 import '../../../providers/providers.dart';
 import 'package:local_auth/local_auth.dart';
 import '../../../data/remote/api_client.dart';
-import '../../../data/sync/sync_logger.dart';
+import '../../../utils/app_logger.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -275,13 +275,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 24),
-          // Sync Logs
-          Text('Sync Logs', style: Theme.of(context).textTheme.titleMedium),
+          // App Logs
+          Text('App Logs', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           OutlinedButton.icon(
             onPressed: _showSyncLogs,
             icon: const Icon(Icons.article_outlined, size: 18),
-            label: const Text('View Sync Logs'),
+            label: const Text('View App Logs'),
           ),
         ],
       ),
@@ -396,7 +396,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       context: context,
       isScrollControlled: true,
       builder: (ctx) {
-        final logs = SyncLogger.instance.entries.reversed.toList();
+        final logs = AppLogger.instance.entries.reversed.toList();
         return DraggableScrollableSheet(
           expand: false,
           initialChildSize: 0.7,
@@ -408,13 +408,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
                 child: Row(
                   children: [
-                    const Text('Sync Logs',
+                    const Text('App Logs',
                         style: TextStyle(
                             fontSize: 18, fontWeight: FontWeight.bold)),
                     const Spacer(),
                     TextButton(
                       onPressed: () {
-                        SyncLogger.instance.clear();
+                        AppLogger.instance.clear();
                         Navigator.pop(ctx);
                       },
                       child: const Text('Clear'),

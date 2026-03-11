@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:drift/drift.dart';
-import 'sync_logger.dart';
+import '../../utils/app_logger.dart';
 import '../local/database.dart';
 import '../remote/endpoints/expense_api.dart';
 import '../remote/endpoints/travel_api.dart';
@@ -67,7 +67,7 @@ class SyncService {
         version: AccountIconUtils.version,
       );
       if (data['changed'] == false) {
-        SyncLogger.instance.log(
+        AppLogger.instance.log(
           'Account icons up-to-date (v=${AccountIconUtils.version})',
           name: 'SyncService',
         );
@@ -76,12 +76,12 @@ class SyncService {
       final icons = data['icons'] as List<dynamic>;
       final version = data['version'] as String;
       await AccountIconUtils.loadFromServer(icons, version, _prefs);
-      SyncLogger.instance.log(
+      AppLogger.instance.log(
         'Account icons updated: v=$version, ${icons.length} icons',
         name: 'SyncService',
       );
     } catch (e) {
-      SyncLogger.instance.log(
+      AppLogger.instance.log(
         'Account icon sync failed: $e',
         name: 'SyncService',
       );
@@ -97,7 +97,7 @@ class SyncService {
         continue;
       }
       if (op.retryCount >= _maxRetries) {
-        SyncLogger.instance.log(
+        AppLogger.instance.log(
           'Sync op ${op.id} (${op.entityType}/${op.operation}) exceeded '
           '$_maxRetries retries, removing',
           name: 'SyncService',
@@ -120,7 +120,7 @@ class SyncService {
         if (handled) {
           await _db.syncQueueDao.removeById(op.id);
         } else {
-          SyncLogger.instance.log(
+          AppLogger.instance.log(
             'Sync op ${op.id} (${op.entityType}/${op.operation}) '
             'precondition not met, retry ${op.retryCount + 1}/$_maxRetries',
             name: 'SyncService',
@@ -128,7 +128,7 @@ class SyncService {
           await _db.syncQueueDao.incrementRetry(op.id);
         }
       } catch (e, st) {
-        SyncLogger.instance.log(
+        AppLogger.instance.log(
           'Sync op ${op.id} (${op.entityType}/${op.operation}) failed: $e',
           name: 'SyncService',
           error: e,

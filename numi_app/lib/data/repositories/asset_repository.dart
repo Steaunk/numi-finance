@@ -1,5 +1,5 @@
 import 'dart:convert';
-import '../sync/sync_logger.dart';
+import '../../utils/app_logger.dart';
 import 'package:drift/drift.dart';
 import '../../models/account.dart' as model;
 import '../../models/balance_snapshot.dart' as model;
@@ -53,7 +53,7 @@ class AssetRepository {
         }
         return result;
       } catch (e, st) {
-        SyncLogger.instance.log('getNetWorthTrend API failed: $e', name: 'AssetRepo', error: e, stackTrace: st);
+        AppLogger.instance.log('getNetWorthTrend API failed: $e', name: 'AssetRepo', error: e, stackTrace: st);
       }
     }
 
@@ -137,7 +137,7 @@ class AssetRepository {
           synced: const Value(true),
         ));
       } catch (e, st) {
-        SyncLogger.instance.log('addAccount push failed: $e', name: 'AssetRepo', error: e, stackTrace: st);
+        AppLogger.instance.log('addAccount push failed: $e', name: 'AssetRepo', error: e, stackTrace: st);
         await _db.syncQueueDao.enqueue(
           SyncQueueCompanion.insert(
             entityType: 'account',
@@ -252,7 +252,7 @@ class AssetRepository {
           .write(const AccountsCompanion(synced: Value(true)));
       return true;
     } catch (e, st) {
-      SyncLogger.instance.log('updateAccount push failed: $e', name: 'AssetRepo', error: e, stackTrace: st);
+      AppLogger.instance.log('updateAccount push failed: $e', name: 'AssetRepo', error: e, stackTrace: st);
       return false;
     }
   }
@@ -266,7 +266,7 @@ class AssetRepository {
       try {
         await api.deleteAccount(row!.remoteId!);
       } catch (e, st) {
-        SyncLogger.instance.log('deleteAccount push failed: $e', name: 'AssetRepo', error: e, stackTrace: st);
+        AppLogger.instance.log('deleteAccount push failed: $e', name: 'AssetRepo', error: e, stackTrace: st);
         await _db.syncQueueDao.enqueue(
           SyncQueueCompanion.insert(
             entityType: 'account',
@@ -312,7 +312,7 @@ class AssetRepository {
         );
       }
     } catch (e, st) {
-      SyncLogger.instance.log('syncFromServer failed: $e', name: 'AssetRepo', error: e, stackTrace: st);
+      AppLogger.instance.log('syncFromServer failed: $e', name: 'AssetRepo', error: e, stackTrace: st);
     }
   }
 
@@ -340,7 +340,7 @@ class AssetRepository {
     try {
       await api.syncApiAccounts();
     } catch (e, st) {
-      SyncLogger.instance.log('syncApiAccounts failed: $e', name: 'AssetRepo', error: e, stackTrace: st);
+      AppLogger.instance.log('syncApiAccounts failed: $e', name: 'AssetRepo', error: e, stackTrace: st);
     }
   }
 
