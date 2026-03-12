@@ -11,6 +11,9 @@ class PortfolioHolding {
   final String industry;
   final String country;
   final String longName;
+  final double pnl;
+  final double unrealizedPnl;
+  final double realizedPnl;
 
   const PortfolioHolding({
     required this.code,
@@ -25,6 +28,9 @@ class PortfolioHolding {
     this.industry = '',
     this.country = '',
     this.longName = '',
+    this.pnl = 0,
+    this.unrealizedPnl = 0,
+    this.realizedPnl = 0,
   });
 
   factory PortfolioHolding.fromJson(Map<String, dynamic> json) {
@@ -41,6 +47,9 @@ class PortfolioHolding {
       industry: json['industry'] as String? ?? '',
       country: json['country'] as String? ?? '',
       longName: json['long_name'] as String? ?? '',
+      pnl: (json['pnl'] as num?)?.toDouble() ?? 0,
+      unrealizedPnl: (json['unrealized_pnl'] as num?)?.toDouble() ?? 0,
+      realizedPnl: (json['realized_pnl'] as num?)?.toDouble() ?? 0,
     );
   }
 
@@ -51,6 +60,8 @@ class PortfolioSummary {
   final List<PortfolioHolding> holdings;
   final double totalUsd;
   final String timestamp;
+
+  double get totalPnl => holdings.fold(0.0, (sum, h) => sum + h.pnl);
 
   const PortfolioSummary({
     required this.holdings,

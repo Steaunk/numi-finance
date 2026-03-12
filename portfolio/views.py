@@ -54,7 +54,7 @@ def _validate_days(raw):
 
 
 # Only allow alphanumeric, dots, hyphens, underscores, spaces in stock names
-_STOCK_NAME_RE = re.compile(r'^[\w.\- ]+$')
+_STOCK_NAME_RE = re.compile(r"^[\w.\- ()&',/]+$")
 
 
 @require_GET
@@ -74,11 +74,15 @@ def history(request):
 
 
 @require_GET
-def stock_history(request, stock_name):
-    if not _STOCK_NAME_RE.match(stock_name):
-        return JsonResponse({'error': 'Invalid stock name'}, status=400)
+def stock_history(request, stock_name=None):
     days = _validate_days(request.GET.get('days', '30'))
-    return _proxy_get(f'/api/stock/{stock_name}/history', {'days': days})
+    code = request.GET.get('code', '')
+    if code:
+        # 用 code 查（更可靠）
+        return _proxy_get(f'/api/stock/_/history', {'code': code, 'days': days})
+    if stock_name and _STOCK_NAME_RE.match(stock_name):
+        return _proxy_get(f'/api/stock/{stock_name}/history', {'days': days})
+    return JsonResponse({'error': 'Invalid stock name or missing code'}, status=400)
 
 
 @require_GET

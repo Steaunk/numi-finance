@@ -30,9 +30,10 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     final holding = widget.holding;
     final displayCurrency = ref.watch(displayCurrencyProvider);
     final ratesAsync = ref.watch(cachedRatesProvider);
+    final code = widget.holding?.code ?? widget.stockName;
     final historyAsync = ref.watch(
       stockHistoryProvider(
-        (stockName: widget.stockName, days: _selectedDays),
+        (code: code, days: _selectedDays),
       ),
     );
 
@@ -257,15 +258,24 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
 
   Widget _buildDetailsSection(
       BuildContext context, PortfolioHolding holding) {
-    final details = <(String, String)>[
+    final details = <(String, String, Color?)>[
       ('Quantity', holding.qty.toStringAsFixed(
-          holding.qty == holding.qty.roundToDouble() ? 0 : 4)),
-      ('Price', CurrencyUtils.format(holding.nominalPrice, holding.currency)),
-      if (holding.currency.isNotEmpty) ('Currency', holding.currency),
-      if (holding.positionMarket.isNotEmpty) ('Market', holding.positionMarket),
-      if (holding.sector.isNotEmpty) ('Sector', holding.sector),
-      if (holding.industry.isNotEmpty) ('Industry', holding.industry),
-      if (holding.country.isNotEmpty) ('Country', holding.country),
+          holding.qty == holding.qty.roundToDouble() ? 0 : 4), null),
+      ('Price', CurrencyUtils.format(holding.nominalPrice, holding.currency), null),
+      if (holding.pnl != 0)
+        ('Total P&L', '${holding.pnl >= 0 ? '+' : ''}${CurrencyUtils.format(holding.pnl, holding.currency.isEmpty ? 'USD' : holding.currency)}',
+            holding.pnl >= 0 ? Colors.green : Colors.red),
+      if (holding.unrealizedPnl != 0)
+        ('Unrealized P&L', '${holding.unrealizedPnl >= 0 ? '+' : ''}${CurrencyUtils.format(holding.unrealizedPnl, holding.currency.isEmpty ? 'USD' : holding.currency)}',
+            holding.unrealizedPnl >= 0 ? Colors.green : Colors.red),
+      if (holding.realizedPnl != 0)
+        ('Realized P&L', '${holding.realizedPnl >= 0 ? '+' : ''}${CurrencyUtils.format(holding.realizedPnl, holding.currency.isEmpty ? 'USD' : holding.currency)}',
+            holding.realizedPnl >= 0 ? Colors.green : Colors.red),
+      if (holding.currency.isNotEmpty) ('Currency', holding.currency, null),
+      if (holding.positionMarket.isNotEmpty) ('Market', holding.positionMarket, null),
+      if (holding.sector.isNotEmpty) ('Sector', holding.sector, null),
+      if (holding.industry.isNotEmpty) ('Industry', holding.industry, null),
+      if (holding.country.isNotEmpty) ('Country', holding.country, null),
     ];
 
     return Card(
@@ -290,7 +300,10 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                                 color: Theme.of(context).colorScheme.outline,
                               )),
                       Text(d.$2,
-                          style: Theme.of(context).textTheme.bodyMedium),
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: d.$3,
+                                fontWeight: d.$3 != null ? FontWeight.w600 : null,
+                              )),
                     ],
                   ),
                 )),

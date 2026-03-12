@@ -27,12 +27,12 @@ class PortfolioApi {
   }
 
   Future<Map<String, dynamic>> getStockHistory(
-    String stockName, {
+    String code, {
     int days = 30,
   }) async {
     final response = await _client.get<Map<String, dynamic>>(
-      '/portfolio/api/stock/$stockName/history/',
-      queryParameters: {'days': days},
+      '/portfolio/api/stock/history/',
+      queryParameters: {'code': code, 'days': days},
     );
     return response.data as Map<String, dynamic>;
   }
