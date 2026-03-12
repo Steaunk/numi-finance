@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import '../../../models/portfolio.dart';
 import '../../../providers/providers.dart';
 import '../../../utils/currency_utils.dart';
@@ -40,6 +41,9 @@ class PortfolioOverviewScreen extends ConsumerWidget {
                 ),
                 SliverToBoxAdapter(
                   child: _AllocationPieChart(summary: summary),
+                ),
+                const SliverToBoxAdapter(
+                  child: _PortfolioHistoryChart(),
                 ),
                 SliverPadding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -313,6 +317,206 @@ class _AllocationPieChart extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _PortfolioHistoryChart extends ConsumerStatefulWidget {
+  const _PortfolioHistoryChart();
+
+  @override
+  ConsumerState<_PortfolioHistoryChart> createState() =>
+      _PortfolioHistoryChartState();
+}
+
+class _PortfolioHistoryChartState
+    extends ConsumerState<_PortfolioHistoryChart> {
+  int _selectedDays = 30;
+  bool _showPnl = false;
+  static const _dayOptions = [7, 30, 90, 180, 365];
+
+  @override
+  Widget build(BuildContext context) {
+    final historyAsync = ref.watch(portfolioHistoryProvider(_selectedDays));
+    final displayCurrency = ref.watch(displayCurrencyProvider);
+    final ratesAsync = ref.watch(cachedRatesProvider);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    _showPnl ? 'Total P&L' : 'Portfolio Value',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(value: false, label: Text('Value')),
+                      ButtonSegment(value: true, label: Text('P&L')),
+                    ],
+                    selected: {_showPnl},
+                    onSelectionChanged: (v) =>
+                        setState(() => _showPnl = v.first),
+                    style: ButtonStyle(
+                      visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: _dayOptions.map((d) {
+                  final label = d < 365 ? '${d}d' : '1y';
+                  final selected = d == _selectedDays;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: Text(label, style: const TextStyle(fontSize: 12)),
+                      selected: selected,
+                      onSelected: (_) =>
+                          setState(() => _selectedDays = d),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 200,
+                child: historyAsync.when(
+                  data: (history) {
+                    if (history.isEmpty) {
+                      return const Center(child: Text('No history data'));
+                    }
+                    return ratesAsync.when(
+                      data: (rates) => _buildChart(
+                          context, history, displayCurrency, rates),
+                      loading: () =>
+                          _buildChart(context, history, 'USD', {}),
+                      error: (_, __) =>
+                          _buildChart(context, history, 'USD', {}),
+                    );
+                  },
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
+                  error: (e, _) => Center(child: Text('Error: $e')),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChart(
+      BuildContext context,
+      List<PortfolioHistorySnapshot> history,
+      String displayCurrency,
+      Map<String, double> rates) {
+    final spots = <FlSpot>[];
+    for (var i = 0; i < history.length; i++) {
+      final val = _showPnl ? history[i].pnl : history[i].totalUsd;
+      final displayVal =
+          CurrencyUtils.convert(val, 'USD', displayCurrency, rates);
+      spots.add(FlSpot(i.toDouble(), displayVal));
+    }
+    if (spots.isEmpty) return const Center(child: Text('No data'));
+
+    final minY = spots.map((s) => s.y).reduce((a, b) => a < b ? a : b);
+    final maxY = spots.map((s) => s.y).reduce((a, b) => a > b ? a : b);
+    final padding = (maxY - minY) * 0.1;
+    final chartMinY = _showPnl ? minY - padding : (minY - padding).clamp(0, double.infinity);
+
+    final lineColor = _showPnl
+        ? (spots.last.y >= 0 ? Colors.green : Colors.red)
+        : Theme.of(context).colorScheme.primary;
+
+    return LineChart(
+      LineChartData(
+        gridData: const FlGridData(show: false),
+        titlesData: FlTitlesData(
+          leftTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false)),
+          topTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false)),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 24,
+              interval:
+                  (history.length / 4).ceilToDouble().clamp(1, 999),
+              getTitlesWidget: (value, meta) {
+                final idx = value.toInt();
+                if (idx < 0 || idx >= history.length) {
+                  return const SizedBox.shrink();
+                }
+                return Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    DateFormat('M/d').format(history[idx].timestamp),
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(
+                          color: Theme.of(context).colorScheme.outline,
+                          fontSize: 10,
+                        ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        borderData: FlBorderData(show: false),
+        minY: chartMinY,
+        maxY: maxY + padding,
+        lineTouchData: LineTouchData(
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipItems: (touchedSpots) {
+              return touchedSpots.map((spot) {
+                final idx = spot.x.toInt();
+                final date = idx < history.length
+                    ? DateFormat('yyyy-MM-dd')
+                        .format(history[idx].timestamp)
+                    : '';
+                final prefix = _showPnl && spot.y >= 0 ? '+' : '';
+                return LineTooltipItem(
+                  '$date\n$prefix${CurrencyUtils.format(spot.y, displayCurrency)}',
+                  Theme.of(context)
+                      .textTheme
+                      .bodySmall!
+                      .copyWith(color: Colors.white),
+                );
+              }).toList();
+            },
+          ),
+        ),
+        lineBarsData: [
+          LineChartBarData(
+            spots: spots,
+            isCurved: true,
+            preventCurveOverShooting: true,
+            color: lineColor,
+            barWidth: 2,
+            dotData: const FlDotData(show: false),
+            belowBarData: BarAreaData(
+              show: true,
+              color: lineColor.withAlpha(30),
+            ),
+          ),
+        ],
       ),
     );
   }

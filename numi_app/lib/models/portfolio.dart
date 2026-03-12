@@ -166,9 +166,11 @@ class StockHistoryPoint {
 class PortfolioHistorySnapshot {
   final DateTime timestamp;
   final double totalUsd;
+  final double pnl;
 
   const PortfolioHistorySnapshot({
     required this.timestamp,
     required this.totalUsd,
+    this.pnl = 0,
   });
 }
