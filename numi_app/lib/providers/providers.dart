@@ -340,8 +340,8 @@ final portfolioHistoryProvider =
 });
 
 final stockHistoryProvider = FutureProvider.family<List<StockHistoryPoint>,
-    ({String stockName, int days})>((ref, params) {
+    ({String code, int days})>((ref, params) {
   return ref
       .watch(portfolioRepositoryProvider)
-      .getStockHistory(params.stockName, days: params.days);
+      .getStockHistory(params.code, days: params.days);
 });

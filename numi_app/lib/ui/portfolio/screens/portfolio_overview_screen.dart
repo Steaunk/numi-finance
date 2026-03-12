@@ -135,6 +135,24 @@ class _PortfolioSummaryCard extends ConsumerWidget {
                   ?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 4),
+            if (summary.totalPnl != 0) ...[
+              const SizedBox(height: 2),
+              Text(
+                '${summary.totalPnl >= 0 ? '+' : ''}${CurrencyUtils.format(
+                  ratesAsync.when(
+                    data: (rates) => CurrencyUtils.convert(summary.totalPnl, 'USD', displayCurrency, rates),
+                    loading: () => summary.totalPnl,
+                    error: (_, __) => summary.totalPnl,
+                  ),
+                  currencyLabel,
+                )}',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: summary.totalPnl >= 0 ? Colors.green : Colors.red,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ],
+            const SizedBox(height: 2),
             Text(
               '${summary.holdings.length} holdings',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -379,12 +397,30 @@ class _HoldingListTile extends ConsumerWidget {
                         .titleMedium
                         ?.copyWith(fontWeight: FontWeight.bold),
                   ),
-                  Text(
-                    '${pct.toStringAsFixed(1)}%',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.outline,
+                  if (holding.pnl != 0)
+                    Text(
+                      '${holding.pnl >= 0 ? '+' : ''}${CurrencyUtils.format(
+                        ratesAsync.when(
+                          data: (rates) => CurrencyUtils.convert(holding.pnl, 'USD', displayCurrency, rates),
+                          loading: () => holding.pnl,
+                          error: (_, __) => holding.pnl,
                         ),
-                  ),
+                        currencyLabel,
+                      )}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: holding.pnl >= 0
+                                ? Colors.green
+                                : Colors.red,
+                            fontWeight: FontWeight.w500,
+                          ),
+                    )
+                  else
+                    Text(
+                      '${pct.toStringAsFixed(1)}%',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.outline,
+                          ),
+                    ),
                 ],
               ),
             ],

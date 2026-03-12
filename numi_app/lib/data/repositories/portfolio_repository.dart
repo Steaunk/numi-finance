@@ -8,6 +8,9 @@ class PortfolioRepository {
   DateTime? _lastFetch;
   static const _cacheDuration = Duration(minutes: 2);
 
+  // History cache: key = "code:days", value = (data, fetchTime)
+  final Map<String, (List<StockHistoryPoint>, DateTime)> _historyCache = {};
+
   PortfolioRepository(this._api);
 
   bool get _cacheValid =>
@@ -31,15 +34,27 @@ class PortfolioRepository {
     return summary;
   }
 
+  Duration _historyCacheDuration(int days) {
+    if (days <= 7) return const Duration(hours: 1);
+    if (days <= 30) return const Duration(hours: 4);
+    return const Duration(days: 1);
+  }
+
   Future<List<StockHistoryPoint>> getStockHistory(
-    String stockName, {
+    String code, {
     int days = 30,
   }) async {
     if (_api == null) return [];
-    final json = await _api.getStockHistory(stockName, days: days);
+    final cacheKey = '$code:$days';
+    final cached = _historyCache[cacheKey];
+    if (cached != null && DateTime.now().difference(cached.$2) < _historyCacheDuration(days)) {
+      return cached.$1;
+    }
+    final json = await _api.getStockHistory(code, days: days);
     final history = (json['history'] as List? ?? [])
         .map((h) => StockHistoryPoint.fromJson(h as Map<String, dynamic>))
         .toList();
+    _historyCache[cacheKey] = (history, DateTime.now());
     return history;
   }
 
@@ -72,5 +87,6 @@ class PortfolioRepository {
   void invalidateCache() {
     _cachedSummary = null;
     _lastFetch = null;
+    _historyCache.clear();
   }
 }
