@@ -38,7 +38,7 @@ class PortfolioRepository {
     final age = _cache.age(_summaryKey);
 
     if (cached != null && age != null) {
-      if (age > const Duration(minutes: 2)) {
+      if (age > const Duration(minutes: 30)) {
         _refreshSummaryInBackground();
       }
       return cached;
