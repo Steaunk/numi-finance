@@ -153,7 +153,12 @@ final assetRepositoryProvider = Provider<AssetRepository>((ref) {
 });
 
 final portfolioRepositoryProvider = Provider<PortfolioRepository>((ref) {
-  return PortfolioRepository(ref.watch(portfolioApiProvider));
+  final repo = PortfolioRepository(ref.watch(portfolioApiProvider));
+  repo.onCacheUpdated = () {
+    ref.invalidate(portfolioSummaryProvider);
+    ref.invalidate(portfolioHistoryProvider);
+  };
+  return repo;
 });
 
 // --- Sync ---
