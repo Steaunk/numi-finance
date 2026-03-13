@@ -2,7 +2,7 @@
 
 A multi-currency personal finance app with a Django backend and Flutter (Android / macOS) frontend.
 
-Tracks expenses, travel trips, and asset accounts across CNY, HKD, USD, SGD, and JPY with daily exchange rates from [fawazahmed0/exchange-api](https://github.com/fawazahmed0/exchange-api).
+Tracks expenses, travel trips, asset accounts, and investment portfolios across CNY, HKD, USD, SGD, and JPY with daily exchange rates from [fawazahmed0/exchange-api](https://github.com/fawazahmed0/exchange-api).
 
 ## Features
 
@@ -18,25 +18,34 @@ Tracks expenses, travel trips, and asset accounts across CNY, HKD, USD, SGD, and
 
 ### Assets
 - Manage accounts in different currencies
+- Transfer funds between accounts (with automatic currency conversion)
 - Net worth calculation across all accounts
 - Historical balance snapshots and trend charts
+- API-synced accounts: backend auto-fetches balances from external sources via configurable API URL + JSON path
+- Daily cron job for balance snapshots; app-triggered sync also snapshots if >12h stale
 - FIRE progress tracker (configurable withdrawal rate, runway estimate)
 - 17 auto-matched account icons served from the backend (banks, brokers, wallets, crypto, etc.)
+
+### Portfolio
+- Stock holdings, portfolio history, and per-stock history charts (proxied from a configurable upstream data service)
+- Fund, bond, and cash positions from broker account data
+- Background cache refresh with stale-while-revalidate pattern
 
 ### Mobile & Desktop App (Flutter)
 - Android APK and macOS DMG builds
 - Offline-first with local SQLite (Drift) database
+- Sync queue for offline mutations — automatically retried when back online
 - Background sync with Django backend when online
 - In-app auto-update via GitHub Releases
 - Display amounts in any supported currency
-- Consistent category colors across chart views
+- Biometric lock screen
 
 ## Quick Start
 
 ### Docker
 
 ```bash
-# Production (uwsgi)
+# Production (uwsgi + cron)
 docker compose up --build
 
 # Development (django runserver + hot reload)
@@ -60,7 +69,6 @@ Open http://localhost:8000
 ```bash
 cd numi_app
 flutter pub get
-dart run build_runner build --delete-conflicting-outputs
 
 # Android
 flutter build apk --release
@@ -71,24 +79,56 @@ flutter build macos --release
 
 ## API Endpoints
 
+### Core
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/rates/` | Current exchange rates |
 | GET | `/api/geo/currency/` | Detect currency by geolocation |
-| GET/POST | `/api/expenses/` | List / add expenses |
-| DELETE | `/api/expenses/<id>/` | Delete expense |
-| POST | `/api/expenses/import/` | Bulk JSON import |
-| GET | `/api/expenses/monthly-stats/` | Monthly statistics |
-| GET | `/api/expenses/categories/` | Expense categories |
-| GET/POST | `/api/travel/trips/` | List / add trips |
-| GET/PUT/DELETE | `/api/travel/trips/<id>/` | Trip detail |
-| GET/POST | `/api/travel/trips/<id>/expenses/` | Trip expenses |
-| DELETE | `/api/travel/expenses/<id>/` | Delete trip expense |
-| GET/POST | `/api/accounts/` | List / add accounts |
-| PUT/DELETE | `/api/accounts/<id>/` | Update / delete account |
-| GET | `/api/accounts/net-worth/` | Net worth summary |
-| GET | `/api/accounts/trends/` | Historical balance trends |
 | GET | `/api/account-icons/` | Account icon mappings + SVGs (versioned) |
+
+### Expenses (`/expenses/`)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `api/expenses/` | List expenses (by month) |
+| POST | `api/expenses/add/` | Add expense |
+| POST | `api/expenses/bulk/` | Bulk JSON import |
+| PUT/DELETE | `api/expenses/<id>/` | Update / delete expense |
+| GET | `api/categories/` | Expense categories |
+| GET | `api/stats/monthly/` | Monthly statistics |
+
+### Travel (`/expenses/`)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `api/travel/trips/` | List trips |
+| POST | `api/travel/trips/add/` | Add trip |
+| PUT | `api/travel/trips/<id>/` | Update trip |
+| DELETE | `api/travel/trips/<id>/delete/` | Delete trip |
+| GET | `api/travel/trips/<id>/expenses/` | List trip expenses |
+| POST | `api/travel/trips/<id>/expenses/add/` | Add trip expense |
+| PUT | `api/travel/trips/<id>/expenses/<eid>/` | Update trip expense |
+| DELETE | `api/travel/trips/<id>/expenses/<eid>/delete/` | Delete trip expense |
+
+### Assets (`/assets/`)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `api/accounts/` | List accounts with converted balances |
+| POST | `api/accounts/add/` | Add account |
+| PUT | `api/accounts/<id>/` | Update account |
+| DELETE | `api/accounts/<id>/delete/` | Delete account |
+| GET | `api/accounts/<id>/history/` | Account balance history |
+| POST | `api/accounts/sync/` | Sync API-connected accounts |
+| GET | `api/net-worth/` | Net worth summary |
+| GET | `api/trend/` | Historical net worth trend |
+
+### Portfolio (`/portfolio/`)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `api/holdings/` | Current stock holdings |
+| GET | `api/account/` | Broker account summary |
+| GET | `api/history/` | Portfolio value history |
+| GET | `api/stock/history/` | Stock history by code |
+| GET | `api/broker-values/` | Broker total values |
+| GET | `api/broker-status/` | Broker connection status |
 
 ## Bulk Import Format
 
@@ -107,6 +147,27 @@ flutter build macos --release
 | `DEBUG` | `true` | Enable Django debug mode |
 | `DATABASE_PATH` | `db.sqlite3` | SQLite database file path |
 | `ALLOWED_HOSTS` | `*` | Comma-separated allowed hosts |
+| `PORTFOLIO_SERVICE_URL` | — | Upstream portfolio data service URL |
+| `QINIU_ACCESS_KEY` | — | Qiniu S3 access key (for database backups) |
+| `QINIU_SECRET_KEY` | — | Qiniu S3 secret key |
+| `QINIU_BUCKET` | — | Qiniu S3 bucket name |
+
+## Architecture
+
+```
+numi-finance/
+├── config/              # Django project settings
+├── core/                # Shared: exchange rates, services, account icons
+├── assets/              # Asset accounts, balance snapshots, API sync
+├── expenses/            # Expenses + travel trips
+├── portfolio/           # Stock portfolio (proxy to upstream data service)
+├── scripts/             # Entrypoint, backup, cron setup
+└── numi_app/            # Flutter app
+    ├── lib/models/      # Plain Dart data classes
+    ├── lib/data/        # Drift DB, repositories, remote API clients
+    ├── lib/providers/   # Riverpod providers
+    └── lib/ui/          # Screens and widgets
+```
 
 ## CI/CD
 
