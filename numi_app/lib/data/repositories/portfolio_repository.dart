@@ -4,7 +4,7 @@ import '../../models/portfolio.dart';
 import '../cache_store.dart';
 import '../remote/endpoints/portfolio_api.dart';
 
-/// Callback invoked when a background refresh has new data (not identical to cache).
+/// Callback invoked when a background refresh detects newer data from the API.
 typedef OnCacheUpdated = void Function();
 
 class PortfolioRepository {
@@ -43,7 +43,7 @@ class PortfolioRepository {
       }
       return cached;
     }
-    return _fetchSummary();
+    return (await _fetchSummary()).$1;
   }
 
   Future<(PortfolioSummary?, bool)> _fetchSummary() async {
@@ -56,7 +56,12 @@ class PortfolioRepository {
         results[0],
         accountJson: results[1],
       );
-      final changed = await _cache.put(_summaryKey, summary.toJson());
+      // Use API response timestamp as data freshness indicator
+      final changed = await _cache.put(
+        _summaryKey,
+        summary.toJson(),
+        dataTimestamp: summary.timestamp,
+      );
       return (summary, changed);
     } catch (_) {
       final fallback = _cache.get<PortfolioSummary>(
@@ -111,7 +116,15 @@ class PortfolioRepository {
         );
       }).toList()
         ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
-      final changed = await _cache.put(key, snapshots.map((s) => s.toJson()).toList());
+      // Use the last data point's timestamp as freshness indicator
+      final lastTs = snapshots.isNotEmpty
+          ? snapshots.last.timestamp.toIso8601String()
+          : null;
+      final changed = await _cache.put(
+        key,
+        snapshots.map((s) => s.toJson()).toList(),
+        dataTimestamp: lastTs,
+      );
       return (snapshots, changed);
     } catch (_) {
       final fallback = _cache.get<List<PortfolioHistorySnapshot>>(
@@ -164,7 +177,15 @@ class PortfolioRepository {
       final history = (json['history'] as List? ?? [])
           .map((h) => StockHistoryPoint.fromJson(h as Map<String, dynamic>))
           .toList();
-      final changed = await _cache.put(key, history.map((h) => h.toJson()).toList());
+      // Use last data point's timestamp as freshness indicator
+      final lastTs = history.isNotEmpty
+          ? history.last.timestamp.toIso8601String()
+          : null;
+      final changed = await _cache.put(
+        key,
+        history.map((h) => h.toJson()).toList(),
+        dataTimestamp: lastTs,
+      );
       return (history, changed);
     } catch (_) {
       final fallback = _cache.get<List<StockHistoryPoint>>(
