@@ -1,28 +1,33 @@
-import 'package:freezed_annotation/freezed_annotation.dart';
+class Account {
+  final int id;
+  final int? remoteId;
+  final String name;
+  final String currency;
+  final double balance;
+  final bool includeInTotal;
+  final String notes;
+  final String? apiUrl;
+  final String? apiValuePath;
+  final String? apiAuth;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+  final bool synced;
+  final double convertedBalance;
 
-part 'account.freezed.dart';
-part 'account.g.dart';
-
-@freezed
-class Account with _$Account {
-  const factory Account({
-    required int id,
-    int? remoteId,
-    required String name,
-    required String currency,
-    @Default(0) double balance,
-    @Default(true) bool includeInTotal,
-    @Default('') String notes,
-    String? apiUrl,
-    String? apiValuePath,
-    String? apiAuth,
-    DateTime? createdAt,
-    DateTime? updatedAt,
-    @Default(false) bool synced,
-    // Display fields (not stored)
-    @Default(0) double convertedBalance,
-  }) = _Account;
-
-  factory Account.fromJson(Map<String, dynamic> json) =>
-      _$AccountFromJson(json);
+  const Account({
+    required this.id,
+    this.remoteId,
+    required this.name,
+    required this.currency,
+    this.balance = 0,
+    this.includeInTotal = true,
+    this.notes = '',
+    this.apiUrl,
+    this.apiValuePath,
+    this.apiAuth,
+    this.createdAt,
+    this.updatedAt,
+    this.synced = false,
+    this.convertedBalance = 0,
+  });
 }

@@ -15,6 +15,15 @@ class ExpenseRepository {
 
   ExpenseRepository(this._db, this._api, this._rateRepo);
 
+  Future<void> _enqueue(String operation, int localId, Map<String, dynamic> payload) =>
+      _db.syncQueueDao.enqueue(SyncQueueCompanion.insert(
+        entityType: 'expense',
+        operation: operation,
+        localId: localId,
+        payload: jsonEncode(payload),
+        createdAt: Value(DateTime.now()),
+      ));
+
   Stream<List<model.Expense>> watchByMonth(int year, int month) {
     return _db.expenseDao.watchByMonth(year, month).map(
           (rows) => rows.map(_rowToModel).toList(),
@@ -91,22 +100,14 @@ class ExpenseRepository {
         await _db.expenseDao.markSynced(localId, remote['id'] as int);
       } catch (e, st) {
         AppLogger.instance.log('addExpense push failed: $e', name: 'ExpenseRepo', error: e, stackTrace: st);
-        await _db.syncQueueDao.enqueue(
-          SyncQueueCompanion.insert(
-            entityType: 'expense',
-            operation: 'create',
-            localId: localId,
-            payload: jsonEncode({
-              'amount': amount,
-              'currency': currency,
-              'date': date.toIso8601String(),
-              'category': category,
-              'name': name,
-              'notes': notes,
-            }),
-            createdAt: Value(DateTime.now()),
-          ),
-        );
+        await _enqueue('create', localId, {
+          'amount': amount,
+          'currency': currency,
+          'date': date.toIso8601String(),
+          'category': category,
+          'name': name,
+          'notes': notes,
+        });
       }
     }
   }
@@ -142,22 +143,14 @@ class ExpenseRepository {
 
     final pushed = await _pushExpense(localId, amount, currency, date, category, name, notes);
     if (!pushed) {
-      await _db.syncQueueDao.enqueue(
-        SyncQueueCompanion.insert(
-          entityType: 'expense',
-          operation: 'update',
-          localId: localId,
-          payload: jsonEncode({
-            'amount': amount,
-            'currency': currency,
-            'date': date.toIso8601String(),
-            'category': category,
-            'name': name,
-            'notes': notes,
-          }),
-          createdAt: Value(DateTime.now()),
-        ),
-      );
+      await _enqueue('update', localId, {
+        'amount': amount,
+        'currency': currency,
+        'date': date.toIso8601String(),
+        'category': category,
+        'name': name,
+        'notes': notes,
+      });
     }
   }
 
@@ -204,15 +197,7 @@ class ExpenseRepository {
         await api.deleteExpense(row!.remoteId!);
       } catch (e, st) {
         AppLogger.instance.log('deleteExpense push failed: $e', name: 'ExpenseRepo', error: e, stackTrace: st);
-        await _db.syncQueueDao.enqueue(
-          SyncQueueCompanion.insert(
-            entityType: 'expense',
-            operation: 'delete',
-            localId: localId,
-            payload: jsonEncode({'remote_id': row!.remoteId}),
-            createdAt: Value(DateTime.now()),
-          ),
-        );
+        await _enqueue('delete', localId, {'remote_id': row!.remoteId});
       }
     }
   }

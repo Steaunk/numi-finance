@@ -9,7 +9,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
 from core.models import VALID_CURRENCIES
-from core.services import compute_snapshot_amounts, convert_amount, get_all_rates, get_latest_rates
+from core.services import compute_snapshot_amounts, convert_amount, get_rates
 
 from .models import Account, BalanceSnapshot
 
@@ -78,7 +78,7 @@ def list_accounts(request):
     if currency not in VALID_CURRENCIES:
         currency = 'SGD'
 
-    rates = get_latest_rates()
+    rates = get_rates()
     accounts = Account.objects.all()
 
     result = []
@@ -144,7 +144,7 @@ def add_account(request):
     api_value_path = data.get('api_value_path', '').strip() or None
     api_auth = data.get('api_auth', '').strip() or None
 
-    rates = get_all_rates()
+    rates = get_rates()
     account = Account.objects.create(
         name=name,
         currency=currency,
@@ -191,7 +191,7 @@ def update_account(request, account_id):
         change = new_balance - old_balance
         account.balance = new_balance
 
-        rates = get_all_rates()
+        rates = get_rates()
         amounts = compute_snapshot_amounts(new_balance, account.currency, rates)
         BalanceSnapshot.objects.create(
             account=account,
@@ -251,7 +251,7 @@ def net_worth(request):
     if currency not in VALID_CURRENCIES:
         currency = 'SGD'
 
-    rates = get_latest_rates()
+    rates = get_rates()
     accounts = Account.objects.all()
 
     total = 0.0
@@ -355,7 +355,7 @@ def _do_sync_api_accounts(accounts, create_snapshot=False):
         should_snap = create_snapshot or _should_snapshot(account)
         if should_snap:
             if rates is None:
-                rates = get_all_rates()
+                rates = get_rates()
             amounts = compute_snapshot_amounts(new_balance, account.currency, rates)
             BalanceSnapshot.objects.create(
                 account=account,

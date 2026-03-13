@@ -87,17 +87,6 @@ def get_rates(rate_date=None, currencies=None):
     return rates
 
 
-def get_latest_rates():
-    """Legacy helper: return today's rates for the 4 core currencies."""
-    rates = get_rates()
-    return {k: rates.get(k, v) for k, v in FALLBACK_RATES.items()}
-
-
-def get_all_rates():
-    """Legacy helper: return all rates (latest)."""
-    return get_rates()
-
-
 def compute_snapshot_amounts(amount, currency, rates):
     """Compute USD/CNY/HKD/SGD equivalents for a balance or expense amount."""
     if currency == 'USD':

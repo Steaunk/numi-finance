@@ -1,22 +1,23 @@
-import 'package:freezed_annotation/freezed_annotation.dart';
+class BalanceSnapshot {
+  final int id;
+  final int accountId;
+  final double balance;
+  final double change;
+  final DateTime snapshotDate;
+  final double amountUsd;
+  final double amountCny;
+  final double amountHkd;
+  final double amountSgd;
 
-part 'balance_snapshot.freezed.dart';
-part 'balance_snapshot.g.dart';
-
-@freezed
-class BalanceSnapshot with _$BalanceSnapshot {
-  const factory BalanceSnapshot({
-    required int id,
-    required int accountId,
-    required double balance,
-    @Default(0) double change,
-    required DateTime snapshotDate,
-    @Default(0) double amountUsd,
-    @Default(0) double amountCny,
-    @Default(0) double amountHkd,
-    @Default(0) double amountSgd,
-  }) = _BalanceSnapshot;
-
-  factory BalanceSnapshot.fromJson(Map<String, dynamic> json) =>
-      _$BalanceSnapshotFromJson(json);
+  const BalanceSnapshot({
+    required this.id,
+    required this.accountId,
+    required this.balance,
+    this.change = 0,
+    required this.snapshotDate,
+    this.amountUsd = 0,
+    this.amountCny = 0,
+    this.amountHkd = 0,
+    this.amountSgd = 0,
+  });
 }

@@ -4,15 +4,15 @@ import '../../models/portfolio.dart';
 import '../cache_store.dart';
 import '../remote/endpoints/portfolio_api.dart';
 
-/// Callback invoked when a background refresh detects newer data from the API.
-typedef OnCacheUpdated = void Function();
-
 class PortfolioRepository {
   final PortfolioApi? _api;
   final CacheStore _cache;
-  OnCacheUpdated? onCacheUpdated;
+  final _updateController = StreamController<void>.broadcast();
 
   PortfolioRepository(this._api, this._cache);
+
+  /// Fires when a background refresh detects newer data from the API.
+  Stream<void> get onUpdate => _updateController.stream;
 
   // Cache keys
   static const _summaryKey = 'portfolio:summary';
@@ -74,7 +74,7 @@ class PortfolioRepository {
 
   void _refreshSummaryInBackground() {
     unawaited(_fetchSummary().then((result) {
-      if (result.$2) onCacheUpdated?.call();
+      if (result.$2) _updateController.add(null);
     }));
   }
 
@@ -140,7 +140,7 @@ class PortfolioRepository {
 
   void _refreshPortfolioHistoryInBackground(int days) {
     unawaited(_fetchPortfolioHistory(days).then((result) {
-      if (result.$2) onCacheUpdated?.call();
+      if (result.$2) _updateController.add(null);
     }));
   }
 
@@ -202,7 +202,7 @@ class PortfolioRepository {
   void _refreshStockHistoryInBackground(
       String key, String code, int days) {
     unawaited(_fetchStockHistory(key, code, days).then((result) {
-      if (result.$2) onCacheUpdated?.call();
+      if (result.$2) _updateController.add(null);
     }));
   }
 

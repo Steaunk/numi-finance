@@ -16,6 +16,15 @@ class TravelRepository {
 
   TravelRepository(this._db, this._api, this._rateRepo);
 
+  Future<void> _enqueue(String entity, String operation, int localId, Map<String, dynamic> payload) =>
+      _db.syncQueueDao.enqueue(SyncQueueCompanion.insert(
+        entityType: entity,
+        operation: operation,
+        localId: localId,
+        payload: jsonEncode(payload),
+        createdAt: Value(DateTime.now()),
+      ));
+
   Stream<List<model.Trip>> watchAllTrips() {
     return _db.tripDao.watchAll().asyncMap((tripRows) async {
       final trips = <model.Trip>[];
@@ -72,20 +81,12 @@ class TravelRepository {
         ));
       } catch (e, st) {
         AppLogger.instance.log('addTrip push failed: $e', name: 'TravelRepo', error: e, stackTrace: st);
-        await _db.syncQueueDao.enqueue(
-          SyncQueueCompanion.insert(
-            entityType: 'trip',
-            operation: 'create',
-            localId: localId,
-            payload: jsonEncode({
-              'destination': destination,
-              'start_date': startDate.toIso8601String(),
-              'end_date': endDate.toIso8601String(),
-              'notes': notes,
-            }),
-            createdAt: Value(DateTime.now()),
-          ),
-        );
+        await _enqueue('trip', 'create', localId, {
+          'destination': destination,
+          'start_date': startDate.toIso8601String(),
+          'end_date': endDate.toIso8601String(),
+          'notes': notes,
+        });
       }
     }
   }
@@ -100,15 +101,7 @@ class TravelRepository {
         await api.deleteTrip(row!.remoteId!);
       } catch (e, st) {
         AppLogger.instance.log('deleteTrip push failed: $e', name: 'TravelRepo', error: e, stackTrace: st);
-        await _db.syncQueueDao.enqueue(
-          SyncQueueCompanion.insert(
-            entityType: 'trip',
-            operation: 'delete',
-            localId: localId,
-            payload: jsonEncode({'remote_id': row!.remoteId}),
-            createdAt: Value(DateTime.now()),
-          ),
-        );
+        await _enqueue('trip', 'delete', localId, {'remote_id': row!.remoteId});
       }
     }
   }
@@ -162,23 +155,15 @@ class TravelRepository {
         ));
       } catch (e, st) {
         AppLogger.instance.log('addTravelExpense push failed: $e', name: 'TravelRepo', error: e, stackTrace: st);
-        await _db.syncQueueDao.enqueue(
-          SyncQueueCompanion.insert(
-            entityType: 'travel_expense',
-            operation: 'create',
-            localId: localId,
-            payload: jsonEncode({
-              'trip_id': tripId,
-              'amount': amount,
-              'currency': currency,
-              'date': date.toIso8601String(),
-              'category': category,
-              'name': name,
-              'notes': notes,
-            }),
-            createdAt: Value(DateTime.now()),
-          ),
-        );
+        await _enqueue('travel_expense', 'create', localId, {
+          'trip_id': tripId,
+          'amount': amount,
+          'currency': currency,
+          'date': date.toIso8601String(),
+          'category': category,
+          'name': name,
+          'notes': notes,
+        });
       }
     }
   }
@@ -218,23 +203,15 @@ class TravelRepository {
       final row = await (_db.select(_db.travelExpenses)
             ..where((e) => e.id.equals(localId)))
           .getSingleOrNull();
-      await _db.syncQueueDao.enqueue(
-        SyncQueueCompanion.insert(
-          entityType: 'travel_expense',
-          operation: 'update',
-          localId: localId,
-          payload: jsonEncode({
-            'trip_id': row?.tripId,
-            'amount': amount,
-            'currency': currency,
-            'date': date.toIso8601String(),
-            'category': category,
-            'name': name,
-            'notes': notes,
-          }),
-          createdAt: Value(DateTime.now()),
-        ),
-      );
+      await _enqueue('travel_expense', 'update', localId, {
+        'trip_id': row?.tripId,
+        'amount': amount,
+        'currency': currency,
+        'date': date.toIso8601String(),
+        'category': category,
+        'name': name,
+        'notes': notes,
+      });
     }
   }
 
@@ -289,18 +266,10 @@ class TravelRepository {
         await api.deleteTripExpense(tripRow!.remoteId!, row!.remoteId!);
       } catch (e, st) {
         AppLogger.instance.log('deleteTravelExpense push failed: $e', name: 'TravelRepo', error: e, stackTrace: st);
-        await _db.syncQueueDao.enqueue(
-          SyncQueueCompanion.insert(
-            entityType: 'travel_expense',
-            operation: 'delete',
-            localId: localId,
-            payload: jsonEncode({
-              'remote_id': row!.remoteId,
-              'trip_remote_id': tripRow!.remoteId,
-            }),
-            createdAt: Value(DateTime.now()),
-          ),
-        );
+        await _enqueue('travel_expense', 'delete', localId, {
+          'remote_id': row!.remoteId,
+          'trip_remote_id': tripRow!.remoteId,
+        });
       }
     }
   }

@@ -165,9 +165,9 @@ final portfolioRepositoryProvider = Provider<PortfolioRepository>((ref) {
     ref.watch(portfolioApiProvider),
     ref.watch(cacheStoreProvider),
   );
-  repo.onCacheUpdated = () {
+  repo.onUpdate.listen((_) {
     ref.read(portfolioRefreshCounter.notifier).update((v) => v + 1);
-  };
+  });
   return repo;
 });
 

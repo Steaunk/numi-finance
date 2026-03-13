@@ -16,6 +16,15 @@ class AssetRepository {
 
   AssetRepository(this._db, this._api, this._rateRepo);
 
+  Future<void> _enqueue(String operation, int localId, Map<String, dynamic> payload) =>
+      _db.syncQueueDao.enqueue(SyncQueueCompanion.insert(
+        entityType: 'account',
+        operation: operation,
+        localId: localId,
+        payload: jsonEncode(payload),
+        createdAt: Value(DateTime.now()),
+      ));
+
   Stream<List<model.Account>> watchAllAccounts(String displayCurrency) {
     return _db.accountDao.watchAll().asyncMap((rows) async {
       final rates = await _rateRepo.getCachedRates();
@@ -138,24 +147,16 @@ class AssetRepository {
         ));
       } catch (e, st) {
         AppLogger.instance.log('addAccount push failed: $e', name: 'AssetRepo', error: e, stackTrace: st);
-        await _db.syncQueueDao.enqueue(
-          SyncQueueCompanion.insert(
-            entityType: 'account',
-            operation: 'create',
-            localId: localId,
-            payload: jsonEncode({
-              'name': name,
-              'currency': currency,
-              'balance': balance,
-              'include_in_total': includeInTotal,
-              'notes': notes,
-              if (apiUrl != null) 'api_url': apiUrl,
-              if (apiValuePath != null) 'api_value_path': apiValuePath,
-              if (apiAuth != null) 'api_auth': apiAuth,
-            }),
-            createdAt: Value(DateTime.now()),
-          ),
-        );
+        await _enqueue('create', localId, {
+          'name': name,
+          'currency': currency,
+          'balance': balance,
+          'include_in_total': includeInTotal,
+          'notes': notes,
+          if (apiUrl != null) 'api_url': apiUrl,
+          if (apiValuePath != null) 'api_value_path': apiValuePath,
+          if (apiAuth != null) 'api_auth': apiAuth,
+        });
       }
     }
   }
@@ -210,24 +211,16 @@ class AssetRepository {
 
     final pushed = await _pushAccount(localId);
     if (!pushed) {
-      await _db.syncQueueDao.enqueue(
-        SyncQueueCompanion.insert(
-          entityType: 'account',
-          operation: 'update',
-          localId: localId,
-          payload: jsonEncode({
-            'name': name,
-            'currency': currency,
-            'balance': newBalance,
-            'include_in_total': includeInTotal,
-            'notes': notes,
-            if (apiUrl != null) 'api_url': apiUrl,
-            if (apiValuePath != null) 'api_value_path': apiValuePath,
-            if (apiAuth != null) 'api_auth': apiAuth,
-          }),
-          createdAt: Value(DateTime.now()),
-        ),
-      );
+      await _enqueue('update', localId, {
+        'name': name,
+        'currency': currency,
+        'balance': newBalance,
+        'include_in_total': includeInTotal,
+        'notes': notes,
+        if (apiUrl != null) 'api_url': apiUrl,
+        if (apiValuePath != null) 'api_value_path': apiValuePath,
+        if (apiAuth != null) 'api_auth': apiAuth,
+      });
     }
   }
 
@@ -267,15 +260,7 @@ class AssetRepository {
         await api.deleteAccount(row!.remoteId!);
       } catch (e, st) {
         AppLogger.instance.log('deleteAccount push failed: $e', name: 'AssetRepo', error: e, stackTrace: st);
-        await _db.syncQueueDao.enqueue(
-          SyncQueueCompanion.insert(
-            entityType: 'account',
-            operation: 'delete',
-            localId: localId,
-            payload: jsonEncode({'remote_id': row!.remoteId}),
-            createdAt: Value(DateTime.now()),
-          ),
-        );
+        await _enqueue('delete', localId, {'remote_id': row!.remoteId});
       }
     }
   }
