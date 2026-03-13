@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:local_auth/local_auth.dart';
 import '../data/local/database.dart';
@@ -33,18 +34,18 @@ final sharedPrefsProvider = Provider<SharedPreferences>((ref) {
   throw UnimplementedError('Must be overridden in main');
 });
 
+final secureStorageProvider = Provider<FlutterSecureStorage>((ref) {
+  return const FlutterSecureStorage();
+});
+
 final serverUrlProvider = StateProvider<String>((ref) {
   final prefs = ref.watch(sharedPrefsProvider);
   return prefs.getString('server_url') ?? '';
 });
 
-final nginxUsernameProvider = StateProvider<String>((ref) {
-  return ref.watch(sharedPrefsProvider).getString('nginx_username') ?? '';
-});
-
-final nginxPasswordProvider = StateProvider<String>((ref) {
-  return ref.watch(sharedPrefsProvider).getString('nginx_password') ?? '';
-});
+// Initialised from secure storage in main.dart
+final nginxUsernameProvider = StateProvider<String>((ref) => '');
+final nginxPasswordProvider = StateProvider<String>((ref) => '');
 
 /// Returns {htmlUrl, assetApiUrl} if a newer build is available, else null.
 final updateCheckProvider =
