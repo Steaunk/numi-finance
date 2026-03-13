@@ -79,7 +79,19 @@ class PortfolioSummary {
   final double totalUsd;
   final String timestamp;
 
-  double get totalPnl => holdings.fold(0.0, (sum, h) => sum + h.pnl);
+  /// Sum PnL across all holdings, converting each to USD first.
+  /// Falls back to raw sum if no rates provided.
+  double totalPnl([Map<String, double>? rates]) {
+    if (rates == null || rates.isEmpty) {
+      return holdings.fold(0.0, (sum, h) => sum + h.pnl);
+    }
+    return holdings.fold(0.0, (sum, h) {
+      final currency = h.currency.isEmpty ? 'USD' : h.currency;
+      if (currency == 'USD') return sum + h.pnl;
+      final rate = rates[currency.toLowerCase()] ?? rates[currency] ?? 1.0;
+      return sum + (rate > 0 ? h.pnl / rate : h.pnl);
+    });
+  }
 
   const PortfolioSummary({
     required this.holdings,

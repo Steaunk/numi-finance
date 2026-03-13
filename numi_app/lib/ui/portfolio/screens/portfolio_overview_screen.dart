@@ -139,23 +139,25 @@ class _PortfolioSummaryCard extends ConsumerWidget {
                   ?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 4),
-            if (summary.totalPnl != 0) ...[
-              const SizedBox(height: 2),
-              Text(
-                '${summary.totalPnl >= 0 ? '+' : ''}${CurrencyUtils.format(
-                  ratesAsync.when(
-                    data: (rates) => CurrencyUtils.convert(summary.totalPnl, 'USD', displayCurrency, rates),
-                    loading: () => summary.totalPnl,
-                    error: (_, __) => summary.totalPnl,
+            ...ratesAsync.when(
+              data: (rates) {
+                final totalPnlUsd = summary.totalPnl(rates);
+                if (totalPnlUsd == 0) return <Widget>[];
+                final displayPnl = CurrencyUtils.convert(totalPnlUsd, 'USD', displayCurrency, rates);
+                return [
+                  const SizedBox(height: 2),
+                  Text(
+                    '${totalPnlUsd >= 0 ? '+' : ''}${CurrencyUtils.format(displayPnl, currencyLabel)}',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: totalPnlUsd >= 0 ? Colors.green : Colors.red,
+                          fontWeight: FontWeight.w600,
+                        ),
                   ),
-                  currencyLabel,
-                )}',
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: summary.totalPnl >= 0 ? Colors.green : Colors.red,
-                      fontWeight: FontWeight.w600,
-                    ),
-              ),
-            ],
+                ];
+              },
+              loading: () => <Widget>[],
+              error: (_, __) => <Widget>[],
+            ),
             const SizedBox(height: 2),
             Text(
               '${summary.holdings.length} holdings',
@@ -605,7 +607,7 @@ class _HoldingListTile extends ConsumerWidget {
                     Text(
                       '${holding.pnl >= 0 ? '+' : ''}${CurrencyUtils.format(
                         ratesAsync.when(
-                          data: (rates) => CurrencyUtils.convert(holding.pnl, 'USD', displayCurrency, rates),
+                          data: (rates) => CurrencyUtils.convert(holding.pnl, holding.currency.isEmpty ? 'USD' : holding.currency, displayCurrency, rates),
                           loading: () => holding.pnl,
                           error: (_, __) => holding.pnl,
                         ),
