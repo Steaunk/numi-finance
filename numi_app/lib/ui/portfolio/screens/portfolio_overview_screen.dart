@@ -365,7 +365,7 @@ class _PortfolioHistoryChartState
                     selected: {_showPnl},
                     onSelectionChanged: (v) =>
                         setState(() => _showPnl = v.first),
-                    style: ButtonStyle(
+                    style: const ButtonStyle(
                       visualDensity: VisualDensity.compact,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
@@ -435,7 +435,7 @@ class _PortfolioHistoryChartState
     final minY = spots.map((s) => s.y).reduce((a, b) => a < b ? a : b);
     final maxY = spots.map((s) => s.y).reduce((a, b) => a > b ? a : b);
     final padding = (maxY - minY) * 0.1;
-    final chartMinY = _showPnl ? minY - padding : (minY - padding).clamp(0, double.infinity);
+    final chartMinY = _showPnl ? minY - padding : (minY - padding).clamp(0.0, double.infinity);
 
     final lineColor = _showPnl
         ? (spots.last.y >= 0 ? Colors.green : Colors.red)
