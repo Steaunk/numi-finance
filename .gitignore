@@ -6,6 +6,8 @@ venv/
 db.sqlite3
 *.csv
 *.db
+.env
+.env.*
 
 # Flutter / Dart generated files
 numi_app/.dart_tool/

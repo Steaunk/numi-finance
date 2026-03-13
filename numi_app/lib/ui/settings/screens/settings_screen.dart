@@ -467,8 +467,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final pass = _passController.text;
     ref.read(nginxUsernameProvider.notifier).state = user;
     ref.read(nginxPasswordProvider.notifier).state = pass;
-    ref.read(sharedPrefsProvider).setString('nginx_username', user);
-    ref.read(sharedPrefsProvider).setString('nginx_password', pass);
+    final storage = ref.read(secureStorageProvider);
+    storage.write(key: 'nginx_username', value: user);
+    storage.write(key: 'nginx_password', value: pass);
     ScaffoldMessenger.of(context)
         .showSnackBar(const SnackBar(content: Text('Credentials saved')));
   }
