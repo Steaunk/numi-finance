@@ -54,6 +54,24 @@ class PortfolioHolding {
   }
 
   String get displayName => longName.isNotEmpty ? longName : stockName;
+
+  Map<String, dynamic> toJson() => {
+        'code': code,
+        'stock_name': stockName,
+        'qty': qty,
+        'nominal_price': nominalPrice,
+        'market_value': marketValue,
+        'usd_market_val': usdMarketVal,
+        'currency': currency,
+        'position_market': positionMarket,
+        'sector': sector,
+        'industry': industry,
+        'country': country,
+        'long_name': longName,
+        'pnl': pnl,
+        'unrealized_pnl': unrealizedPnl,
+        'realized_pnl': realizedPnl,
+      };
 }
 
 class PortfolioSummary {
@@ -138,6 +156,23 @@ class PortfolioSummary {
       timestamp: json['timestamp'] as String? ?? '',
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'holdings': holdings.map((h) => h.toJson()).toList(),
+        'total_usd': totalUsd,
+        'timestamp': timestamp,
+      };
+
+  factory PortfolioSummary.fromCache(Map<String, dynamic> json) {
+    final holdingsList = (json['holdings'] as List)
+        .map((h) => PortfolioHolding.fromJson(h as Map<String, dynamic>))
+        .toList();
+    return PortfolioSummary(
+      holdings: holdingsList,
+      totalUsd: (json['total_usd'] as num?)?.toDouble() ?? 0,
+      timestamp: json['timestamp'] as String? ?? '',
+    );
+  }
 }
 
 class StockHistoryPoint {
@@ -161,6 +196,13 @@ class StockHistoryPoint {
       qty: (json['qty'] as num?)?.toDouble() ?? 0,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'timestamp': timestamp.toIso8601String(),
+        'usd_market_val': usdMarketVal,
+        'market_value': marketValue,
+        'qty': qty,
+      };
 }
 
 class PortfolioHistorySnapshot {
@@ -173,4 +215,18 @@ class PortfolioHistorySnapshot {
     required this.totalUsd,
     this.pnl = 0,
   });
+
+  Map<String, dynamic> toJson() => {
+        'timestamp': timestamp.toIso8601String(),
+        'usd_market_val': totalUsd,
+        'pnl': pnl,
+      };
+
+  factory PortfolioHistorySnapshot.fromCache(Map<String, dynamic> json) {
+    return PortfolioHistorySnapshot(
+      timestamp: DateTime.parse(json['timestamp'] as String),
+      totalUsd: (json['usd_market_val'] as num?)?.toDouble() ?? 0,
+      pnl: (json['pnl'] as num?)?.toDouble() ?? 0,
+    );
+  }
 }
