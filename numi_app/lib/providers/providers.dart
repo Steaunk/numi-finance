@@ -152,11 +152,13 @@ final assetRepositoryProvider = Provider<AssetRepository>((ref) {
   );
 });
 
+/// Bumped when portfolio background refresh completes, triggering re-fetch.
+final portfolioRefreshCounter = StateProvider<int>((ref) => 0);
+
 final portfolioRepositoryProvider = Provider<PortfolioRepository>((ref) {
   final repo = PortfolioRepository(ref.watch(portfolioApiProvider));
   repo.onCacheUpdated = () {
-    ref.invalidate(portfolioSummaryProvider);
-    ref.invalidate(portfolioHistoryProvider);
+    ref.read(portfolioRefreshCounter.notifier).update((v) => v + 1);
   };
   return repo;
 });
@@ -202,10 +204,9 @@ class SyncStateNotifier extends StateNotifier<AsyncValue<void>> {
       _ref.invalidate(netWorthTrendProvider);
       _ref.invalidate(netWorthProvider);
       _ref.invalidate(categoriesProvider);
-      // Invalidate portfolio providers so charts refresh with latest data
+      // Invalidate portfolio cache and bump counter to trigger UI re-fetch
       _ref.read(portfolioRepositoryProvider).invalidateCache();
-      _ref.invalidate(portfolioSummaryProvider);
-      _ref.invalidate(portfolioHistoryProvider);
+      _ref.read(portfolioRefreshCounter.notifier).update((v) => v + 1);
     } catch (e, st) {
       state = AsyncError(e, st);
     }
@@ -340,11 +341,13 @@ final cachedRatesProvider = FutureProvider<Map<String, double>>((ref) {
 // --- Portfolio Providers ---
 
 final portfolioSummaryProvider = FutureProvider<PortfolioSummary?>((ref) {
+  ref.watch(portfolioRefreshCounter); // re-fetch on background refresh
   return ref.watch(portfolioRepositoryProvider).getPortfolioSummary();
 });
 
 final portfolioHistoryProvider =
     FutureProvider.family<List<PortfolioHistorySnapshot>, int>((ref, days) {
+  ref.watch(portfolioRefreshCounter); // re-fetch on background refresh
   return ref.watch(portfolioRepositoryProvider).getPortfolioHistory(days: days);
 });
 
