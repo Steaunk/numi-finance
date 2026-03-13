@@ -197,6 +197,10 @@ class SyncStateNotifier extends StateNotifier<AsyncValue<void>> {
       _ref.invalidate(netWorthTrendProvider);
       _ref.invalidate(netWorthProvider);
       _ref.invalidate(categoriesProvider);
+      // Invalidate portfolio providers so charts refresh with latest data
+      _ref.read(portfolioRepositoryProvider).invalidateCache();
+      _ref.invalidate(portfolioSummaryProvider);
+      _ref.invalidate(portfolioHistoryProvider);
     } catch (e, st) {
       state = AsyncError(e, st);
     }
