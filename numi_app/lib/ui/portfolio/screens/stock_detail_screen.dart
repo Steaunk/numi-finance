@@ -263,13 +263,13 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
           holding.qty == holding.qty.roundToDouble() ? 0 : 4), null),
       ('Price', CurrencyUtils.format(holding.nominalPrice, holding.currency), null),
       if (holding.pnl != 0)
-        ('Total P&L', '${holding.pnl >= 0 ? '+' : ''}${CurrencyUtils.format(holding.pnl, holding.currency.isEmpty ? 'USD' : holding.currency)}',
+        ('Total P&L', '${holding.pnl >= 0 ? '+' : ''}${CurrencyUtils.format(holding.pnl, 'USD')}',
             holding.pnl >= 0 ? Colors.green : Colors.red),
       if (holding.unrealizedPnl != 0)
-        ('Unrealized P&L', '${holding.unrealizedPnl >= 0 ? '+' : ''}${CurrencyUtils.format(holding.unrealizedPnl, holding.currency.isEmpty ? 'USD' : holding.currency)}',
+        ('Unrealized P&L', '${holding.unrealizedPnl >= 0 ? '+' : ''}${CurrencyUtils.format(holding.unrealizedPnl, 'USD')}',
             holding.unrealizedPnl >= 0 ? Colors.green : Colors.red),
       if (holding.realizedPnl != 0)
-        ('Realized P&L', '${holding.realizedPnl >= 0 ? '+' : ''}${CurrencyUtils.format(holding.realizedPnl, holding.currency.isEmpty ? 'USD' : holding.currency)}',
+        ('Realized P&L', '${holding.realizedPnl >= 0 ? '+' : ''}${CurrencyUtils.format(holding.realizedPnl, 'USD')}',
             holding.realizedPnl >= 0 ? Colors.green : Colors.red),
       if (holding.currency.isNotEmpty) ('Currency', holding.currency, null),
       if (holding.positionMarket.isNotEmpty) ('Market', holding.positionMarket, null),
