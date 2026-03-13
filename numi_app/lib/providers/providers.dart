@@ -16,6 +16,7 @@ import '../data/repositories/travel_repository.dart';
 import '../data/repositories/asset_repository.dart';
 import '../data/repositories/rate_repository.dart';
 import '../data/repositories/portfolio_repository.dart';
+import '../data/cache_store.dart';
 import '../models/portfolio.dart';
 import '../data/sync/sync_service.dart';
 import '../models/expense.dart' as model;
@@ -152,11 +153,18 @@ final assetRepositoryProvider = Provider<AssetRepository>((ref) {
   );
 });
 
+final cacheStoreProvider = Provider<CacheStore>((ref) {
+  return CacheStore(ref.watch(sharedPrefsProvider));
+});
+
 /// Bumped when portfolio background refresh completes, triggering re-fetch.
 final portfolioRefreshCounter = StateProvider<int>((ref) => 0);
 
 final portfolioRepositoryProvider = Provider<PortfolioRepository>((ref) {
-  final repo = PortfolioRepository(ref.watch(portfolioApiProvider));
+  final repo = PortfolioRepository(
+    ref.watch(portfolioApiProvider),
+    ref.watch(cacheStoreProvider),
+  );
   repo.onCacheUpdated = () {
     ref.read(portfolioRefreshCounter.notifier).update((v) => v + 1);
   };
@@ -205,7 +213,7 @@ class SyncStateNotifier extends StateNotifier<AsyncValue<void>> {
       _ref.invalidate(netWorthProvider);
       _ref.invalidate(categoriesProvider);
       // Invalidate portfolio cache and bump counter to trigger UI re-fetch
-      _ref.read(portfolioRepositoryProvider).invalidateCache();
+      await _ref.read(portfolioRepositoryProvider).invalidateCache();
       _ref.read(portfolioRefreshCounter.notifier).update((v) => v + 1);
     } catch (e, st) {
       state = AsyncError(e, st);

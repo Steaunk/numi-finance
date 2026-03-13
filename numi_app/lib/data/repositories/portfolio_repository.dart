@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../../models/portfolio.dart';
+import '../cache_store.dart';
 import '../remote/endpoints/portfolio_api.dart';
 
 /// Callback invoked when a background refresh has updated the cache.
@@ -8,19 +9,15 @@ typedef OnCacheUpdated = void Function();
 
 class PortfolioRepository {
   final PortfolioApi? _api;
+  final CacheStore _cache;
   OnCacheUpdated? onCacheUpdated;
 
-  static const _maxCacheAge = Duration(days: 7);
+  PortfolioRepository(this._api, this._cache);
 
-  // Summary cache
-  PortfolioSummary? _cachedSummary;
-  DateTime? _summaryFetchTime;
-
-  // History caches: key = "code:days" or days
-  final Map<String, (List<StockHistoryPoint>, DateTime)> _historyCache = {};
-  final Map<int, (List<PortfolioHistorySnapshot>, DateTime)> _portfolioHistoryCache = {};
-
-  PortfolioRepository(this._api);
+  // Cache keys
+  static const _summaryKey = 'portfolio:summary';
+  static String _historyKey(int days) => 'portfolio:history:$days';
+  static String _stockKey(String code, int days) => 'portfolio:stock:$code:$days';
 
   /// Soft refresh threshold — after this, serve cache but refresh in background.
   Duration _refreshThreshold(int days) {
@@ -33,17 +30,19 @@ class PortfolioRepository {
 
   Future<PortfolioSummary?> getPortfolioSummary() async {
     if (_api == null) return null;
-    final hasCache = _cachedSummary != null && _summaryFetchTime != null;
-    final age = hasCache ? DateTime.now().difference(_summaryFetchTime!) : _maxCacheAge;
 
-    if (hasCache && age < _maxCacheAge) {
-      // Serve cache; background refresh if stale
+    final cached = _cache.get<PortfolioSummary>(
+      _summaryKey,
+      (json) => PortfolioSummary.fromCache(json as Map<String, dynamic>),
+    );
+    final age = _cache.age(_summaryKey);
+
+    if (cached != null && age != null) {
       if (age > const Duration(minutes: 2)) {
         _refreshSummaryInBackground();
       }
-      return _cachedSummary;
+      return cached;
     }
-    // No cache or expired — fetch synchronously
     return _fetchSummary();
   }
 
@@ -57,11 +56,14 @@ class PortfolioRepository {
         results[0],
         accountJson: results[1],
       );
-      _cachedSummary = summary;
-      _summaryFetchTime = DateTime.now();
+      await _cache.put(_summaryKey, summary.toJson());
       return summary;
     } catch (_) {
-      return _cachedSummary; // fallback to stale cache on error
+      // fallback to stale cache
+      return _cache.get<PortfolioSummary>(
+        _summaryKey,
+        (json) => PortfolioSummary.fromCache(json as Map<String, dynamic>),
+      );
     }
   }
 
@@ -77,20 +79,27 @@ class PortfolioRepository {
     int days = 30,
   }) async {
     if (_api == null) return [];
-    final cached = _portfolioHistoryCache[days];
-    final hasCache = cached != null;
-    final age = hasCache ? DateTime.now().difference(cached.$2) : _maxCacheAge;
+    final key = _historyKey(days);
 
-    if (hasCache && age < _maxCacheAge) {
+    final cached = _cache.get<List<PortfolioHistorySnapshot>>(
+      key,
+      (json) => (json as List)
+          .map((r) => PortfolioHistorySnapshot.fromCache(r as Map<String, dynamic>))
+          .toList(),
+    );
+    final age = _cache.age(key);
+
+    if (cached != null && age != null) {
       if (age > _refreshThreshold(days)) {
         _refreshPortfolioHistoryInBackground(days);
       }
-      return cached.$1;
+      return cached;
     }
     return _fetchPortfolioHistory(days);
   }
 
   Future<List<PortfolioHistorySnapshot>> _fetchPortfolioHistory(int days) async {
+    final key = _historyKey(days);
     try {
       final json = await _api!.getHistory(days: days);
       final records = json['history'] as List? ?? [];
@@ -102,10 +111,16 @@ class PortfolioRepository {
         );
       }).toList()
         ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
-      _portfolioHistoryCache[days] = (snapshots, DateTime.now());
+      await _cache.put(key, snapshots.map((s) => s.toJson()).toList());
       return snapshots;
     } catch (_) {
-      return _portfolioHistoryCache[days]?.$1 ?? [];
+      return _cache.get<List<PortfolioHistorySnapshot>>(
+            key,
+            (json) => (json as List)
+                .map((r) => PortfolioHistorySnapshot.fromCache(r as Map<String, dynamic>))
+                .toList(),
+          ) ??
+          [];
     }
   }
 
@@ -122,47 +137,55 @@ class PortfolioRepository {
     int days = 30,
   }) async {
     if (_api == null) return [];
-    final cacheKey = '$code:$days';
-    final cached = _historyCache[cacheKey];
-    final hasCache = cached != null;
-    final age = hasCache ? DateTime.now().difference(cached.$2) : _maxCacheAge;
+    final key = _stockKey(code, days);
 
-    if (hasCache && age < _maxCacheAge) {
+    final cached = _cache.get<List<StockHistoryPoint>>(
+      key,
+      (json) => (json as List)
+          .map((h) => StockHistoryPoint.fromJson(h as Map<String, dynamic>))
+          .toList(),
+    );
+    final age = _cache.age(key);
+
+    if (cached != null && age != null) {
       if (age > _refreshThreshold(days)) {
-        _refreshStockHistoryInBackground(cacheKey, code, days);
+        _refreshStockHistoryInBackground(key, code, days);
       }
-      return cached.$1;
+      return cached;
     }
-    return _fetchStockHistory(cacheKey, code, days);
+    return _fetchStockHistory(key, code, days);
   }
 
   Future<List<StockHistoryPoint>> _fetchStockHistory(
-      String cacheKey, String code, int days) async {
+      String key, String code, int days) async {
     try {
       final json = await _api!.getStockHistory(code, days: days);
       final history = (json['history'] as List? ?? [])
           .map((h) => StockHistoryPoint.fromJson(h as Map<String, dynamic>))
           .toList();
-      _historyCache[cacheKey] = (history, DateTime.now());
+      await _cache.put(key, history.map((h) => h.toJson()).toList());
       return history;
     } catch (_) {
-      return _historyCache[cacheKey]?.$1 ?? [];
+      return _cache.get<List<StockHistoryPoint>>(
+            key,
+            (json) => (json as List)
+                .map((h) => StockHistoryPoint.fromJson(h as Map<String, dynamic>))
+                .toList(),
+          ) ??
+          [];
     }
   }
 
   void _refreshStockHistoryInBackground(
-      String cacheKey, String code, int days) {
-    unawaited(_fetchStockHistory(cacheKey, code, days).then((s) {
+      String key, String code, int days) {
+    unawaited(_fetchStockHistory(key, code, days).then((s) {
       if (s.isNotEmpty) onCacheUpdated?.call();
     }));
   }
 
   // --- Cache management ---
 
-  void invalidateCache() {
-    _cachedSummary = null;
-    _summaryFetchTime = null;
-    _historyCache.clear();
-    _portfolioHistoryCache.clear();
+  Future<void> invalidateCache() async {
+    await _cache.removeByPrefix('portfolio:');
   }
 }
