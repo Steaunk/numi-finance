@@ -9,24 +9,9 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
 from core.models import VALID_CURRENCIES
-from core.services import FALLBACK_RATES, convert_amount, get_all_rates, get_latest_rates
+from core.services import compute_snapshot_amounts, convert_amount, get_all_rates, get_latest_rates
 
 from .models import Account, BalanceSnapshot
-
-
-def _compute_snapshot_amounts(balance, currency, rates):
-    """Compute USD/CNY/HKD/SGD equivalents for a balance."""
-    if currency == 'USD':
-        amount_usd = balance
-    else:
-        rate = rates.get(currency.lower())
-        amount_usd = balance / rate if rate else 0
-    return {
-        'amount_usd': round(amount_usd, 2),
-        'amount_cny': round(amount_usd * rates.get('cny', FALLBACK_RATES['cny']), 2),
-        'amount_hkd': round(amount_usd * rates.get('hkd', FALLBACK_RATES['hkd']), 2),
-        'amount_sgd': round(amount_usd * rates.get('sgd', FALLBACK_RATES['sgd']), 2),
-    }
 
 
 def _extract_value_by_path(data, path):
@@ -171,7 +156,7 @@ def add_account(request):
         api_auth=api_auth,
     )
 
-    amounts = _compute_snapshot_amounts(balance, currency, rates)
+    amounts = compute_snapshot_amounts(balance, currency, rates)
     BalanceSnapshot.objects.create(
         account=account,
         balance=balance,
@@ -207,7 +192,7 @@ def update_account(request, account_id):
         account.balance = new_balance
 
         rates = get_all_rates()
-        amounts = _compute_snapshot_amounts(new_balance, account.currency, rates)
+        amounts = compute_snapshot_amounts(new_balance, account.currency, rates)
         BalanceSnapshot.objects.create(
             account=account,
             balance=new_balance,
@@ -371,7 +356,7 @@ def _do_sync_api_accounts(accounts, create_snapshot=False):
         if should_snap:
             if rates is None:
                 rates = get_all_rates()
-            amounts = _compute_snapshot_amounts(new_balance, account.currency, rates)
+            amounts = compute_snapshot_amounts(new_balance, account.currency, rates)
             BalanceSnapshot.objects.create(
                 account=account,
                 balance=new_balance,

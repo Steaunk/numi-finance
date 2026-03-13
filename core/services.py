@@ -98,6 +98,21 @@ def get_all_rates():
     return get_rates()
 
 
+def compute_snapshot_amounts(amount, currency, rates):
+    """Compute USD/CNY/HKD/SGD equivalents for a balance or expense amount."""
+    if currency == 'USD':
+        amount_usd = amount
+    else:
+        rate = rates.get(currency.lower())
+        amount_usd = amount / rate if rate else 0
+    return {
+        'amount_usd': round(amount_usd, 2),
+        'amount_cny': round(amount_usd * rates.get('cny', FALLBACK_RATES['cny']), 2),
+        'amount_hkd': round(amount_usd * rates.get('hkd', FALLBACK_RATES['hkd']), 2),
+        'amount_sgd': round(amount_usd * rates.get('sgd', FALLBACK_RATES['sgd']), 2),
+    }
+
+
 def convert_amount(amount, from_currency, to_currency, rate_cny, rate_hkd, rate_sgd, rate_jpy=150.0):
     """
     Convert amount from one currency to another using stored rate snapshot.
