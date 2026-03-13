@@ -3,8 +3,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// Persistent JSON cache with TTL.
 ///
-/// Every entry is stored as `{"ts": <epoch_ms>, "data": <json>}` in
-/// SharedPreferences under a `cache:` prefix.
+/// Every entry is stored as `{"ts": <epoch_ms>, "hash": <int>, "data": <json>}`
+/// in SharedPreferences under a `cache:` prefix.
+///
+/// The hash allows detecting whether new data is actually different from what's
+/// cached, so background refreshes only notify the UI when data changed.
 class CacheStore {
   final SharedPreferences _prefs;
   static const _maxAge = Duration(days: 7);
@@ -42,10 +45,36 @@ class CacheStore {
     }
   }
 
-  /// Write a value to cache (serialized to JSON).
-  Future<void> put(String key, dynamic data) {
-    final wrapper = jsonEncode({'ts': DateTime.now().millisecondsSinceEpoch, 'data': data});
-    return _prefs.setString('$_prefix$key', wrapper);
+  /// Write a value to cache. Returns `true` if the data actually changed
+  /// (different from what was previously cached).
+  Future<bool> put(String key, dynamic data) async {
+    final encoded = jsonEncode(data);
+    final newHash = encoded.hashCode;
+
+    // Check if data changed
+    final existing = _prefs.getString('$_prefix$key');
+    if (existing != null) {
+      try {
+        final wrapper = jsonDecode(existing) as Map<String, dynamic>;
+        final oldHash = wrapper['hash'] as int?;
+        if (oldHash == newHash) {
+          // Data unchanged — just bump the timestamp so it stays fresh
+          wrapper['ts'] = DateTime.now().millisecondsSinceEpoch;
+          await _prefs.setString('$_prefix$key', jsonEncode(wrapper));
+          return false;
+        }
+      } catch (_) {
+        // corrupt entry, overwrite
+      }
+    }
+
+    final wrapper = jsonEncode({
+      'ts': DateTime.now().millisecondsSinceEpoch,
+      'hash': newHash,
+      'data': data,
+    });
+    await _prefs.setString('$_prefix$key', wrapper);
+    return true;
   }
 
   /// Remove a single entry.
