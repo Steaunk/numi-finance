@@ -4,7 +4,8 @@ set -e
 CRON_JOBS=""
 
 # Daily API account sync + snapshot at 1am UTC (9am SGT)
-CRON_JOBS="0 1 * * * cd /app && DATABASE_PATH=${DATABASE_PATH} DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY} python manage.py sync_api_accounts >> /var/log/sync_api.log 2>&1"
+CRON_JOBS="PATH=/usr/local/bin:/usr/bin:/bin
+0 1 * * * cd /app && DATABASE_PATH=${DATABASE_PATH} DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY} python manage.py sync_api_accounts >> /var/log/sync_api.log 2>&1"
 
 # Setup rclone + backup cron if Qiniu credentials are provided
 if [ -n "$QINIU_ACCESS_KEY" ] && [ -n "$QINIU_SECRET_KEY" ] && [ -n "$QINIU_BUCKET" ]; then

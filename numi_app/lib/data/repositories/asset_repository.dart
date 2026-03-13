@@ -284,6 +284,7 @@ class AssetRepository {
     final api = _api;
     if (api == null) return;
     try {
+      final rates = await _rateRepo.getCachedRates();
       final accounts = await api.getAccounts(currency: currency);
       for (final a in accounts) {
         final remoteId = a['id'] as int;
@@ -293,6 +294,8 @@ class AssetRepository {
             .getSingleOrNull();
         if (existing != null && !existing.synced) continue;
 
+        final newBalance = (a['balance'] as num).toDouble();
+        final newCurrency = a['currency'] as String;
         final apiUrl = a['api_url'] as String?;
         final apiValuePath = a['api_value_path'] as String?;
         final apiAuth = a['api_auth'] as String?;
@@ -300,8 +303,8 @@ class AssetRepository {
           AccountsCompanion(
             remoteId: Value(remoteId),
             name: Value(a['name'] as String),
-            currency: Value(a['currency'] as String),
-            balance: Value((a['balance'] as num).toDouble()),
+            currency: Value(newCurrency),
+            balance: Value(newBalance),
             includeInTotal: Value(a['include_in_total'] as bool? ?? true),
             notes: Value(a['notes'] as String? ?? ''),
             apiUrl: Value(apiUrl != null && apiUrl.isNotEmpty ? apiUrl : null),
@@ -310,10 +313,115 @@ class AssetRepository {
             synced: const Value(true),
           ),
         );
+
+        // Record snapshot if balance changed (so charts update)
+        if (existing != null && existing.balance != newBalance) {
+          final localId = existing.id;
+          final computed = CurrencyUtils.computeAmounts(newBalance, newCurrency, rates);
+          await _db.accountDao.insertSnapshot(
+            BalanceSnapshotsCompanion.insert(
+              accountId: localId,
+              balance: newBalance,
+              change: Value(newBalance - existing.balance),
+              snapshotDate: DateTime.now(),
+              amountUsd: Value(computed['amount_usd']!),
+              amountCny: Value(computed['amount_cny']!),
+              amountHkd: Value(computed['amount_hkd']!),
+              amountSgd: Value(computed['amount_sgd']!),
+            ),
+          );
+        } else if (existing == null) {
+          // New account from server — record initial snapshot
+          final inserted = await ((_db.select(_db.accounts))
+                ..where((row) => row.remoteId.equals(remoteId)))
+              .getSingleOrNull();
+          if (inserted != null && newBalance != 0) {
+            final computed = CurrencyUtils.computeAmounts(newBalance, newCurrency, rates);
+            await _db.accountDao.insertSnapshot(
+              BalanceSnapshotsCompanion.insert(
+                accountId: inserted.id,
+                balance: newBalance,
+                change: Value(newBalance),
+                snapshotDate: DateTime.now(),
+                amountUsd: Value(computed['amount_usd']!),
+                amountCny: Value(computed['amount_cny']!),
+                amountHkd: Value(computed['amount_hkd']!),
+                amountSgd: Value(computed['amount_sgd']!),
+              ),
+            );
+          }
+        }
       }
     } catch (e, st) {
       AppLogger.instance.log('syncFromServer failed: $e', name: 'AssetRepo', error: e, stackTrace: st);
     }
+  }
+
+  /// Transfer funds between two local accounts.
+  /// Handles currency conversion if accounts use different currencies.
+  Future<void> transfer({
+    required int fromAccountId,
+    required int toAccountId,
+    required double amount,
+  }) async {
+    final from = await _db.accountDao.getById(fromAccountId);
+    final to = await _db.accountDao.getById(toAccountId);
+    if (from == null || to == null) return;
+
+    final rates = await _rateRepo.getCachedRates();
+    final now = DateTime.now();
+
+    // Convert amount to destination currency if different
+    final convertedAmount = from.currency == to.currency
+        ? amount
+        : CurrencyUtils.convert(amount, from.currency, to.currency, rates);
+
+    final newFromBalance = from.balance - amount;
+    final newToBalance = to.balance + convertedAmount;
+
+    // Update source account
+    await _db.accountDao.replaceRow(from.copyWith(
+      balance: newFromBalance,
+      updatedAt: Value(now),
+      synced: false,
+    ));
+    final fromComputed = CurrencyUtils.computeAmounts(newFromBalance, from.currency, rates);
+    await _db.accountDao.insertSnapshot(
+      BalanceSnapshotsCompanion.insert(
+        accountId: fromAccountId,
+        balance: newFromBalance,
+        change: Value(-amount),
+        snapshotDate: now,
+        amountUsd: Value(fromComputed['amount_usd']!),
+        amountCny: Value(fromComputed['amount_cny']!),
+        amountHkd: Value(fromComputed['amount_hkd']!),
+        amountSgd: Value(fromComputed['amount_sgd']!),
+      ),
+    );
+
+    // Update destination account
+    await _db.accountDao.replaceRow(to.copyWith(
+      balance: newToBalance,
+      updatedAt: Value(now),
+      synced: false,
+    ));
+    final toComputed = CurrencyUtils.computeAmounts(newToBalance, to.currency, rates);
+    await _db.accountDao.insertSnapshot(
+      BalanceSnapshotsCompanion.insert(
+        accountId: toAccountId,
+        balance: newToBalance,
+        change: Value(convertedAmount),
+        snapshotDate: now,
+        amountUsd: Value(toComputed['amount_usd']!),
+        amountCny: Value(toComputed['amount_cny']!),
+        amountHkd: Value(toComputed['amount_hkd']!),
+        amountSgd: Value(toComputed['amount_sgd']!),
+      ),
+    );
+
+    // Push both accounts to server
+    await _pushAccount(fromAccountId);
+    await _pushAccount(toAccountId);
   }
 
   model.Account _rowToModel(DbAccount row, {double convertedBalance = 0}) =>
