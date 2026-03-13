@@ -28,10 +28,6 @@ dependencies:
   dio_cookie_manager: ^3.1.2
   cookie_jar: ^4.0.8
 
-  # Data Classes
-  freezed_annotation: ^2.4.4
-  json_annotation: ^4.9.0
-
   # Charts
   fl_chart: ^0.70.2
 
@@ -59,8 +55,6 @@ dev_dependencies:
     sdk: flutter
   build_runner: ^2.4.14
   drift_dev: ^2.22.1
-  freezed: ^2.5.8
-  json_serializable: ^6.9.2
   riverpod_generator: ^2.6.3
   flutter_lints: ^5.0.0
 

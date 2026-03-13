@@ -6,7 +6,7 @@ from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
-from core.services import compute_snapshot_amounts, get_all_rates
+from core.services import compute_snapshot_amounts, get_rates
 
 from .models import Expense, EXPENSE_CATEGORIES, TRAVEL_CATEGORIES, Trip, TravelExpense
 
@@ -121,7 +121,7 @@ def add_expense(request):
     if errors:
         return JsonResponse({'errors': errors}, status=400)
 
-    rates = get_all_rates()
+    rates = get_rates()
     amounts = compute_snapshot_amounts(validated['amount'], validated['currency'], rates)
 
     expense = Expense.objects.create(
@@ -159,7 +159,7 @@ def bulk_add_expenses(request):
     if not isinstance(data, list):
         return JsonResponse({'error': 'Expected a JSON array'}, status=400)
 
-    rates = get_all_rates()
+    rates = get_rates()
     created = 0
     errors = []
 
@@ -204,7 +204,7 @@ def expense_detail(request, expense_id):
     if errors:
         return JsonResponse({'errors': errors}, status=400)
 
-    rates = get_all_rates()
+    rates = get_rates()
     amounts = compute_snapshot_amounts(validated['amount'], validated['currency'], rates)
 
     expense.amount = validated['amount']
@@ -464,7 +464,7 @@ def add_trip_expense(request, trip_id):
         errors.append('amount must be a number')
 
     currency = data.get('currency', '').upper()
-    rates = get_all_rates()
+    rates = get_rates()
     rate = rates.get(currency.lower())
     if currency == 'USD':
         rate = 1.0
@@ -525,7 +525,7 @@ def update_trip_expense(request, trip_id, expense_id):
         errors.append('amount must be a number')
 
     currency = data.get('currency', '').upper()
-    rates = get_all_rates()
+    rates = get_rates()
     rate = rates.get(currency.lower())
     if currency == 'USD':
         rate = 1.0

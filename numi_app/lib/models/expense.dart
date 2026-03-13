@@ -1,27 +1,33 @@
-import 'package:freezed_annotation/freezed_annotation.dart';
+class Expense {
+  final int id;
+  final int? remoteId;
+  final double amount;
+  final String currency;
+  final DateTime date;
+  final String category;
+  final String name;
+  final String notes;
+  final double amountUsd;
+  final double amountCny;
+  final double amountHkd;
+  final double amountSgd;
+  final DateTime? createdAt;
+  final bool synced;
 
-part 'expense.freezed.dart';
-part 'expense.g.dart';
-
-@freezed
-class Expense with _$Expense {
-  const factory Expense({
-    required int id,
-    int? remoteId,
-    required double amount,
-    required String currency,
-    required DateTime date,
-    required String category,
-    required String name,
-    @Default('') String notes,
-    @Default(0) double amountUsd,
-    @Default(0) double amountCny,
-    @Default(0) double amountHkd,
-    @Default(0) double amountSgd,
-    DateTime? createdAt,
-    @Default(false) bool synced,
-  }) = _Expense;
-
-  factory Expense.fromJson(Map<String, dynamic> json) =>
-      _$ExpenseFromJson(json);
+  const Expense({
+    required this.id,
+    this.remoteId,
+    required this.amount,
+    required this.currency,
+    required this.date,
+    required this.category,
+    required this.name,
+    this.notes = '',
+    this.amountUsd = 0,
+    this.amountCny = 0,
+    this.amountHkd = 0,
+    this.amountSgd = 0,
+    this.createdAt,
+    this.synced = false,
+  });
 }

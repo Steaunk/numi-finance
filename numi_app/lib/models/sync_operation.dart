@@ -1,20 +1,19 @@
-import 'package:freezed_annotation/freezed_annotation.dart';
+class SyncOperation {
+  final int id;
+  final String entityType;
+  final String operation;
+  final int localId;
+  final String payload;
+  final DateTime? createdAt;
+  final int retryCount;
 
-part 'sync_operation.freezed.dart';
-part 'sync_operation.g.dart';
-
-@freezed
-class SyncOperation with _$SyncOperation {
-  const factory SyncOperation({
-    required int id,
-    required String entityType, // "expense", "trip", "travel_expense", "account"
-    required String operation, // "create", "update", "delete"
-    required int localId,
-    required String payload, // JSON-serialized request body
-    DateTime? createdAt,
-    @Default(0) int retryCount,
-  }) = _SyncOperation;
-
-  factory SyncOperation.fromJson(Map<String, dynamic> json) =>
-      _$SyncOperationFromJson(json);
+  const SyncOperation({
+    required this.id,
+    required this.entityType,
+    required this.operation,
+    required this.localId,
+    required this.payload,
+    this.createdAt,
+    this.retryCount = 0,
+  });
 }
