@@ -3,11 +3,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// Persistent JSON cache with TTL.
 ///
-/// Every entry is stored as `{"ts": <epoch_ms>, "hash": <int>, "data": <json>}`
-/// in SharedPreferences under a `cache:` prefix.
-///
-/// The hash allows detecting whether new data is actually different from what's
-/// cached, so background refreshes only notify the UI when data changed.
+/// Entry format: `{"ts": <cache_epoch_ms>, "dataTs": <data_timestamp>, "data": <json>}`
+/// - `ts`: when the cache entry was written (for TTL)
+/// - `dataTs`: backend data timestamp (for freshness comparison)
 class CacheStore {
   final SharedPreferences _prefs;
   static const _maxAge = Duration(days: 7);
@@ -15,7 +13,7 @@ class CacheStore {
 
   CacheStore(this._prefs);
 
-  /// Read a cached value.  Returns `null` if missing or older than [_maxAge].
+  /// Read a cached value. Returns `null` if missing or older than [_maxAge].
   T? get<T>(String key, T Function(dynamic json) deserialize) {
     final raw = _prefs.getString('$_prefix$key');
     if (raw == null) return null;
@@ -23,7 +21,7 @@ class CacheStore {
       final wrapper = jsonDecode(raw) as Map<String, dynamic>;
       final ts = wrapper['ts'] as int;
       if (DateTime.now().millisecondsSinceEpoch - ts > _maxAge.inMilliseconds) {
-        return null; // expired
+        return null;
       }
       return deserialize(wrapper['data']);
     } catch (_) {
@@ -31,7 +29,7 @@ class CacheStore {
     }
   }
 
-  /// How old the cached entry is, or `null` if not cached / expired.
+  /// How old the cache entry is, or `null` if not cached / expired.
   Duration? age(String key) {
     final raw = _prefs.getString('$_prefix$key');
     if (raw == null) return null;
@@ -45,36 +43,32 @@ class CacheStore {
     }
   }
 
-  /// Write a value to cache. Returns `true` if the data actually changed
-  /// (different from what was previously cached).
-  Future<bool> put(String key, dynamic data) async {
-    final encoded = jsonEncode(data);
-    final newHash = encoded.hashCode;
-
-    // Check if data changed
-    final existing = _prefs.getString('$_prefix$key');
-    if (existing != null) {
-      try {
-        final wrapper = jsonDecode(existing) as Map<String, dynamic>;
-        final oldHash = wrapper['hash'] as int?;
-        if (oldHash == newHash) {
-          // Data unchanged — just bump the timestamp so it stays fresh
-          wrapper['ts'] = DateTime.now().millisecondsSinceEpoch;
-          await _prefs.setString('$_prefix$key', jsonEncode(wrapper));
-          return false;
-        }
-      } catch (_) {
-        // corrupt entry, overwrite
-      }
+  /// The stored data timestamp (from backend), or `null` if not cached.
+  String? dataTimestamp(String key) {
+    final raw = _prefs.getString('$_prefix$key');
+    if (raw == null) return null;
+    try {
+      final wrapper = jsonDecode(raw) as Map<String, dynamic>;
+      return wrapper['dataTs'] as String?;
+    } catch (_) {
+      return null;
     }
+  }
+
+  /// Write a value to cache.
+  /// [dataTimestamp] is the backend's data timestamp (e.g. API response timestamp
+  /// or the last entry's timestamp). Returns `true` if data is newer than cached.
+  Future<bool> put(String key, dynamic data, {String? dataTimestamp}) async {
+    final oldTs = this.dataTimestamp(key);
+    final isNewer = oldTs == null || dataTimestamp == null || dataTimestamp != oldTs;
 
     final wrapper = jsonEncode({
       'ts': DateTime.now().millisecondsSinceEpoch,
-      'hash': newHash,
+      'dataTs': dataTimestamp,
       'data': data,
     });
     await _prefs.setString('$_prefix$key', wrapper);
-    return true;
+    return isNewer;
   }
 
   /// Remove a single entry.
