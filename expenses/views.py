@@ -6,26 +6,11 @@ from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
-from core.services import FALLBACK_RATES, get_all_rates
+from core.services import compute_snapshot_amounts, get_all_rates
 
 from .models import Expense, EXPENSE_CATEGORIES, TRAVEL_CATEGORIES, Trip, TravelExpense
 
 DISPLAY_CURRENCIES = {'CNY', 'HKD', 'USD', 'SGD'}
-
-
-def _compute_amounts(amount, currency, rates):
-    """Compute USD/CNY/HKD/SGD equivalents at the given rates."""
-    if currency == 'USD':
-        amount_usd = amount
-    else:
-        rate = rates.get(currency.lower())
-        amount_usd = amount / rate if rate else 0
-    return {
-        'amount_usd': round(amount_usd, 2),
-        'amount_cny': round(amount_usd * rates.get('cny', FALLBACK_RATES['cny']), 2),
-        'amount_hkd': round(amount_usd * rates.get('hkd', FALLBACK_RATES['hkd']), 2),
-        'amount_sgd': round(amount_usd * rates.get('sgd', FALLBACK_RATES['sgd']), 2),
-    }
 
 
 @ensure_csrf_cookie
@@ -137,7 +122,7 @@ def add_expense(request):
         return JsonResponse({'errors': errors}, status=400)
 
     rates = get_all_rates()
-    amounts = _compute_amounts(validated['amount'], validated['currency'], rates)
+    amounts = compute_snapshot_amounts(validated['amount'], validated['currency'], rates)
 
     expense = Expense.objects.create(
         amount=validated['amount'],
@@ -184,7 +169,7 @@ def bulk_add_expenses(request):
             errors.append({'index': i, 'errors': item_errors})
             continue
 
-        amounts = _compute_amounts(validated['amount'], validated['currency'], rates)
+        amounts = compute_snapshot_amounts(validated['amount'], validated['currency'], rates)
         Expense.objects.create(
             amount=validated['amount'],
             currency=validated['currency'],
@@ -220,7 +205,7 @@ def expense_detail(request, expense_id):
         return JsonResponse({'errors': errors}, status=400)
 
     rates = get_all_rates()
-    amounts = _compute_amounts(validated['amount'], validated['currency'], rates)
+    amounts = compute_snapshot_amounts(validated['amount'], validated['currency'], rates)
 
     expense.amount = validated['amount']
     expense.currency = validated['currency']
@@ -504,7 +489,7 @@ def add_trip_expense(request, trip_id):
     if errors:
         return JsonResponse({'errors': errors}, status=400)
 
-    amounts = _compute_amounts(amount, currency, rates)
+    amounts = compute_snapshot_amounts(amount, currency, rates)
     exp = TravelExpense.objects.create(
         trip=trip,
         amount=amount,
@@ -565,7 +550,7 @@ def update_trip_expense(request, trip_id, expense_id):
     if errors:
         return JsonResponse({'errors': errors}, status=400)
 
-    amounts = _compute_amounts(amount, currency, rates)
+    amounts = compute_snapshot_amounts(amount, currency, rates)
     exp.amount = amount
     exp.currency = currency
     exp.date = exp_date
