@@ -327,15 +327,25 @@ def trend(request):
     })
 
 
+def _should_snapshot(account):
+    """Return True if the account's last snapshot is older than 12 hours."""
+    latest = account.snapshots.order_by('-created_at').first()
+    if latest is None:
+        return True
+    from django.utils import timezone
+    age = timezone.now() - latest.created_at
+    return age.total_seconds() > 12 * 3600
+
+
 def _do_sync_api_accounts(accounts, create_snapshot=False):
     """Sync balances from external APIs for the given accounts.
 
-    When create_snapshot=True (scheduled daily job), also records a
-    BalanceSnapshot for history tracking.  When False (app-triggered),
-    only updates the live balance.
+    When create_snapshot=True (scheduled daily job), always records a
+    BalanceSnapshot.  When False (app-triggered), records a snapshot
+    only if the last one is older than 12 hours.
     """
     results = []
-    rates = get_all_rates() if create_snapshot else None
+    rates = None
 
     for account in accounts:
         if not account.api_value_path:
@@ -357,7 +367,10 @@ def _do_sync_api_accounts(accounts, create_snapshot=False):
         account.balance = new_balance
         account.save()
 
-        if create_snapshot:
+        should_snap = create_snapshot or _should_snapshot(account)
+        if should_snap:
+            if rates is None:
+                rates = get_all_rates()
             amounts = _compute_snapshot_amounts(new_balance, account.currency, rates)
             BalanceSnapshot.objects.create(
                 account=account,

@@ -8,6 +8,7 @@ import '../../common/widgets/currency_selector.dart';
 import '../../common/widgets/empty_state.dart';
 import '../../common/widgets/sync_status_indicator.dart';
 import 'add_account_screen.dart';
+import 'transfer_screen.dart';
 import 'update_account_screen.dart';
 
 class AssetOverviewScreen extends ConsumerWidget {
@@ -115,7 +116,20 @@ class AssetOverviewScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Assets'),
-        actions: const [CurrencySelector(), SyncStatusIndicator()],
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.swap_horiz),
+            tooltip: 'Transfer',
+            onPressed: () => showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              useSafeArea: true,
+              builder: (ctx) => const TransferScreen(),
+            ),
+          ),
+          const CurrencySelector(),
+          const SyncStatusIndicator(),
+        ],
       ),
       body: Column(
         children: [
