@@ -27,10 +27,14 @@ class RateRepository {
   }
 
   Future<Map<String, double>> getCachedRates() async {
+    final rates = Map<String, double>.from(AppConstants.fallbackRates);
     final rate = await _db.exchangeRateDao.getLatest();
     if (rate != null) {
-      return {'cny': rate.cny, 'hkd': rate.hkd, 'sgd': rate.sgd, 'jpy': rate.jpy};
+      rates['cny'] = rate.cny;
+      rates['hkd'] = rate.hkd;
+      rates['sgd'] = rate.sgd;
+      rates['jpy'] = rate.jpy;
     }
-    return Map<String, double>.from(AppConstants.fallbackRates);
+    return rates;
   }
 }
