@@ -19,6 +19,29 @@ class CurrencyUtils {
           return NumberFormat.currency(symbol: 'S\$', decimalDigits: 2);
         case 'JPY':
           return NumberFormat.currency(symbol: '\u00a5', decimalDigits: 0);
+        case 'KRW':
+        case 'VND':
+        case 'IDR':
+          return NumberFormat.currency(
+              symbol: currency, decimalDigits: 0);
+        case 'EUR':
+          return NumberFormat.currency(symbol: '\u20ac', decimalDigits: 2);
+        case 'GBP':
+          return NumberFormat.currency(symbol: '\u00a3', decimalDigits: 2);
+        case 'TWD':
+          return NumberFormat.currency(symbol: 'NT\$', decimalDigits: 0);
+        case 'THB':
+          return NumberFormat.currency(symbol: '\u0e3f', decimalDigits: 2);
+        case 'AUD':
+          return NumberFormat.currency(symbol: 'A\$', decimalDigits: 2);
+        case 'CAD':
+          return NumberFormat.currency(symbol: 'C\$', decimalDigits: 2);
+        case 'NZD':
+          return NumberFormat.currency(symbol: 'NZ\$', decimalDigits: 2);
+        case 'CHF':
+          return NumberFormat.currency(symbol: 'CHF', decimalDigits: 2);
+        case 'INR':
+          return NumberFormat.currency(symbol: '\u20b9', decimalDigits: 2);
         default:
           return NumberFormat.currency(symbol: currency, decimalDigits: 2);
       }

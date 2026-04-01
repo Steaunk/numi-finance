@@ -125,15 +125,45 @@ class _AddTravelExpenseScreenState
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: DropdownButtonFormField<String>(
-                      initialValue: _currency,
-                      decoration:
-                          const InputDecoration(labelText: 'Currency'),
-                      items: AppConstants.currencies
-                          .map((c) =>
-                              DropdownMenuItem(value: c, child: Text(c)))
-                          .toList(),
-                      onChanged: (v) => setState(() => _currency = v!),
+                    child: Autocomplete<String>(
+                      initialValue: TextEditingValue(text: _currency),
+                      optionsBuilder: (textEditingValue) {
+                        final query =
+                            textEditingValue.text.toUpperCase().trim();
+                        if (query.isEmpty) {
+                          return AppConstants.travelCurrencies;
+                        }
+                        return AppConstants.travelCurrencies.where(
+                            (c) => c.contains(query));
+                      },
+                      onSelected: (value) =>
+                          setState(() => _currency = value),
+                      fieldViewBuilder: (context, controller, focusNode,
+                          onFieldSubmitted) {
+                        return TextFormField(
+                          controller: controller,
+                          focusNode: focusNode,
+                          decoration: const InputDecoration(
+                              labelText: 'Currency'),
+                          textCapitalization:
+                              TextCapitalization.characters,
+                          validator: (v) {
+                            if (v == null || v.isEmpty) return 'Required';
+                            if (!AppConstants.travelCurrencies
+                                .contains(v.toUpperCase())) {
+                              return 'Invalid';
+                            }
+                            return null;
+                          },
+                          onChanged: (v) {
+                            final upper = v.toUpperCase();
+                            if (AppConstants.travelCurrencies
+                                .contains(upper)) {
+                              _currency = upper;
+                            }
+                          },
+                        );
+                      },
                     ),
                   ),
                 ],
