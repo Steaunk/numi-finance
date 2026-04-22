@@ -8,6 +8,7 @@ import '../ui/assets/screens/asset_overview_screen.dart';
 import '../ui/assets/screens/account_history_screen.dart';
 import '../ui/portfolio/screens/portfolio_overview_screen.dart';
 import '../ui/portfolio/screens/stock_detail_screen.dart';
+import '../ui/portfolio/screens/look_through_screen.dart';
 import '../ui/charts/widgets/stats_screen.dart';
 import '../ui/settings/screens/settings_screen.dart';
 
@@ -73,6 +74,10 @@ final router = GoRouter(
                   holding: holding,
                 );
               },
+            ),
+            GoRoute(
+              path: 'look-through',
+              builder: (context, state) => const LookThroughScreen(),
             ),
           ],
         ),

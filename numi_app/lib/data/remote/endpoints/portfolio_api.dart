@@ -51,4 +51,12 @@ class PortfolioApi {
     return response.data as Map<String, dynamic>;
   }
 
+  Future<Map<String, dynamic>> getLookThrough({int limit = 50}) async {
+    final response = await _client.get<Map<String, dynamic>>(
+      '/portfolio/api/look-through/',
+      queryParameters: {'limit': limit},
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
 }

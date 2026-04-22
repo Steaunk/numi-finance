@@ -21,7 +21,14 @@ class PortfolioOverviewScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Portfolio'),
-        actions: const [CurrencySelector()],
+        actions: [
+          IconButton(
+            tooltip: 'Look-through',
+            icon: const Icon(Icons.layers_outlined),
+            onPressed: () => context.go('/portfolio/look-through'),
+          ),
+          const CurrencySelector(),
+        ],
       ),
       body: summaryAsync.when(
         data: (summary) {

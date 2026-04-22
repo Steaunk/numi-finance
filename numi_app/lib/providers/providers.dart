@@ -380,3 +380,11 @@ final brokerStatusProvider =
     return null;
   }
 });
+
+/// Top-N look-through holdings (direct + ETF constituent exposure, aggregated).
+final lookThroughProvider =
+    FutureProvider.autoDispose.family<Map<String, dynamic>?, int>((ref, limit) async {
+  final api = ref.watch(portfolioApiProvider);
+  if (api == null) return null;
+  return api.getLookThrough(limit: limit);
+});

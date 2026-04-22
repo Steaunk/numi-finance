@@ -97,3 +97,12 @@ def broker_values(request):
 @require_GET
 def broker_status(request):
     return _proxy_get('/api/broker_status')
+
+
+@require_GET
+def look_through(request):
+    try:
+        limit = min(200, max(1, int(request.GET.get('limit', 50))))
+    except (ValueError, TypeError):
+        limit = 50
+    return _proxy_get('/api/portfolio/look_through', {'limit': limit})

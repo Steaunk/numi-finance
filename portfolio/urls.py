@@ -11,4 +11,5 @@ urlpatterns = [
     path('api/exchange-rates/', views.exchange_rates, name='portfolio_exchange_rates'),
     path('api/broker-values/', views.broker_values, name='portfolio_broker_values'),
     path('api/broker-status/', views.broker_status, name='portfolio_broker_status'),
+    path('api/look-through/', views.look_through, name='portfolio_look_through'),
 ]
