@@ -14,6 +14,8 @@ class PortfolioOverviewScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Fire-and-forget: lets the backend auto-restart ibkr_gateway if unhealthy.
+    ref.watch(brokerStatusProvider);
     final summaryAsync = ref.watch(portfolioSummaryProvider);
 
     return Scaffold(
@@ -33,6 +35,7 @@ class PortfolioOverviewScreen extends ConsumerWidget {
             onRefresh: () async {
               ref.read(portfolioRepositoryProvider).invalidateCache();
               ref.invalidate(portfolioSummaryProvider);
+              ref.invalidate(brokerStatusProvider);
             },
             child: CustomScrollView(
               slivers: [
@@ -93,6 +96,7 @@ class PortfolioOverviewScreen extends ConsumerWidget {
                   onPressed: () {
                     ref.read(portfolioRepositoryProvider).invalidateCache();
                     ref.invalidate(portfolioSummaryProvider);
+                    ref.invalidate(brokerStatusProvider);
                   },
                   child: const Text('Retry'),
                 ),

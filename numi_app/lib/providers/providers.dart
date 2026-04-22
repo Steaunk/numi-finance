@@ -366,3 +366,17 @@ final stockHistoryProvider = FutureProvider.family<List<StockHistoryPoint>,
       .watch(portfolioRepositoryProvider)
       .getStockHistory(params.code, days: params.days);
 });
+
+/// Pings /portfolio/api/broker-status/ when watched. The backend uses this
+/// request to detect an unhealthy IBKR session and auto-restart ibkr_gateway.
+/// Returns null on any error so UI watchers never fail on this ping.
+final brokerStatusProvider =
+    FutureProvider.autoDispose<Map<String, dynamic>?>((ref) async {
+  final api = ref.watch(portfolioApiProvider);
+  if (api == null) return null;
+  try {
+    return await api.getBrokerStatus();
+  } catch (_) {
+    return null;
+  }
+});

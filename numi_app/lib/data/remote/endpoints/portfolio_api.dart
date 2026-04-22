@@ -44,4 +44,11 @@ class PortfolioApi {
     return response.data as Map<String, dynamic>;
   }
 
+  Future<Map<String, dynamic>> getBrokerStatus() async {
+    final response = await _client.get<Map<String, dynamic>>(
+      '/portfolio/api/broker-status/',
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
 }
