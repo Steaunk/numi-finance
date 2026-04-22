@@ -310,25 +310,59 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     if (trend.isEmpty) {
       return const Center(child: Text('No data'));
     }
+
+    double xOf(String dateStr) {
+      final p = dateStr.split('-');
+      return DateTime.utc(int.parse(p[0]), int.parse(p[1]), int.parse(p[2]))
+              .millisecondsSinceEpoch /
+          Duration.millisecondsPerDay;
+    }
+
+    String labelOf(double x) {
+      final dt = DateTime.fromMillisecondsSinceEpoch(
+          (x * Duration.millisecondsPerDay).round(),
+          isUtc: true);
+      return '${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+    }
+
+    String fullDateOf(double x) {
+      final dt = DateTime.fromMillisecondsSinceEpoch(
+          (x * Duration.millisecondsPerDay).round(),
+          isUtc: true);
+      return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+    }
+
+    final spots = trend
+        .map((e) => FlSpot(
+              xOf(e['date'] as String),
+              (e['total'] as num).toDouble(),
+            ))
+        .toList();
+
+    final minX = spots.first.x;
+    final maxX = spots.last.x;
+    final rangeDays = (maxX - minX).clamp(1.0, double.infinity);
+    final interval = (rangeDays / 5).ceilToDouble();
+
     return LineChart(
       LineChartData(
+        minX: minX,
+        maxX: maxX,
         gridData: const FlGridData(show: true),
         titlesData: FlTitlesData(
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
               reservedSize: 32,
-              interval:
-                  (trend.length / 5).ceilToDouble().clamp(1, double.infinity),
+              interval: interval,
               getTitlesWidget: (value, meta) {
-                final idx = value.toInt();
-                if (idx < 0 || idx >= trend.length) {
+                if (value < minX - 0.5 || value > maxX + 0.5) {
                   return const SizedBox.shrink();
                 }
                 return Padding(
                   padding: const EdgeInsets.only(top: 8),
                   child: Text(
-                    (trend[idx]['date'] as String).substring(5),
+                    labelOf(value),
                     style: const TextStyle(fontSize: 10),
                   ),
                 );
@@ -353,14 +387,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
         borderData: FlBorderData(show: false),
         lineBarsData: [
           LineChartBarData(
-            spots: trend
-                .asMap()
-                .entries
-                .map((e) => FlSpot(
-                      e.key.toDouble(),
-                      (e.value['total'] as num).toDouble(),
-                    ))
-                .toList(),
+            spots: spots,
             isCurved: true,
             color: AppTheme.chartColors[4],
             barWidth: 2,
@@ -374,12 +401,8 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
         lineTouchData: LineTouchData(
           touchTooltipData: LineTouchTooltipData(
             getTooltipItems: (spots) => spots.map((spot) {
-              final idx = spot.x.toInt();
-              final date = idx < trend.length
-                  ? trend[idx]['date'] as String
-                  : '';
               return LineTooltipItem(
-                '$date\n${CurrencyUtils.format(spot.y, currency)}',
+                '${fullDateOf(spot.x)}\n${CurrencyUtils.format(spot.y, currency)}',
                 const TextStyle(fontSize: 12),
               );
             }).toList(),
