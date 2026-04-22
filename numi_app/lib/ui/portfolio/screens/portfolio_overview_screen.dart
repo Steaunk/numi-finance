@@ -183,7 +183,7 @@ enum _AssetType {
   stock(Icons.show_chart, Color(0xFFFF9800), 'Stock'),
   bond(Icons.shield_outlined, Color(0xFF9C27B0), 'Bond'),
   reit(Icons.apartment, Color(0xFFE91E63), 'REIT'),
-  crypto(Icons.currency_bitcoin, Color(0xFFF57C00), 'Crypto'),
+  crypto(Icons.currency_bitcoin, Color(0xFFFBC02D), 'Crypto'),
   commodity(Icons.diamond_outlined, Color(0xFF00BCD4), 'Commodity');
 
   final IconData icon;
