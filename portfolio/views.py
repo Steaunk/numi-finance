@@ -10,7 +10,7 @@ from django.views.decorators.http import require_GET
 logger = logging.getLogger(__name__)
 
 _UPSTREAM_URL = getattr(settings, 'PORTFOLIO_SERVICE_URL', '')
-_TIMEOUT = 10
+_TIMEOUT = 60
 
 
 def _sanitize(obj):
