@@ -40,7 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'core',
     'expenses',
-    'assets',
+    'accounts',
     'portfolio',
 ]
 
@@ -154,7 +154,7 @@ LOGGING = {
     'loggers': {
         'core': {'level': 'DEBUG' if DEBUG else 'INFO'},
         'expenses': {'level': 'DEBUG' if DEBUG else 'INFO'},
-        'assets': {'level': 'DEBUG' if DEBUG else 'INFO'},
+        'accounts': {'level': 'DEBUG' if DEBUG else 'INFO'},
         'portfolio': {'level': 'DEBUG' if DEBUG else 'INFO'},
     },
 }

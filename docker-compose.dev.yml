@@ -1,10 +1,10 @@
 services:
   web:
-    build: .
+    build: ./backend
     ports:
       - "8000:8000"
     volumes:
-      - .:/app
+      - ./backend:/app
       - ./data:/app/data
     environment:
       - DEBUG=true

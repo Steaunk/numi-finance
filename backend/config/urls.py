@@ -22,7 +22,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('', lambda request: redirect('expenses/', permanent=False)),
     path('expenses/', include('expenses.urls')),
-    path('assets/', include('assets.urls')),
+    path('assets/', include('accounts.urls')),
     path('api/', include('core.urls')),
     path('portfolio/', include('portfolio.urls')),
 ]

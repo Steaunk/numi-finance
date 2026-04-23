@@ -2,8 +2,8 @@ import logging
 
 from django.core.management.base import BaseCommand
 
-from assets.models import Account
-from assets.views import _do_sync_api_accounts
+from accounts.models import Account
+from accounts.views import _do_sync_api_accounts
 
 logger = logging.getLogger(__name__)
 

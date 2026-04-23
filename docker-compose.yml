@@ -1,6 +1,6 @@
 services:
   expense-tracker:
-    build: .
+    build: ./backend
     ports:
       - "8051:8000"
     volumes:
