@@ -29,6 +29,25 @@ class AccountHistoryScreen extends ConsumerWidget {
           // Reverse for chronological order in chart
           final chronological = snapshots.reversed.toList();
 
+          double xOf(DateTime d) =>
+              DateTime.utc(d.year, d.month, d.day).millisecondsSinceEpoch /
+              Duration.millisecondsPerDay;
+
+          String labelOf(double x) {
+            final dt = DateTime.fromMillisecondsSinceEpoch(
+                (x * Duration.millisecondsPerDay).round(),
+                isUtc: true);
+            return '${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+          }
+
+          final spots = chronological
+              .map((s) => FlSpot(xOf(s.snapshotDate), s.balance))
+              .toList();
+          final minX = spots.first.x;
+          final maxX = spots.last.x;
+          final rangeDays = (maxX - minX).clamp(1.0, double.infinity);
+          final interval = (rangeDays / 5).ceilToDouble();
+
           return Column(
             children: [
               // Line chart
@@ -38,27 +57,24 @@ class AccountHistoryScreen extends ConsumerWidget {
                   padding: const EdgeInsets.all(16),
                   child: LineChart(
                     LineChartData(
+                      minX: minX,
+                      maxX: maxX,
                       gridData: const FlGridData(show: true),
                       titlesData: FlTitlesData(
                         bottomTitles: AxisTitles(
                           sideTitles: SideTitles(
                             showTitles: true,
                             reservedSize: 32,
-                            interval: (chronological.length / 5)
-                                .ceilToDouble()
-                                .clamp(1, double.infinity),
+                            interval: interval,
                             getTitlesWidget: (value, meta) {
-                              final idx = value.toInt();
-                              if (idx < 0 ||
-                                  idx >= chronological.length) {
+                              if (value < minX - 0.5 ||
+                                  value > maxX + 0.5) {
                                 return const SizedBox.shrink();
                               }
                               return Padding(
                                 padding: const EdgeInsets.only(top: 8),
                                 child: Text(
-                                  AppDateUtils.formatDate(
-                                      chronological[idx].snapshotDate)
-                                      .substring(5),
+                                  labelOf(value),
                                   style: const TextStyle(fontSize: 10),
                                 ),
                               );
@@ -83,14 +99,7 @@ class AccountHistoryScreen extends ConsumerWidget {
                       borderData: FlBorderData(show: false),
                       lineBarsData: [
                         LineChartBarData(
-                          spots: chronological
-                              .asMap()
-                              .entries
-                              .map((e) => FlSpot(
-                                    e.key.toDouble(),
-                                    e.value.balance,
-                                  ))
-                              .toList(),
+                          spots: spots,
                           isCurved: true,
                           color: AppTheme.chartColors[1],
                           barWidth: 2,
