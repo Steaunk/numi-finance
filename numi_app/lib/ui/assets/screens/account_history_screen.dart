@@ -29,9 +29,17 @@ class AccountHistoryScreen extends ConsumerWidget {
           // Reverse for chronological order in chart
           final chronological = snapshots.reversed.toList();
 
-          double xOf(DateTime d) =>
-              DateTime.utc(d.year, d.month, d.day).millisecondsSinceEpoch /
+          int dayKey(DateTime d) =>
+              DateTime.utc(d.year, d.month, d.day).millisecondsSinceEpoch ~/
               Duration.millisecondsPerDay;
+
+          // One point per day — keep last balance when multiple snapshots
+          // exist on the same day (matches backend trend API behavior).
+          final balanceByDay = <int, double>{};
+          for (final s in chronological) {
+            balanceByDay[dayKey(s.snapshotDate)] = s.balance;
+          }
+          final sortedDays = balanceByDay.keys.toList()..sort();
 
           String labelOf(double x) {
             final dt = DateTime.fromMillisecondsSinceEpoch(
@@ -40,8 +48,8 @@ class AccountHistoryScreen extends ConsumerWidget {
             return '${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
           }
 
-          final spots = chronological
-              .map((s) => FlSpot(xOf(s.snapshotDate), s.balance))
+          final spots = sortedDays
+              .map((d) => FlSpot(d.toDouble(), balanceByDay[d]!))
               .toList();
           final minX = spots.first.x;
           final maxX = spots.last.x;
