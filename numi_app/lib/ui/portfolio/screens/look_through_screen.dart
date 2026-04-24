@@ -166,6 +166,7 @@ class _HeaderCard extends ConsumerWidget {
               ],
               selected: {limit},
               onSelectionChanged: (v) => onLimitChanged(v.first),
+              showSelectedIcon: false,
               style: const ButtonStyle(
                 visualDensity: VisualDensity.compact,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,

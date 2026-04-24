@@ -43,8 +43,12 @@ class SyncStateNotifier extends StateNotifier<AsyncValue<void>> {
       _ref.invalidate(netWorthTrendProvider);
       _ref.invalidate(netWorthProvider);
       _ref.invalidate(categoriesProvider);
-      await _ref.read(portfolioRepositoryProvider).invalidateCache();
-      _ref.read(portfolioRefreshCounter.notifier).update((v) => v + 1);
+      // Portfolio cache is intentionally NOT invalidated here: fullSync does
+      // not fetch portfolio data, so wiping the cache only forces an
+      // unnecessary re-fetch on the next Portfolio screen open. The
+      // PortfolioRepository has its own age-based stale-while-revalidate
+      // logic, and pull-to-refresh on the Portfolio screens invalidates
+      // explicitly when the user actually wants fresh data.
     } catch (e, st) {
       state = AsyncError(e, st);
     }
