@@ -90,6 +90,8 @@ def _validate_expense(data):
     category = data.get('category', '').strip()
     if not category:
         errors.append('category is required')
+    elif category not in EXPENSE_CATEGORIES:
+        errors.append('category must be one of the existing categories')
 
     name = data.get('name', '').strip()
     if not name:
@@ -481,6 +483,8 @@ def add_trip_expense(request, trip_id):
     category = data.get('category', '').strip()
     if not category:
         errors.append('category is required')
+    elif category not in TRAVEL_CATEGORIES:
+        errors.append('category must be one of the existing travel categories')
 
     name = data.get('name', '').strip()
     if not name:
@@ -542,6 +546,8 @@ def update_trip_expense(request, trip_id, expense_id):
     category = data.get('category', '').strip()
     if not category:
         errors.append('category is required')
+    elif category not in TRAVEL_CATEGORIES:
+        errors.append('category must be one of the existing travel categories')
 
     name = data.get('name', '').strip()
     if not name:

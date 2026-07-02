@@ -34,7 +34,8 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     super.initState();
     final e = widget.expense;
     _amountController = TextEditingController(
-        text: e != null ? e.amount.toString() : '');
+      text: e != null ? e.amount.toString() : '',
+    );
     _nameController = TextEditingController(text: e?.name ?? '');
     _categoryController = TextEditingController(text: e?.category ?? '');
     _notesController = TextEditingController(text: e?.notes ?? '');
@@ -78,8 +79,10 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                   ),
                   if (_isEditing)
                     IconButton(
-                      icon: Icon(Icons.delete,
-                          color: Theme.of(context).colorScheme.error),
+                      icon: Icon(
+                        Icons.delete,
+                        color: Theme.of(context).colorScheme.error,
+                      ),
                       onPressed: () async {
                         final confirm = await showDeleteConfirmDialog(
                           context,
@@ -104,8 +107,9 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                     flex: 2,
                     child: TextFormField(
                       controller: _amountController,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       decoration: const InputDecoration(labelText: 'Amount'),
                       validator: (v) {
                         if (v == null || v.isEmpty) return 'Required';
@@ -121,8 +125,9 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                       initialValue: _currency,
                       decoration: const InputDecoration(labelText: 'Currency'),
                       items: AppConstants.currencies
-                          .map((c) =>
-                              DropdownMenuItem(value: c, child: Text(c)))
+                          .map(
+                            (c) => DropdownMenuItem(value: c, child: Text(c)),
+                          )
                           .toList(),
                       onChanged: (v) => setState(() => _currency = v!),
                     ),
@@ -147,50 +152,42 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                 },
               ),
               const SizedBox(height: 12),
-              // Category with autocomplete
+              // Category
               categoriesAsync.when(
-                data: (categories) => Autocomplete<String>(
-                  initialValue:
-                      TextEditingValue(text: _categoryController.text),
-                  optionsBuilder: (value) {
-                    if (value.text.isEmpty) return categories;
-                    return categories.where((c) =>
-                        c.toLowerCase().contains(value.text.toLowerCase()));
-                  },
-                  onSelected: (v) => _categoryController.text = v,
-                  fieldViewBuilder:
-                      (context, controller, focusNode, onSubmitted) {
-                    controller.addListener(
-                        () => _categoryController.text = controller.text);
-                    return TextFormField(
-                      controller: controller,
-                      focusNode: focusNode,
-                      decoration:
-                          const InputDecoration(labelText: 'Category'),
-                      validator: (v) =>
-                          v == null || v.isEmpty ? 'Required' : null,
-                    );
-                  },
-                ),
-                loading: () => TextFormField(
-                  controller: _categoryController,
+                data: (categories) {
+                  final selectedCategory =
+                      categories.contains(_categoryController.text)
+                          ? _categoryController.text
+                          : null;
+                  return DropdownButtonFormField<String>(
+                    initialValue: selectedCategory,
+                    decoration: const InputDecoration(labelText: 'Category'),
+                    items: categories
+                        .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                        .toList(),
+                    onChanged: (v) =>
+                        setState(() => _categoryController.text = v ?? ''),
+                    validator: (v) => v == null || !categories.contains(v)
+                        ? 'Select an existing category'
+                        : null,
+                  );
+                },
+                loading: () => DropdownButtonFormField<String>(
                   decoration: const InputDecoration(labelText: 'Category'),
-                  validator: (v) =>
-                      v == null || v.isEmpty ? 'Required' : null,
+                  items: [],
+                  onChanged: null,
                 ),
-                error: (_, __) => TextFormField(
-                  controller: _categoryController,
+                error: (_, __) => DropdownButtonFormField<String>(
                   decoration: const InputDecoration(labelText: 'Category'),
-                  validator: (v) =>
-                      v == null || v.isEmpty ? 'Required' : null,
+                  items: [],
+                  onChanged: null,
                 ),
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(labelText: 'Name'),
-                validator: (v) =>
-                    v == null || v.isEmpty ? 'Required' : null,
+                validator: (v) => v == null || v.isEmpty ? 'Required' : null,
               ),
               const SizedBox(height: 12),
               TextFormField(
@@ -245,15 +242,15 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content:
-                  Text(_isEditing ? 'Expense updated' : 'Expense added')),
+            content: Text(_isEditing ? 'Expense updated' : 'Expense added'),
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);

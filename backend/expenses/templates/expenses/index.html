@@ -134,8 +134,7 @@
                 </div>
                 <div class="form-group">
                     <label>Category *</label>
-                    <input type="text" id="category" list="categoryList" required placeholder="Type or select">
-                    <datalist id="categoryList"></datalist>
+                    <select id="category" required></select>
                 </div>
                 <div class="form-group">
                     <label>Name *</label>
@@ -219,10 +218,11 @@
         let barChart = null;
         let doughnutChart = null;
         let editingExpenseId = null;
+        let expenseCategories = [];
 
         const COLORS = [
-            '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
-            '#FF9F40', '#C9CBCF', '#7C8CF8', '#E7598B', '#3DDC84',
+            '#0072B2', '#D55E00', '#009E73', '#7A3E9D', '#C1121F',
+            '#56B4E9', '#B58900', '#8C564B', '#E377C2', '#4D4D4D',
         ];
 
         function getColor(idx) {
@@ -274,8 +274,11 @@
             try {
                 const resp = await fetch('/expenses/api/categories/');
                 const data = await resp.json();
-                const datalist = document.getElementById('categoryList');
-                datalist.innerHTML = data.categories.map(c => `<option value="${esc(c)}">`).join('');
+                expenseCategories = data.categories;
+                const categorySelect = document.getElementById("category");
+                if (categorySelect) {
+                    categorySelect.innerHTML = expenseCategories.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join("");
+                }
             } catch (err) {
                 console.error('Failed to load categories:', err);
             }
@@ -393,12 +396,15 @@
                     const curOpts = EXPENSE_CURRENCIES.map(c =>
                         `<option value="${c}" ${c === exp.currency ? 'selected' : ''}>${c}</option>`
                     ).join('');
+                    const catOpts = expenseCategories.map(c =>
+                        `<option value="${esc(c)}" ${c === exp.category ? 'selected' : ''}>${esc(c)}</option>`
+                    ).join('');
                     html += `<tr id="expRow_${exp.id}" class="editing-row"
                         onfocusout="onExpRowFocusOut(event, ${exp.id})"
                         onkeydown="if(event.key==='Escape'){editingExpenseId=null;loadExpenses();}">
                         <td><input type="date" id="editDate_${exp.id}" value="${exp.date}" style="width:120px;"></td>
                         <td><input type="text" id="editName_${exp.id}" value="${esc(exp.name)}"></td>
-                        <td><input type="text" id="editCategory_${exp.id}" list="categoryList" value="${esc(exp.category)}"></td>
+                        <td><select id="editCategory_${exp.id}">${catOpts}</select></td>
                         <td class="original-amount" style="white-space:nowrap;">
                             <input type="number" step="0.01" id="editAmount_${exp.id}" value="${exp.amount}" style="width:80px;text-align:right;">
                             <select id="editCurrency_${exp.id}" style="width:60px;">${curOpts}</select>
