@@ -328,7 +328,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                     borderRadius: BorderRadius.circular(4),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
-                          vertical: 12, horizontal: 4),
+                          vertical: 8, horizontal: 4),
                       child: Row(
                         children: [
                           Container(
