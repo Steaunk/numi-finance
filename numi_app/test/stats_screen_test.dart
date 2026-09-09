@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:numi_app/providers/providers.dart';
 import 'package:numi_app/ui/charts/widgets/stats_screen.dart';
+import 'package:numi_app/utils/currency_utils.dart';
 
 Future<void> pumpStats(
   WidgetTester tester,
@@ -28,6 +29,48 @@ List<PieChartSectionData> sections(WidgetTester tester) =>
     tester.widget<PieChart>(find.byType(PieChart)).data.sections;
 
 void main() {
+  testWidgets('category filters update every monthly bar and its tooltip',
+      (tester) async {
+    await pumpStats(tester, {
+      '2026-08': {'Rent': 600, 'Food': 200},
+      '2026-09': {'Rent': 600, 'Food': 300},
+    });
+    BarChartData barData() =>
+        tester.widget<BarChart>(find.byType(BarChart)).data;
+    final foodColor =
+        barData().barGroups.first.barRods.single.rodStackItems.first.color;
+
+    await tester.tap(find.text('Rent'));
+    await tester.pumpAndSettle();
+    expect(barData().barGroups.map((g) => g.barRods.single.toY), [200, 300]);
+    expect(sections(tester).single.title, '100%');
+    final filtered = barData();
+    for (final group in filtered.barGroups) {
+      final rod = group.barRods.single;
+      expect(rod.rodStackItems.single.color, foodColor);
+      final tooltip = filtered.barTouchData.touchTooltipData.getTooltipItem(
+        group,
+        group.x,
+        rod,
+        0,
+      );
+      final month = group.x == 0 ? '2026-08' : '2026-09';
+      final amount = group.x == 0 ? 200.0 : 300.0;
+      expect(tooltip?.text, '$month\n${CurrencyUtils.format(amount, 'USD')}');
+    }
+
+    await tester.tap(find.text('Food'));
+    await tester.pumpAndSettle();
+    expect(barData().barGroups.map((g) => g.barRods.single.toY), [0, 0]);
+    expect(find.text('All categories hidden'), findsOneWidget);
+
+    await tester.tap(find.text('Show all'));
+    await tester.pumpAndSettle();
+    expect(barData().barGroups.map((g) => g.barRods.single.toY), [800, 900]);
+    expect(sections(tester).length, 2);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('legend toggles recalculate distribution and preserve colors',
       (tester) async {
     await pumpStats(tester, {

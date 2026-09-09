@@ -73,7 +73,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                   ),
               ],
             ),
-            Text('Tap a category to hide or show it.',
+            Text('Tap a category to hide or show it in both charts.',
                 style: Theme.of(context).textTheme.bodySmall),
             const SizedBox(height: 8),
             SizedBox(
@@ -141,10 +141,8 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
           touchTooltipData: BarTouchTooltipData(
             getTooltipItem: (group, groupIndex, rod, rodIndex) {
               final month = months[group.x.toInt()];
-              final total = stats[month]!.values.fold<double>(
-                  0, (a, b) => a + b);
               return BarTooltipItem(
-                '$month\n${CurrencyUtils.format(total, currency)}',
+                '$month\n${CurrencyUtils.format(rod.toY, currency)}',
                 const TextStyle(fontSize: 12),
               );
             },
@@ -195,6 +193,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
           final rodStackItems = <BarChartRodStackItem>[];
           double cumulative = 0;
           for (int i = 0; i < categoryList.length; i++) {
+            if (_hiddenCategories.contains(categoryList[i])) continue;
             final amount = categories[categoryList[i]] ?? 0;
             if (amount > 0) {
               rodStackItems.add(BarChartRodStackItem(
