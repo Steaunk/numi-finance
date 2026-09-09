@@ -15,6 +15,15 @@ class StatsScreen extends ConsumerStatefulWidget {
 
 class _StatsScreenState extends ConsumerState<StatsScreen> {
   String? _selectedMonth;
+  final Set<String> _hiddenCategories = {};
+
+  void _toggleCategory(String category) {
+    setState(() {
+      if (!_hiddenCategories.remove(category)) {
+        _hiddenCategories.add(category);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -39,29 +48,40 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
             SizedBox(
               height: 250,
               child: statsAsync.when(
-                data: (stats) => _buildBarChart(
-                    context, stats, displayCurrency),
-                loading: () =>
-                    const Center(child: CircularProgressIndicator()),
+                data: (stats) =>
+                    _buildBarChart(context, stats, displayCurrency),
+                loading: () => const Center(child: CircularProgressIndicator()),
                 error: (e, _) => Center(child: Text('Error: $e')),
               ),
             ),
             const SizedBox(height: 24),
             // Category pie chart
-            Text(
-              _selectedMonth != null
-                  ? 'Categories ($_selectedMonth)'
-                  : 'Categories (All)',
-              style: Theme.of(context).textTheme.titleMedium,
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _selectedMonth != null
+                        ? 'Categories ($_selectedMonth)'
+                        : 'Categories (All)',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                if (_hiddenCategories.isNotEmpty)
+                  TextButton(
+                    onPressed: () => setState(_hiddenCategories.clear),
+                    child: const Text('Show all'),
+                  ),
+              ],
             ),
+            Text('Tap a category to hide or show it.',
+                style: Theme.of(context).textTheme.bodySmall),
             const SizedBox(height: 8),
             SizedBox(
               height: 250,
               child: statsAsync.when(
-                data: (stats) => _buildPieChart(
-                    context, stats, displayCurrency),
-                loading: () =>
-                    const Center(child: CircularProgressIndicator()),
+                data: (stats) =>
+                    _buildPieChart(context, stats, displayCurrency),
+                loading: () => const Center(child: CircularProgressIndicator()),
                 error: (e, _) => Center(child: Text('Error: $e')),
               ),
             ),
@@ -75,8 +95,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
               child: trendAsync.when(
                 data: (trend) =>
                     _buildTrendChart(context, trend, displayCurrency),
-                loading: () =>
-                    const Center(child: CircularProgressIndicator()),
+                loading: () => const Center(child: CircularProgressIndicator()),
                 error: (e, _) => Center(child: Text('Error: $e')),
               ),
             ),
@@ -215,8 +234,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     } else {
       for (final m in stats.values) {
         for (final entry in m.entries) {
-          categoryTotals.update(
-              entry.key, (v) => v + entry.value,
+          categoryTotals.update(entry.key, (v) => v + entry.value,
               ifAbsent: () => entry.value);
         }
       }
@@ -224,7 +242,6 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     if (categoryTotals.isEmpty) {
       return const Center(child: Text('No data'));
     }
-    final total = categoryTotals.values.fold<double>(0, (a, b) => a + b);
     // Build stable color map from all stats categories
     final allCats = <String>{};
     for (final m in stats.values) {
@@ -233,69 +250,119 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     final sortedCats = allCats.toList()..sort();
     final pieColorMap = {
       for (int i = 0; i < sortedCats.length; i++)
-        sortedCats[i]:
-            AppTheme.chartColors[i % AppTheme.chartColors.length],
+        sortedCats[i]: AppTheme.chartColors[i % AppTheme.chartColors.length],
     };
 
     final entries = categoryTotals.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
+    final visibleEntries = entries
+        .where((entry) =>
+            !_hiddenCategories.contains(entry.key) && entry.value > 0)
+        .toList();
+    final total =
+        visibleEntries.fold<double>(0, (sum, entry) => sum + entry.value);
 
     return Row(
       children: [
         Expanded(
-          child: PieChart(
-            PieChartData(
-              centerSpaceRadius: 40,
-              sectionsSpace: 2,
-              sections: entries.map((entry) {
-                final percentage = (entry.value / total * 100);
-                return PieChartSectionData(
-                  value: entry.value,
-                  color: pieColorMap[entry.key] ??
-                      AppTheme.chartColors[0],
-                  radius: 50,
-                  title: percentage >= 5
-                      ? '${percentage.toStringAsFixed(0)}%'
-                      : '',
-                  titleStyle: const TextStyle(
-                      fontSize: 11, fontWeight: FontWeight.bold,
-                      color: Colors.white),
-                );
-              }).toList(),
-            ),
-          ),
+          child: visibleEntries.isEmpty
+              ? Center(
+                  child: Text(
+                    entries.every(
+                            (entry) => _hiddenCategories.contains(entry.key))
+                        ? 'All categories hidden'
+                        : 'No expenses in visible categories',
+                    textAlign: TextAlign.center,
+                  ),
+                )
+              : PieChart(
+                  PieChartData(
+                    centerSpaceRadius: 40,
+                    sectionsSpace: 2,
+                    pieTouchData: PieTouchData(
+                      touchCallback: (event, response) {
+                        if (event is! FlTapUpEvent) return;
+                        final index =
+                            response?.touchedSection?.touchedSectionIndex;
+                        if (index != null &&
+                            index >= 0 &&
+                            index < visibleEntries.length) {
+                          _toggleCategory(visibleEntries[index].key);
+                        }
+                      },
+                    ),
+                    sections: visibleEntries.map((entry) {
+                      final percentage = (entry.value / total * 100);
+                      return PieChartSectionData(
+                        value: entry.value,
+                        color:
+                            pieColorMap[entry.key] ?? AppTheme.chartColors[0],
+                        radius: 50,
+                        title: percentage >= 5
+                            ? '${percentage.toStringAsFixed(0)}%'
+                            : '',
+                        titleStyle: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white),
+                      );
+                    }).toList(),
+                  ),
+                ),
         ),
         // Legend
         SizedBox(
           width: 140,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: entries.map((entry) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 12, height: 12,
-                      decoration: BoxDecoration(
-                        color: pieColorMap[entry.key] ??
-                            AppTheme.chartColors[0],
-                        shape: BoxShape.circle,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: entries.map((entry) {
+                final visible = !_hiddenCategories.contains(entry.key);
+                return Semantics(
+                  button: true,
+                  toggled: visible,
+                  label: '${entry.key}, ${visible ? 'shown' : 'hidden'}',
+                  child: InkWell(
+                    onTap: () => _toggleCategory(entry.key),
+                    borderRadius: BorderRadius.circular(4),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 12, horizontal: 4),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color: visible
+                                  ? pieColorMap[entry.key]
+                                  : Theme.of(context).disabledColor,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              entry.key,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: visible
+                                    ? null
+                                    : Theme.of(context).disabledColor,
+                                decoration:
+                                    visible ? null : TextDecoration.lineThrough,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        entry.key,
-                        style: const TextStyle(fontSize: 11),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
+                  ),
+                );
+              }).toList(),
+            ),
           ),
         ),
       ],
