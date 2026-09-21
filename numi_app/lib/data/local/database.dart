@@ -44,6 +44,8 @@ class TravelExpenses extends Table {
   IntColumn get remoteId => integer().nullable()();
   IntColumn get tripId => integer().references(Trips, #id)();
   IntColumn get tripRemoteId => integer().nullable()();
+  TextColumn get clientId => text().nullable()();
+  TextColumn get planItemId => text().nullable()();
   RealColumn get amount => real()();
   TextColumn get currency => text()();
   DateTimeColumn get date => dateTime()();
@@ -283,10 +285,14 @@ class TripDao extends DatabaseAccessor<AppDatabase> with _$TripDaoMixin {
     final remoteId = entry.remoteId.value;
     if (remoteId == null) return;
     final existing = await (select(travelExpenses)
-          ..where((e) => e.remoteId.equals(remoteId)))
+          ..where((e) =>
+              e.remoteId.equals(remoteId) |
+              (entry.clientId.value == null
+                  ? const Constant(false)
+                  : e.clientId.equals(entry.clientId.value!))))
         .getSingleOrNull();
     if (existing != null) {
-      await (update(travelExpenses)..where((e) => e.remoteId.equals(remoteId)))
+      await (update(travelExpenses)..where((e) => e.id.equals(existing.id)))
           .write(entry);
     } else {
       await into(travelExpenses).insert(entry, mode: InsertMode.insertOrIgnore);
@@ -389,12 +395,18 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) => m.createAll(),
         onUpgrade: (m, from, to) async {
+          if (from < 4) {
+            await m.addColumn(travelExpenses, travelExpenses.clientId);
+            await m.addColumn(travelExpenses, travelExpenses.planItemId);
+            await customStatement(
+                "UPDATE travel_expenses SET client_id = CASE WHEN remote_id IS NOT NULL THEN 'remote-' || remote_id ELSE lower(hex(randomblob(16))) END");
+          }
           if (from < 3) await m.createTable(tripPlans);
           if (from < 2) {
             await m.addColumn(accounts, accounts.apiUrl);

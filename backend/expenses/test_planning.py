@@ -15,7 +15,7 @@ class TripPlanTests(TestCase):
             'revision': revision, 'mutation_id': mutation}), content_type='application/json')
 
     def test_old_trip_returns_empty_plan_without_creating_row(self):
-        self.assertEqual(self.client.get(self.url).json(), {'content': {'items': []}, 'revision': 0})
+        self.assertEqual(self.client.get(self.url).json(), {'content': {'items': []}, 'revision': 0, 'payment_ids': {}})
         self.assertFalse(TripPlan.objects.exists())
 
     def test_web_planner_page_and_browser_write(self):
@@ -93,3 +93,118 @@ class TripPlanTests(TestCase):
         self.assertEqual(self.client.delete(url).status_code, 200)
         self.assertEqual(self.client.delete(url).status_code, 200)
         self.assertFalse(Trip.objects.filter(client_id='stable-offline-id').exists())
+
+
+class BookingPaymentTests(TestCase):
+    def setUp(self):
+        from unittest.mock import patch
+        from core.services import FALLBACK_RATES
+        self.rate_patch = patch('expenses.planning.get_rates', return_value=FALLBACK_RATES)
+        self.rate_patch.start()
+        self.addCleanup(self.rate_patch.stop)
+        self.trip = Trip.objects.create(destination='Kyoto', start_date='2026-10-01', end_date='2026-10-03')
+        self.url = f'/expenses/api/travel/trips/{self.trip.id}/plan/'
+        self.booking = {'id':'hotel', 'kind':'booking', 'title':'Riverside hotel', 'category':'Accommodation',
+            'date':'2026-10-01', 'endDate':'2026-10-03', 'status':'confirmed', 'amount':'200', 'currency':'SGD',
+            'paymentStatus':'paid', 'paidDate':'2026-09-21', 'expenseClientId':'payment-hotel', 'expenseCategory':'Accommodation'}
+
+    def put(self, items=None, revision=0, mutation='first'):
+        return self.client.put(self.url, data=json.dumps({'content':{'items':items if items is not None else [self.booking]},
+            'revision':revision, 'mutation_id':mutation}), content_type='application/json')
+
+    def test_paid_booking_creates_one_expense_and_retry_is_idempotent(self):
+        from .models import TravelExpense
+        self.assertEqual(self.put().status_code, 200)
+        expense = TravelExpense.objects.get()
+        self.assertEqual((expense.amount, expense.name, expense.plan_item_id), (200, 'Riverside hotel', 'hotel'))
+        self.assertEqual(str(expense.date), '2026-09-21')
+        self.assertEqual(self.put().json()['payment_ids'], {'payment-hotel':expense.id})
+        self.assertEqual(TravelExpense.objects.count(), 1)
+        self.assertEqual(self.put([{**self.booking,'title':'New name','amount':'240'}], 1, 'edit').status_code, 200)
+        expense.refresh_from_db()
+        self.assertEqual((expense.name, expense.amount), ('New name', 240))
+        self.assertEqual(TravelExpense.objects.count(), 1)
+
+    def test_unpaid_to_paid_and_payment_removal(self):
+        from .models import TravelExpense
+        unpaid = {**self.booking,'paymentStatus':'unpaid'}
+        self.assertEqual(self.put([unpaid]).status_code, 200)
+        self.assertFalse(TravelExpense.objects.exists())
+        self.assertEqual(self.put(revision=1, mutation='pay').status_code, 200)
+        self.assertEqual(TravelExpense.objects.count(), 1)
+        self.assertEqual(self.put([unpaid],2,'remove-payment').status_code, 200)
+        self.assertFalse(TravelExpense.objects.exists())
+        self.assertEqual(len(TripPlan.objects.get().content['items']), 1)
+
+    def test_cancel_and_delete_booking_keep_payment(self):
+        from .models import TravelExpense
+        self.put()
+        self.put([{**self.booking,'status':'cancelled'}],1,'cancel')
+        self.assertEqual(TravelExpense.objects.count(), 1)
+        self.put([],2,'delete')
+        expense=TravelExpense.objects.get()
+        self.assertIsNone(expense.plan_item_id)
+        self.assertEqual(expense.amount, 200)
+
+    def test_existing_expense_adopted_without_copy_and_late_create_retry_safe(self):
+        from .models import TravelExpense
+        expense = TravelExpense.objects.create(trip=self.trip, client_id='payment-hotel', amount=200,
+            currency='SGD', date='2026-09-21', category='Accommodation', name='Riverside hotel')
+        self.assertEqual(self.put().status_code, 200)
+        self.assertEqual(TravelExpense.objects.get().id, expense.id)
+        url=f'/expenses/api/travel/trips/{self.trip.id}/expenses/add/'
+        self.assertEqual(self.client.post(url,data=json.dumps({'client_id':'payment-hotel','name':'stale'}),content_type='application/json').json()['id'],expense.id)
+        self.assertEqual(TravelExpense.objects.get().name,'Riverside hotel')
+
+    def test_cross_trip_identity_and_duplicate_links_roll_back(self):
+        from .models import TravelExpense
+        other=Trip.objects.create(destination='Osaka',start_date='2026-10-01',end_date='2026-10-03')
+        TravelExpense.objects.create(trip=other,client_id='payment-hotel',amount=200,currency='SGD',date='2026-09-21',category='Accommodation',name='Other')
+        self.assertEqual(self.put().status_code,400)
+        self.assertFalse(TripPlan.objects.exists())
+        self.assertEqual(self.put([self.booking,{**self.booking,'id':'second'}]).status_code,400)
+        self.assertFalse(TripPlan.objects.exists())
+
+    def test_conflict_and_invalid_amount_do_not_touch_payment(self):
+        from .models import TravelExpense
+        self.put()
+        self.assertEqual(self.put([{**self.booking,'amount':'999'}],0,'stale').status_code,409)
+        self.assertEqual(TravelExpense.objects.get().amount,200)
+        for value in ['0','-1','NaN','Infinity','bad']:
+            self.assertEqual(self.put([{**self.booking,'amount':value}],1,value).status_code,400)
+        self.assertEqual(TravelExpense.objects.get().amount,200)
+
+    def test_legacy_direct_edit_and_delete_cannot_desynchronize_booking(self):
+        from .models import TravelExpense
+        self.put()
+        expense=TravelExpense.objects.get()
+        url=f'/expenses/api/travel/trips/{self.trip.id}/expenses/{expense.id}/'
+        self.assertEqual(self.client.put(url,data='{}',content_type='application/json').status_code,409)
+        self.assertEqual(self.client.delete(url+'delete/').status_code,409)
+        self.assertTrue(TravelExpense.objects.filter(pk=expense.id).exists())
+
+    def test_flights_and_linked_sightseeing_activities_share_the_payment_flow(self):
+        from .models import TravelExpense
+        flight = {**self.booking, 'id':'flight','category':'Flight','expenseClientId':'flight-pay','expenseCategory':'Transportation'}
+        place = {'id':'museum','kind':'place','title':'Museum','category':'Sightseeing'}
+        activity = {'id':'visit','kind':'activity','placeId':'museum','date':'2026-10-01',
+            'paymentStatus':'paid','amount':'30','currency':'SGD','paidDate':'2026-09-21',
+            'expenseClientId':'ticket-pay','expenseCategory':'Sightseeing'}
+        self.assertEqual(self.put([flight,place,activity]).status_code,200)
+        ticket=TravelExpense.objects.get(client_id='ticket-pay')
+        self.assertEqual((ticket.name,ticket.category),('Museum','Sightseeing'))
+        self.assertEqual(TravelExpense.objects.get(client_id='flight-pay').category,'Transportation')
+        self.assertEqual(self.put([flight,{**place,'title':'Art Museum'},activity],1,'rename').status_code,200)
+        ticket.refresh_from_db()
+        self.assertEqual(ticket.name,'Art Museum')
+
+    def test_older_app_remote_id_alias_adopts_new_server_identity_without_copy(self):
+        from .models import TravelExpense
+        expense=TravelExpense.objects.create(trip=self.trip,client_id='server-stable-identity',amount=200,currency='SGD',date='2026-09-21',category='Accommodation',name='Old client payment')
+        booking={**self.booking,'expenseClientId':f'remote-{expense.id}'}
+        result=self.put([booking])
+        self.assertEqual(result.status_code,200)
+        self.assertEqual(result.json()['payment_ids'][booking['expenseClientId']],expense.id)
+        self.assertEqual(TravelExpense.objects.count(),1)
+        expense.refresh_from_db()
+        self.assertEqual(expense.client_id,'server-stable-identity')

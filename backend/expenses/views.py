@@ -1,4 +1,5 @@
 import json
+import math
 from datetime import date
 
 from django.http import JsonResponse
@@ -420,6 +421,8 @@ def list_trip_expenses(request, trip_id):
         )
         result.append({
             'id': exp.id,
+            'client_id': exp.client_id,
+            'plan_item_id': exp.plan_item_id,
             'amount': exp.amount,
             'currency': exp.currency,
             'date': exp.date.isoformat(),
@@ -460,11 +463,20 @@ def add_trip_expense(request, trip_id):
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
+    client_id = data.get('client_id')
+    if client_id is not None:
+        if not isinstance(client_id, str) or not 1 <= len(client_id) <= 64:
+            return JsonResponse({'error': 'Invalid expense identity'}, status=400)
+        existing = TravelExpense.objects.filter(client_id=client_id).first()
+        if existing:
+            if existing.trip_id != trip_id:
+                return JsonResponse({'error': 'Expense belongs to another trip'}, status=400)
+            return JsonResponse({'id': existing.id, 'name': existing.name})
     errors = []
     amount = data.get('amount')
     try:
         amount = float(amount)
-        if amount <= 0:
+        if not math.isfinite(amount) or amount <= 0:
             errors.append('amount must be positive')
     except (TypeError, ValueError):
         errors.append('amount must be a number')
@@ -498,7 +510,7 @@ def add_trip_expense(request, trip_id):
         return JsonResponse({'errors': errors}, status=400)
 
     amounts = compute_snapshot_amounts(amount, currency, rates)
-    exp = TravelExpense.objects.create(
+    values = dict(
         trip=trip,
         amount=amount,
         currency=currency,
@@ -508,6 +520,13 @@ def add_trip_expense(request, trip_id):
         notes=data.get('notes', '').strip(),
         **amounts,
     )
+    if client_id:
+        values['client_id'] = client_id
+    from django.db import transaction
+    with transaction.atomic():
+        exp, _ = TravelExpense.objects.get_or_create(client_id=client_id, defaults=values) if client_id else (TravelExpense.objects.create(**values), True)
+        if exp.trip_id != trip_id:
+            return JsonResponse({'error': 'Expense belongs to another trip'}, status=400)
     return JsonResponse({'id': exp.id, 'name': exp.name}, status=201)
 
 
@@ -517,6 +536,8 @@ def update_trip_expense(request, trip_id, expense_id):
         exp = TravelExpense.objects.get(id=expense_id, trip_id=trip_id)
     except TravelExpense.DoesNotExist:
         return JsonResponse({'error': 'Expense not found'}, status=404)
+    if exp.plan_item_id:
+        return JsonResponse({'error': 'Edit this payment through its itinerary item', 'plan_item_id': exp.plan_item_id}, status=409)
 
     try:
         data = json.loads(request.body)
@@ -527,7 +548,7 @@ def update_trip_expense(request, trip_id, expense_id):
     amount = data.get('amount')
     try:
         amount = float(amount)
-        if amount <= 0:
+        if not math.isfinite(amount) or amount <= 0:
             errors.append('amount must be positive')
     except (TypeError, ValueError):
         errors.append('amount must be a number')
@@ -580,5 +601,7 @@ def delete_trip_expense(request, trip_id, expense_id):
         exp = TravelExpense.objects.get(id=expense_id, trip_id=trip_id)
     except TravelExpense.DoesNotExist:
         return JsonResponse({'error': 'Expense not found'}, status=404)
+    if exp.plan_item_id:
+        return JsonResponse({'error': 'Edit this payment through its itinerary item', 'plan_item_id': exp.plan_item_id}, status=409)
     exp.delete()
     return JsonResponse({'deleted': True})

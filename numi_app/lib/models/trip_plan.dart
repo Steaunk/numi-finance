@@ -228,3 +228,12 @@ String linkPlatform(String url) {
   }
   return host.isEmpty ? 'Website' : host;
 }
+
+String planExpenseCategory(String category) => switch (category) {
+      'Accommodation' => 'Accommodation',
+      'Flight' || 'Train' || 'Bus' || 'Car rental' => 'Transportation',
+      'Sightseeing' => 'Sightseeing',
+      'Restaurant' || 'Cafe' => 'Food & Drinks',
+      'Shopping' => 'Shopping',
+      _ => 'Other',
+    };

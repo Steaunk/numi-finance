@@ -1,6 +1,8 @@
 class TravelExpense {
   final int id;
   final int? remoteId;
+  final String? clientId;
+  final String? planItemId;
   final int tripId;
   final int? tripRemoteId;
   final double amount;
@@ -20,6 +22,8 @@ class TravelExpense {
     required this.id,
     this.remoteId,
     required this.tripId,
+    this.clientId,
+    this.planItemId,
     this.tripRemoteId,
     required this.amount,
     required this.currency,

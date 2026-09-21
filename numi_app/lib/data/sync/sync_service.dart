@@ -109,7 +109,7 @@ class SyncService {
         await _db.syncQueueDao.removeById(op.id);
         continue;
       }
-      if (op.retryCount >= _maxRetries) {
+      if (op.retryCount >= _maxRetries && op.entityType != 'travel_expense') {
         AppLogger.instance.log(
           'Sync op ${op.id} (${op.entityType}/${op.operation}) exceeded '
           '$_maxRetries retries, removing',
@@ -216,11 +216,30 @@ class SyncService {
 
   Future<bool> _handleTravelExpenseOp(DbSyncOperation op) async {
     final p = jsonDecode(op.payload) as Map<String, dynamic>;
+    final current = await (_db.select(_db.travelExpenses)
+          ..where((e) => e.id.equals(op.localId)))
+        .getSingleOrNull();
+    if (op.operation != 'delete' &&
+        (current == null || current.planItemId != null)) {
+      return true;
+    }
+    if (current != null && op.operation != 'delete') {
+      p.addAll({
+        'client_id': current.clientId,
+        'amount': current.amount,
+        'currency': current.currency,
+        'date': current.date.toIso8601String(),
+        'name': current.name,
+        'category': current.category,
+        'notes': current.notes
+      });
+    }
     switch (op.operation) {
       case 'create':
         final tripRow = await _db.tripDao.getById(p['trip_id'] as int);
         if (tripRow?.remoteId == null) return false;
         final remote = await _travelApi.addTripExpense(tripRow!.remoteId!, {
+          'client_id': p['client_id'],
           'amount': p['amount'],
           'currency': p['currency'],
           'date': _toDateStr(p['date']),
@@ -245,6 +264,7 @@ class SyncService {
         }
         await _travelApi
             .updateTripExpense(localRow!.tripRemoteId!, localRow.remoteId!, {
+          'client_id': p['client_id'],
           'amount': p['amount'],
           'currency': p['currency'],
           'date': _toDateStr(p['date']),

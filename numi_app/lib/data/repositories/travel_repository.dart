@@ -218,12 +218,14 @@ class TravelRepository {
     required String name,
     String notes = '',
   }) async {
+    final clientId = newPlanId();
     final rates = await _rateRepo.getCachedRates();
     final computed = CurrencyUtils.computeAmounts(amount, currency, rates);
 
     final tripRow = await _db.tripDao.getById(tripId);
     final companion = TravelExpensesCompanion.insert(
       tripId: tripId,
+      clientId: Value(clientId),
       tripRemoteId: Value(tripRow?.remoteId),
       amount: amount,
       currency: currency,
@@ -241,6 +243,7 @@ class TravelRepository {
     if (_api == null || tripRow?.remoteId == null) {
       await _enqueue('travel_expense', 'create', localId, {
         'trip_id': tripId,
+        'client_id': clientId,
         'amount': amount,
         'currency': currency,
         'date': AppDateUtils.formatDate(date),
@@ -255,6 +258,7 @@ class TravelRepository {
     if (tripRow?.remoteId != null) {
       try {
         final remote = await api.addTripExpense(tripRow!.remoteId!, {
+          'client_id': clientId,
           'amount': amount,
           'currency': currency,
           'date': AppDateUtils.formatDate(date),
@@ -273,6 +277,7 @@ class TravelRepository {
             name: 'TravelRepo', error: e, stackTrace: st);
         await _enqueue('travel_expense', 'create', localId, {
           'trip_id': tripId,
+          'client_id': clientId,
           'amount': amount,
           'currency': currency,
           'date': date.toIso8601String(),
@@ -293,6 +298,12 @@ class TravelRepository {
     required String name,
     String notes = '',
   }) async {
+    final linked = await (_db.select(_db.travelExpenses)
+          ..where((e) => e.id.equals(localId)))
+        .getSingleOrNull();
+    if (linked?.planItemId != null) {
+      throw StateError('Edit the linked itinerary item to change this payment.');
+    }
     final rates = await _rateRepo.getCachedRates();
     final computed = CurrencyUtils.computeAmounts(amount, currency, rates);
 
@@ -373,6 +384,9 @@ class TravelRepository {
     final row = await (_db.select(_db.travelExpenses)
           ..where((e) => e.id.equals(localId)))
         .getSingleOrNull();
+    if (row?.planItemId != null) {
+      throw StateError('Edit the linked itinerary item to change this payment.');
+    }
     await _db.tripDao.removeTravelExpenseById(localId);
 
     final tripRow = await _db.tripDao.getById(tripId);
@@ -456,15 +470,27 @@ class TravelRepository {
 
         final expenses =
             await api.getTripExpenses(remoteId, currency: currency);
+        final planRow = await (_db.select(_db.tripPlans)
+              ..where((p) => p.tripId.equals(localTrip.id)))
+            .getSingleOrNull();
         for (final e in expenses) {
           final existingExp = await (_db.select(_db.travelExpenses)
-                ..where((row) => row.remoteId.equals(e['id'] as int)))
+                ..where((row) =>
+                    row.remoteId.equals(e['id'] as int) |
+                    row.clientId.equals(
+                        e['client_id'] as String? ?? 'remote-${e['id']}')))
               .getSingleOrNull();
           if (existingExp != null && !existingExp.synced) continue;
+          if (planRow?.dirty == true &&
+              (e['plan_item_id'] != null || existingExp?.planItemId != null)) {
+            continue;
+          }
 
           await _db.tripDao.upsertTravelExpenseByRemoteId(
             TravelExpensesCompanion(
               remoteId: Value(e['id'] as int),
+              clientId: Value(e['client_id'] as String? ?? 'remote-${e['id']}'),
+              planItemId: Value(e['plan_item_id'] as String?),
               tripId: Value(localTrip.id),
               tripRemoteId: Value(remoteId),
               amount: Value((e['amount'] as num).toDouble()),
@@ -507,6 +533,8 @@ class TravelRepository {
         remoteId: row.remoteId,
         tripId: row.tripId,
         tripRemoteId: row.tripRemoteId,
+        clientId: row.clientId,
+        planItemId: row.planItemId,
         amount: row.amount,
         currency: row.currency,
         date: row.date,

@@ -9,6 +9,8 @@ import 'package:drift/native.dart';
 import 'package:numi_app/config/theme.dart';
 import 'package:numi_app/data/local/database.dart';
 import 'package:numi_app/data/repositories/trip_plan_repository.dart';
+import 'package:numi_app/data/repositories/travel_repository.dart';
+import 'package:numi_app/data/repositories/rate_repository.dart';
 import 'package:numi_app/models/trip.dart';
 import 'package:numi_app/models/trip_plan.dart';
 import 'package:numi_app/providers/providers.dart';
@@ -94,7 +96,11 @@ void main() {
           sharedPrefsProvider.overrideWithValue(prefs),
           serverUrlProvider.overrideWith((ref) => ''),
           displayCurrencyProvider.overrideWith((ref) => 'SGD'),
-          tripDetailProvider(trip.id).overrideWith((ref) => Stream.value(trip)),
+          travelRepositoryProvider.overrideWithValue(
+              TravelRepository(db, null, RateRepository(db, null))),
+          tripDetailProvider(trip.id).overrideWith((ref) => ref
+              .watch(travelRepositoryProvider)
+              .watchTripWithExpenses(trip.id)),
         ],
         child: RepaintBoundary(
             key: boundary,
@@ -255,6 +261,98 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
   });
+  testWidgets(
+      'paid booking appears in expenses and either entry edits the same record',
+      (tester) async {
+    await show(tester, const Size(390, 844));
+    await tapVisible(tester, find.byTooltip('View bookings'));
+    await tapVisible(tester, find.text('Add booking'));
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Name'), 'One-entry hotel');
+    tester.testTextInput.hide();
+    await tapVisible(tester, find.text('Check-out date'));
+    await tester.tap(find.text('3').last);
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    await tapVisible(tester,
+        find.widgetWithText(TextFormField, 'Amount (optional until paid)'));
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Amount (optional until paid)'),
+        '420');
+    tester.testTextInput.hide();
+    await tapVisible(tester, find.byType(SwitchListTile));
+    await capture(tester, 'payment-form');
+    await tapVisible(tester, find.text('Save item'));
+    var rows =
+        (await tester.runAsync(() => db.tripDao.getExpensesForTrip(trip.id)))!;
+    expect(rows.length, 1);
+    expect(rows.single.amount, 420);
+    final expenseId = rows.single.id;
+    await tapVisible(tester, find.byTooltip('Close panel'));
+    await tapVisible(tester, find.byTooltip('View expenses'));
+    await tapVisible(tester, find.text('One-entry hotel').last);
+    await tester
+        .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    await tester.pumpAndSettle();
+    expect(find.text('Edit booking'), findsOneWidget);
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Name'), 'Updated once');
+    tester.testTextInput.hide();
+    await tapVisible(tester, find.text('Save item'));
+    rows =
+        (await tester.runAsync(() => db.tripDao.getExpensesForTrip(trip.id)))!;
+    expect(rows.single.id, expenseId);
+    expect(rows.single.name, 'Updated once');
+    expect(
+        (await tester.runAsync(() => repo.watch(trip.id).first))!
+            .find(rows.single.planItemId!)!
+            .title,
+        'Updated once');
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
+  for (final kind in ['booking', 'activity']) {
+    testWidgets(
+        'existing expense can gain $kind details without re-entering its payment',
+        (tester) async {
+      await TravelRepository(db, null, RateRepository(db, null))
+          .addTravelExpense(
+              tripId: trip.id,
+              amount: 90,
+              currency: 'SGD',
+              date: DateTime(2026, 9, 21),
+              category: 'Other',
+              name: 'Museum ticket');
+      final original = (await db.tripDao.getExpensesForTrip(trip.id)).single;
+      await show(tester, const Size(390, 844));
+      await tapVisible(tester, find.byTooltip('View expenses'));
+      await tapVisible(tester, find.text('Museum ticket'));
+      await tapVisible(
+          tester,
+          find
+              .text(kind == 'booking'
+                  ? 'Add booking details'
+                  : 'Add to itinerary')
+              .last);
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 30)));
+      await tester.pumpAndSettle();
+      expect(find.text('New $kind'), findsOneWidget);
+      expect(find.widgetWithText(TextFormField, 'Museum ticket'), findsWidgets);
+      await tapVisible(tester, find.text('Save item'));
+      final rows = (await tester
+          .runAsync(() => db.tripDao.getExpensesForTrip(trip.id)))!;
+      expect(rows.single.id, original.id);
+      expect(rows.single.amount, 90);
+      expect(rows.single.planItemId, isNotNull);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    });
+  }
+
   testWidgets(
       'external link failure keeps the page and offers a working copy fallback',
       (tester) async {

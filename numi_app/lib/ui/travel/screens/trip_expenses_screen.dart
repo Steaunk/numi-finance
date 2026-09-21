@@ -6,11 +6,44 @@ import '../../../utils/date_utils.dart';
 import '../../common/widgets/amount_display.dart';
 import '../../common/widgets/dialogs.dart';
 import 'add_travel_expense_screen.dart';
+import '../widgets/plan_item_editor.dart';
+import '../../../models/travel_expense.dart';
+import '../../../models/trip.dart';
 
 /// Existing expense workflow embedded beneath the trip planner navigation.
 class TripExpensesScreen extends ConsumerWidget {
   final int tripId;
   const TripExpensesScreen({super.key, required this.tripId});
+  Future<void> editExpense(BuildContext context, WidgetRef ref, Trip trip,
+      TravelExpense expense) async {
+    if (expense.planItemId == null) {
+      await showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          useSafeArea: true,
+          constraints: const BoxConstraints(maxWidth: 680),
+          builder: (_) => AddTravelExpenseScreen(
+              tripId: tripId,
+              tripStartDate: trip.startDate,
+              tripEndDate: trip.endDate,
+              expense: expense));
+      return;
+    }
+    try {
+      final repo = ref.read(tripPlanRepositoryProvider);
+      final booking = await repo.itemFromExpense(tripId, expense.id);
+      final plan = await repo.watch(tripId).first;
+      if (!context.mounted) return;
+      final result = await editPlanItem(context, trip, plan, booking);
+      if (result != null) await repo.save(tripId, result);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not open itinerary item: $e')));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final currency = ref.watch(displayCurrencyProvider);
@@ -54,16 +87,9 @@ class TripExpensesScreen extends ConsumerWidget {
                                   child: ListTile(
                                 title: Text(expense.name),
                                 subtitle: Text(
-                                    '${AppDateUtils.displayDate(expense.date)} · ${expense.category}'),
-                                onTap: () => showModalBottomSheet(
-                                    context: context,
-                                    isScrollControlled: true,
-                                    useSafeArea: true,
-                                    builder: (_) => AddTravelExpenseScreen(
-                                        tripId: tripId,
-                                        tripStartDate: trip.startDate,
-                                        tripEndDate: trip.endDate,
-                                        expense: expense)),
+                                    '${AppDateUtils.displayDate(expense.date)} · ${expense.category}${expense.planItemId == null ? '' : ' · Itinerary'}'),
+                                onTap: () =>
+                                    editExpense(context, ref, trip, expense),
                                 trailing: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
@@ -78,18 +104,27 @@ class TripExpensesScreen extends ConsumerWidget {
                                           icon:
                                               const Icon(Icons.delete_outline),
                                           onPressed: () async {
-                                            final yes =
-                                                await showDeleteConfirmDialog(
-                                                    context,
-                                                    title: 'Delete expense',
-                                                    content:
-                                                        'Delete "${expense.name}"?');
+                                            final yes = await showDeleteConfirmDialog(
+                                                context,
+                                                title: 'Delete expense',
+                                                content: expense.planItemId ==
+                                                        null
+                                                    ? 'Delete "${expense.name}"?'
+                                                    : 'Remove the recorded payment for "${expense.name}"? The itinerary item will remain unpaid.');
                                             if (yes) {
-                                              await ref
-                                                  .read(
-                                                      travelRepositoryProvider)
-                                                  .deleteTravelExpense(
-                                                      expense.id, tripId);
+                                              if (expense.planItemId != null) {
+                                                await ref
+                                                    .read(
+                                                        tripPlanRepositoryProvider)
+                                                    .removePayment(tripId,
+                                                        expense.planItemId!);
+                                              } else {
+                                                await ref
+                                                    .read(
+                                                        travelRepositoryProvider)
+                                                    .deleteTravelExpense(
+                                                        expense.id, tripId);
+                                              }
                                             }
                                           })
                                     ]),

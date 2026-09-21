@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../config/constants.dart';
 import '../../../models/travel_expense.dart';
+import '../widgets/plan_item_editor.dart';
 import '../../../providers/providers.dart';
 import '../../../utils/date_utils.dart';
 import '../../common/widgets/loading_button.dart';
@@ -11,6 +12,7 @@ class AddTravelExpenseScreen extends ConsumerStatefulWidget {
   final int tripId;
   final DateTime tripStartDate;
   final DateTime tripEndDate;
+
   /// Pass an existing expense to open in edit mode.
   final TravelExpense? expense;
 
@@ -80,10 +82,11 @@ class _AddTravelExpenseScreenState
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
+                  Expanded(
+                      child: Text(
                     _isEditing ? 'Edit Travel Expense' : 'Add Travel Expense',
                     style: Theme.of(context).textTheme.headlineSmall,
-                  ),
+                  )),
                   if (_isEditing)
                     IconButton(
                       icon: Icon(Icons.delete,
@@ -112,13 +115,15 @@ class _AddTravelExpenseScreenState
                     flex: 2,
                     child: TextFormField(
                       controller: _amountController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true),
-                      decoration:
-                          const InputDecoration(labelText: 'Amount'),
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(labelText: 'Amount'),
                       validator: (v) {
                         if (v == null || v.isEmpty) return 'Required';
-                        if (double.tryParse(v) == null) return 'Invalid';
+                        final amount = double.tryParse(v);
+                        if (amount == null || !amount.isFinite || amount <= 0) {
+                          return 'Enter a positive amount';
+                        }
                         return null;
                       },
                     ),
@@ -133,20 +138,18 @@ class _AddTravelExpenseScreenState
                         if (query.isEmpty) {
                           return AppConstants.travelCurrencies;
                         }
-                        return AppConstants.travelCurrencies.where(
-                            (c) => c.contains(query));
+                        return AppConstants.travelCurrencies
+                            .where((c) => c.contains(query));
                       },
-                      onSelected: (value) =>
-                          setState(() => _currency = value),
-                      fieldViewBuilder: (context, controller, focusNode,
-                          onFieldSubmitted) {
+                      onSelected: (value) => setState(() => _currency = value),
+                      fieldViewBuilder:
+                          (context, controller, focusNode, onFieldSubmitted) {
                         return TextFormField(
                           controller: controller,
                           focusNode: focusNode,
-                          decoration: const InputDecoration(
-                              labelText: 'Currency'),
-                          textCapitalization:
-                              TextCapitalization.characters,
+                          decoration:
+                              const InputDecoration(labelText: 'Currency'),
+                          textCapitalization: TextCapitalization.characters,
                           validator: (v) {
                             if (v == null || v.isEmpty) return 'Required';
                             if (!AppConstants.travelCurrencies
@@ -157,8 +160,7 @@ class _AddTravelExpenseScreenState
                           },
                           onChanged: (v) {
                             final upper = v.toUpperCase();
-                            if (AppConstants.travelCurrencies
-                                .contains(upper)) {
+                            if (AppConstants.travelCurrencies.contains(upper)) {
                               _currency = upper;
                             }
                           },
@@ -173,8 +175,7 @@ class _AddTravelExpenseScreenState
                 initialValue: _category,
                 decoration: const InputDecoration(labelText: 'Category'),
                 items: AppConstants.travelCategories
-                    .map((c) =>
-                        DropdownMenuItem(value: c, child: Text(c)))
+                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                     .toList(),
                 onChanged: (v) => setState(() => _category = v!),
               ),
@@ -190,8 +191,7 @@ class _AddTravelExpenseScreenState
                     initialDate: _date,
                     firstDate: widget.tripStartDate
                         .subtract(const Duration(days: 365)),
-                    lastDate:
-                        widget.tripEndDate.add(const Duration(days: 100)),
+                    lastDate: widget.tripEndDate.add(const Duration(days: 100)),
                   );
                   if (picked != null) setState(() => _date = picked);
                 },
@@ -200,8 +200,7 @@ class _AddTravelExpenseScreenState
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(labelText: 'Name'),
-                validator: (v) =>
-                    v == null || v.isEmpty ? 'Required' : null,
+                validator: (v) => v == null || v.isEmpty ? 'Required' : null,
               ),
               const SizedBox(height: 12),
               TextFormField(
@@ -209,6 +208,49 @@ class _AddTravelExpenseScreenState
                 decoration: const InputDecoration(labelText: 'Notes'),
                 maxLines: 2,
               ),
+              if (_isEditing)
+                for (final targetKind in ['booking', 'activity'])
+                  OutlinedButton.icon(
+                      icon: const Icon(Icons.confirmation_number_outlined),
+                      label: Text(targetKind == 'booking'
+                          ? 'Add booking details'
+                          : 'Add to itinerary'),
+                      onPressed: _saving
+                          ? null
+                          : () async {
+                              // Save current edits once before enriching this same expense.
+                              if (!_formKey.currentState!.validate()) return;
+                              if (!await _save(close: false) ||
+                                  !context.mounted) {
+                                return;
+                              }
+                              try {
+                                final repo =
+                                    ref.read(tripPlanRepositoryProvider);
+                                final booking = await repo.itemFromExpense(
+                                    widget.tripId, widget.expense!.id,
+                                    kind: targetKind);
+                                final trip = await ref
+                                    .read(travelRepositoryProvider)
+                                    .getTripWithExpenses(widget.tripId);
+                                final plan =
+                                    await repo.watch(widget.tripId).first;
+                                if (!context.mounted || trip == null) return;
+                                final result = await editPlanItem(
+                                    context, trip, plan, booking);
+                                if (result != null) {
+                                  await repo.save(widget.tripId, result);
+                                  if (context.mounted) Navigator.pop(context);
+                                }
+                              } catch (e) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                          content: Text(
+                                              'Could not add booking: $e')));
+                                }
+                              }
+                            }),
               const SizedBox(height: 20),
               LoadingButton(
                 loading: _saving,
@@ -222,8 +264,8 @@ class _AddTravelExpenseScreenState
     );
   }
 
-  Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
+  Future<bool> _save({bool close = true}) async {
+    if (!_formKey.currentState!.validate()) return false;
     setState(() => _saving = true);
     try {
       final amount = double.parse(_amountController.text);
@@ -252,19 +294,20 @@ class _AddTravelExpenseScreenState
             );
       }
 
-      if (mounted) {
+      if (mounted && close) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text(
-                  _isEditing ? 'Expense updated' : 'Expense added')),
+              content: Text(_isEditing ? 'Expense updated' : 'Expense added')),
         );
       }
+      return true;
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('Error: $e')));
       }
+      return false;
     } finally {
       if (mounted) setState(() => _saving = false);
     }

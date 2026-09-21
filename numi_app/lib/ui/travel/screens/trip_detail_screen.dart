@@ -136,7 +136,11 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
       TravelTile(
           key: ValueKey('item-${item.id}'),
           title: plan.itemTitle(item),
-          subtitle: subtitle ?? itemSubtitle(plan, item),
+          subtitle: [
+            subtitle ?? itemSubtitle(plan, item),
+            if (item['amount'].isNotEmpty)
+              '${item['currency']} ${item['amount']} · ${item['paymentStatus'] == 'paid' ? 'Paid' : 'Unpaid'}',
+          ].join(' · '),
           icon: planIcon(plan.find(item['placeId']) ?? item),
           tinted: tinted,
           trailing: trailing,
@@ -296,6 +300,24 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                       detail('Arrival address', item['endAddress']),
                       if (item['endAddress'].isNotEmpty)
                         maps('', item['endAddress'], arrival: true),
+                      if (item.kind == 'booking' &&
+                          item['amount'].isNotEmpty) ...[
+                        detail('Payment',
+                            '${item['currency']} ${item['amount']} · ${item['paymentStatus'] == 'paid' ? 'Paid' : 'Unpaid'}'),
+                        if (item['paymentStatus'] == 'paid')
+                          detail('Payment date', item['paidDate'])
+                        else
+                          TextButton.icon(
+                              icon: const Icon(Icons.payments_outlined),
+                              label: const Text('Record payment'),
+                              onPressed: () => edit(
+                                  trip,
+                                  plan,
+                                  item.copy({
+                                    'paymentStatus': 'paid',
+                                    'paidDate': planDate(DateTime.now()),
+                                  }))),
+                      ],
                       detail('Confirmation', item['confirmation']),
                       detail('Contact', item['contact']),
                       detail('Cancellation deadline', item['cancelBy']),

@@ -1,4 +1,9 @@
 from django.db import models
+import uuid
+
+def expense_client_id():
+    return uuid.uuid4().hex
+
 
 EXPENSE_CATEGORIES = [
     'Bills, Utilities & Taxes',
@@ -60,12 +65,14 @@ class Trip(models.Model):
 
 
 class TravelExpense(models.Model):
+    client_id = models.CharField(max_length=64, unique=True, default=expense_client_id)
+    plan_item_id = models.CharField(max_length=64, null=True, blank=True)
     trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name='expenses')
     amount = models.FloatField()
     currency = models.CharField(max_length=3)
     date = models.DateField()
     category = models.CharField(max_length=50)
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=500)
     notes = models.TextField(blank=True, default='')
     amount_usd = models.FloatField(default=0)
     amount_cny = models.FloatField(default=0)
