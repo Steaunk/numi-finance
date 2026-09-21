@@ -1,8 +1,10 @@
 from django.urls import path
 
-from . import views
+from . import views, planning
 
 urlpatterns = [
+    path('api/travel/trips/by-client/<str:client_id>/', planning.delete_trip_by_client, name='delete_trip_by_client'),
+    path('api/travel/trips/<int:trip_id>/plan/', planning.trip_plan, name='trip_plan'),
     path('', views.index, name='expenses_index'),
     path('api/expenses/', views.list_expenses, name='list_expenses'),
     path('api/expenses/add/', views.add_expense, name='add_expense'),

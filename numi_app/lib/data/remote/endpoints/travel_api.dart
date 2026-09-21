@@ -21,6 +21,23 @@ class TravelApi {
     return response.data as Map<String, dynamic>;
   }
 
+  Future<Map<String, dynamic>> getPlan(int id) async {
+    final response = await _client
+        .get<Map<String, dynamic>>('/expenses/api/travel/trips/$id/plan/');
+    return response.data!;
+  }
+
+  Future<Map<String, dynamic>> putPlan(
+      int id, Map<String, dynamic> payload) async {
+    final response = await _client.put<Map<String, dynamic>>(
+        '/expenses/api/travel/trips/$id/plan/',
+        data: payload);
+    return response.data!;
+  }
+
+  Future<void> deleteTripByClient(String clientId) => _client.delete(
+      '/expenses/api/travel/trips/by-client/${Uri.encodeComponent(clientId)}/');
+
   Future<void> deleteTrip(int id) =>
       _client.delete('/expenses/api/travel/trips/$id/delete/');
 
@@ -59,7 +76,6 @@ class TravelApi {
     return response.data as Map<String, dynamic>;
   }
 
-  Future<void> deleteTripExpense(int tripId, int expenseId) =>
-      _client.delete(
-          '/expenses/api/travel/trips/$tripId/expenses/$expenseId/delete/');
+  Future<void> deleteTripExpense(int tripId, int expenseId) => _client
+      .delete('/expenses/api/travel/trips/$tripId/expenses/$expenseId/delete/');
 }

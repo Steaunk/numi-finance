@@ -65,7 +65,8 @@ class Accounts extends Table {
   TextColumn get name => text()();
   TextColumn get currency => text()();
   RealColumn get balance => real().withDefault(const Constant(0))();
-  BoolColumn get includeInTotal => boolean().withDefault(const Constant(true))();
+  BoolColumn get includeInTotal =>
+      boolean().withDefault(const Constant(true))();
   TextColumn get notes => text().withDefault(const Constant(''))();
   TextColumn get apiUrl => text().nullable()();
   TextColumn get apiValuePath => text().nullable()();
@@ -109,6 +110,21 @@ class SyncQueue extends Table {
   IntColumn get retryCount => integer().withDefault(const Constant(0))();
 }
 
+// Each trip has a locally durable document. Local edits are acknowledged by
+// mutation ID, never by a row-level flag shared with a later edit.
+@DataClassName('DbTripPlan')
+class TripPlans extends Table {
+  IntColumn get tripId => integer()();
+  TextColumn get content =>
+      text().withDefault(const Constant('{"items":[]}'))();
+  IntColumn get serverRevision => integer().withDefault(const Constant(0))();
+  TextColumn get mutationId => text().withDefault(const Constant(''))();
+  BoolColumn get dirty => boolean().withDefault(const Constant(false))();
+  TextColumn get syncError => text().withDefault(const Constant(''))();
+  @override
+  Set<Column> get primaryKey => {tripId};
+}
+
 // ── DAOs ─────────────────────────────────────────────────────────────────────
 
 @DriftAccessor(tables: [SyncQueue])
@@ -140,8 +156,7 @@ class SyncQueueDao extends DatabaseAccessor<AppDatabase>
 }
 
 @DriftAccessor(tables: [Expenses])
-class ExpenseDao extends DatabaseAccessor<AppDatabase>
-    with _$ExpenseDaoMixin {
+class ExpenseDao extends DatabaseAccessor<AppDatabase> with _$ExpenseDaoMixin {
   ExpenseDao(super.db);
 
   Stream<List<DbExpense>> watchByMonth(int year, int month) {
@@ -214,9 +229,7 @@ class TripDao extends DatabaseAccessor<AppDatabase> with _$TripDaoMixin {
   TripDao(super.db);
 
   Stream<List<DbTrip>> watchAll() =>
-      (select(trips)
-            ..orderBy([(t) => OrderingTerm.desc(t.startDate)]))
-          .watch();
+      (select(trips)..orderBy([(t) => OrderingTerm.desc(t.startDate)])).watch();
 
   Future<DbTrip?> getById(int id) =>
       (select(trips)..where((t) => t.id.equals(id))).getSingleOrNull();
@@ -232,6 +245,9 @@ class TripDao extends DatabaseAccessor<AppDatabase> with _$TripDaoMixin {
             ..where((e) => e.tripId.equals(tripId))
             ..orderBy([(e) => OrderingTerm.desc(e.date)]))
           .watch();
+
+  Future<List<DbTrip>> getAllTrips() =>
+      (select(trips)..orderBy([(t) => OrderingTerm.desc(t.startDate)])).get();
 
   Future<int> insertTrip(TripsCompanion entry) => into(trips).insert(entry);
 
@@ -270,28 +286,24 @@ class TripDao extends DatabaseAccessor<AppDatabase> with _$TripDaoMixin {
           ..where((e) => e.remoteId.equals(remoteId)))
         .getSingleOrNull();
     if (existing != null) {
-      await (update(travelExpenses)
-            ..where((e) => e.remoteId.equals(remoteId)))
+      await (update(travelExpenses)..where((e) => e.remoteId.equals(remoteId)))
           .write(entry);
     } else {
-      await into(travelExpenses)
-          .insert(entry, mode: InsertMode.insertOrIgnore);
+      await into(travelExpenses).insert(entry, mode: InsertMode.insertOrIgnore);
     }
   }
 }
 
 @DriftAccessor(tables: [Accounts, BalanceSnapshots])
-class AccountDao extends DatabaseAccessor<AppDatabase>
-    with _$AccountDaoMixin {
+class AccountDao extends DatabaseAccessor<AppDatabase> with _$AccountDaoMixin {
   AccountDao(super.db);
 
-  Stream<List<DbAccount>> watchAll() =>
-      (select(accounts)
-            ..orderBy([
-              (a) => OrderingTerm.desc(a.includeInTotal),
-              (a) => OrderingTerm.asc(a.name),
-            ]))
-          .watch();
+  Stream<List<DbAccount>> watchAll() => (select(accounts)
+        ..orderBy([
+          (a) => OrderingTerm.desc(a.includeInTotal),
+          (a) => OrderingTerm.asc(a.name),
+        ]))
+      .watch();
 
   Future<DbAccount?> getById(int id) =>
       (select(accounts)..where((a) => a.id.equals(id))).getSingleOrNull();
@@ -340,11 +352,10 @@ class ExchangeRateDao extends DatabaseAccessor<AppDatabase>
     with _$ExchangeRateDaoMixin {
   ExchangeRateDao(super.db);
 
-  Future<DbExchangeRate?> getLatest() =>
-      (select(exchangeRates)
-            ..orderBy([(r) => OrderingTerm.desc(r.rateDate)])
-            ..limit(1))
-          .getSingleOrNull();
+  Future<DbExchangeRate?> getLatest() => (select(exchangeRates)
+        ..orderBy([(r) => OrderingTerm.desc(r.rateDate)])
+        ..limit(1))
+      .getSingleOrNull();
 
   Future<void> insertRow(ExchangeRatesCompanion entry) async {
     // Keep only the latest rates entry
@@ -364,6 +375,7 @@ class ExchangeRateDao extends DatabaseAccessor<AppDatabase>
     BalanceSnapshots,
     ExchangeRates,
     SyncQueue,
+    TripPlans,
   ],
   daos: [
     SyncQueueDao,
@@ -377,12 +389,13 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) => m.createAll(),
         onUpgrade: (m, from, to) async {
+          if (from < 3) await m.createTable(tripPlans);
           if (from < 2) {
             await m.addColumn(accounts, accounts.apiUrl);
             await m.addColumn(accounts, accounts.apiValuePath);

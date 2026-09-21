@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Travel Expenses</title>
+    <title>Travel Planner · Numi</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -92,7 +92,7 @@
 <body>
     <header>
         <div class="header-left">
-            <h1>Travel Expenses</h1>
+            <h1>Travel Planner</h1>
             <div style="display:flex;gap:12px;">
                 <a href="/expenses/" class="nav-link">Expenses</a>
                 <a href="/assets/" class="nav-link">Assets</a>
@@ -153,6 +153,7 @@
 
     <footer style="text-align:center;color:#aaa;font-size:0.75rem;padding:20px 0;">&copy; Mar 2026 Steaunk</footer>
 
+    {% include 'expenses/planner.html' %}
     <script>
         let displayCurrency = localStorage.getItem('displayCurrency') || 'SGD';
         let expandedTripId = null;
@@ -194,7 +195,7 @@
 
         function showMessage(text, type) {
             const area = document.getElementById('messageArea');
-            area.innerHTML = `<div class="message message-${type}">${text}</div>`;
+            area.innerHTML = `<div class="message message-${type}">${esc(text)}</div>`;
             setTimeout(() => { area.innerHTML = ''; }, 4000);
         }
 
@@ -250,14 +251,14 @@
                     <div class="trip-header" onclick="toggleTrip(${trip.id})">
                         <div>
                             <div class="trip-dest">${esc(trip.destination)}</div>
-                            <div class="trip-dates">${trip.start_date} ~ ${trip.end_date}${trip.notes ? ' &middot; ' + esc(trip.notes) : ''}</div>
+                            <div class="trip-dates">${esc(trip.start_date)} ~ ${esc(trip.end_date)} · ${TravelPlanner.phase(trip)}${trip.notes ? ' &middot; ' + esc(trip.notes) : ''}</div>
                         </div>
                         <div style="display:flex;align-items:center;gap:10px;">
                             <div style="text-align:right;">
                                 <div class="trip-total">${trip.total_converted.toLocaleString(undefined, {minimumFractionDigits: 2})} ${currency}</div>
                                 <div class="trip-count">${trip.expense_count} expense${trip.expense_count !== 1 ? 's' : ''}</div>
                             </div>
-                            <button class="btn btn-danger" onclick="event.stopPropagation(); deleteTrip(${trip.id}, '${esc(trip.destination)}')">Del</button>
+                            <button class="btn btn-danger" onclick="event.stopPropagation(); deleteTrip(${trip.id})">Del</button>
                         </div>
                     </div>
                     ${isExpanded ? `<div class="trip-detail" id="tripDetail_${trip.id}"><p style="color:#999;">Loading...</p></div>` : ''}
@@ -294,8 +295,9 @@
         }
 
         function renderTripDetail(tripId, data) {
-            const el = document.getElementById(`tripDetail_${tripId}`);
-            if (!el) return;
+            const container = document.getElementById(`tripDetail_${tripId}`);
+            if (!container) return;
+            const el = TravelPlanner.mount(container, data.trip);
 
             let html = '';
 
@@ -399,7 +401,7 @@
             }
 
             // Render pie chart
-            if (data.expenses.length > 0 && data.category_totals) {
+            if (typeof Chart !== 'undefined' && data.expenses.length > 0 && data.category_totals) {
                 renderPieChart(tripId, data.category_totals, data.display_currency);
             }
         }
@@ -553,13 +555,15 @@
             loadTrips();
         }
 
-        async function deleteTrip(id, name) {
-            if (!confirm(`Delete trip "${name}" and all its expenses?`)) return;
+        async function deleteTrip(id) {
+            if (!confirm('Delete this trip, its plan, bookings, checklists and expenses?')) return;
             try {
-                await fetch(`/expenses/api/travel/trips/${id}/delete/`, {
+                const response = await fetch(`/expenses/api/travel/trips/${id}/delete/`, {
                     method: 'DELETE',
                     headers: { 'X-CSRFToken': getCsrf() },
                 });
+                if (!response.ok) throw new Error('Server could not delete this trip.');
+                TravelPlanner.forget(id);
                 if (expandedTripId === id) expandedTripId = null;
                 if (pieCharts[id]) { pieCharts[id].destroy(); delete pieCharts[id]; }
                 loadTrips();
@@ -589,7 +593,7 @@
         function esc(str) {
             const d = document.createElement('div');
             d.textContent = str || '';
-            return d.innerHTML;
+            return d.innerHTML.replaceAll('"', '&quot;').replaceAll("'", '&#39;');
         }
     </script>
 </body>

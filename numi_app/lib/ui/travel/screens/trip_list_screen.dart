@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../providers/providers.dart';
+import '../../../models/trip_plan.dart';
 import '../../../utils/currency_utils.dart';
 import '../../../utils/date_utils.dart';
 import '../../common/widgets/currency_selector.dart';
@@ -37,6 +38,8 @@ class TripListScreen extends ConsumerWidget {
               itemCount: trips.length,
               itemBuilder: (context, index) {
                 final trip = trips[index];
+                final plan = ref.watch(tripPlanProvider(trip.id)).valueOrNull ??
+                    TripPlan();
                 final total = trip.expenses.fold<double>(
                   0,
                   (sum, e) => sum + e.displayAmount(displayCurrency),
@@ -80,9 +83,15 @@ class TripListScreen extends ConsumerWidget {
                           ),
                           const SizedBox(height: 4),
                           Text(
+                              '${tripPhase(trip.startDate, trip.endDate, DateTime.now())} · ${plan.items.where((i) => i.kind != 'task').length} planned · ${plan.ofKind('task').where((i) => i['status'] == 'completed').length}/${plan.ofKind('task').length} prepared'),
+                          Text(
                             '${trip.expenses.length} expense${trip.expenses.length == 1 ? '' : 's'}',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: Theme.of(context).colorScheme.outline),
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                    color:
+                                        Theme.of(context).colorScheme.outline),
                           ),
                         ],
                       ),

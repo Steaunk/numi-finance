@@ -45,6 +45,7 @@ TRAVEL_CATEGORIES = [
 
 
 class Trip(models.Model):
+    client_id = models.CharField(max_length=64, unique=True, null=True, blank=True)
     destination = models.CharField(max_length=200)
     start_date = models.DateField()
     end_date = models.DateField()
@@ -77,3 +78,12 @@ class TravelExpense(models.Model):
 
     def __str__(self):
         return f"{self.name} - {self.amount} {self.currency}"
+
+
+class TripPlan(models.Model):
+    """Versioned single-traveller planning document; expenses remain separate."""
+    trip = models.OneToOneField(Trip, on_delete=models.CASCADE, related_name='plan')
+    content = models.JSONField(default=dict)
+    revision = models.PositiveIntegerField(default=0)
+    mutation_id = models.CharField(max_length=64, blank=True, default='')
+    updated_at = models.DateTimeField(auto_now=True)

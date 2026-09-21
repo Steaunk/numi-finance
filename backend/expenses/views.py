@@ -298,6 +298,7 @@ def list_trips(request):
         result.append({
             'id': trip.id,
             'destination': trip.destination,
+            'client_id': trip.client_id,
             'start_date': trip.start_date.isoformat(),
             'end_date': trip.end_date.isoformat(),
             'notes': trip.notes,
@@ -341,12 +342,15 @@ def add_trip(request):
     if errors:
         return JsonResponse({'errors': errors}, status=400)
 
-    trip = Trip.objects.create(
-        destination=destination,
-        start_date=start_date,
-        end_date=end_date,
-        notes=data.get('notes', '').strip(),
-    )
+    client_id = data.get('client_id')
+    if client_id is not None and (not isinstance(client_id, str) or not 1 <= len(client_id) <= 64):
+        return JsonResponse({'errors': ['Invalid client_id']}, status=400)
+    fields = dict(destination=destination, start_date=start_date, end_date=end_date,
+                  notes=data.get('notes', '').strip())
+    if client_id:
+        trip, _ = Trip.objects.get_or_create(client_id=client_id, defaults=fields)
+    else:
+        trip = Trip.objects.create(**fields)
     return JsonResponse({'id': trip.id, 'destination': trip.destination}, status=201)
 
 

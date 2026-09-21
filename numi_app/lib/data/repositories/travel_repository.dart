@@ -1,4 +1,7 @@
 import 'dart:convert';
+import 'dart:async';
+import 'package:dio/dio.dart';
+import '../../models/trip_plan.dart';
 import '../../utils/app_logger.dart';
 import 'package:drift/drift.dart';
 import '../../models/travel_expense.dart' as model;
@@ -16,7 +19,101 @@ class TravelRepository {
 
   TravelRepository(this._db, this._api, this._rateRepo);
 
-  Future<void> _enqueue(String entity, String operation, int localId, Map<String, dynamic> payload) =>
+  Future<void> _tripWork = Future.value();
+  Future<T> _serializeTrips<T>(Future<T> Function() action) {
+    final result = _tripWork.then((_) => action());
+    _tripWork =
+        result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return result;
+  }
+
+  Future<void> flushTrips() => _serializeTrips(_flushTrips);
+
+  Future<void> _flushTrips() async {
+    final api = _api;
+    if (api == null) return;
+    // Recover local-only trips created by older app versions before a server was set.
+    final queued = (await _db.syncQueueDao.getPending())
+        .where((q) => q.entityType == 'trip')
+        .map((q) => q.localId)
+        .toSet();
+    for (final row in await _db.tripDao.getAllTrips()) {
+      if (row.remoteId == null && !queued.contains(row.id)) {
+        await _enqueue('trip', 'create', row.id, {
+          'destination': row.destination,
+          'start_date': AppDateUtils.formatDate(row.startDate),
+          'end_date': AppDateUtils.formatDate(row.endDate),
+          'notes': row.notes,
+          'client_id': newPlanId(),
+        });
+      }
+    }
+    for (final op in await _db.syncQueueDao.getPending()) {
+      if (op.entityType != 'trip') continue;
+      try {
+        final payload =
+            Map<String, dynamic>.from(jsonDecode(op.payload) as Map);
+        if (op.operation == 'create') {
+          final row = await _db.tripDao.getById(op.localId);
+          if (row == null || row.remoteId != null) {
+            await _db.syncQueueDao.removeById(op.id);
+            continue;
+          }
+          // Stable key makes a timeout after server commit safe to retry.
+          if (payload['client_id'] == null) {
+            payload['client_id'] = newPlanId();
+            await (_db.update(_db.syncQueue)..where((q) => q.id.equals(op.id)))
+                .write(SyncQueueCompanion(payload: Value(jsonEncode(payload))));
+          }
+          for (final key in ['start_date', 'end_date']) {
+            payload[key] = (payload[key] as String).split('T').first;
+          }
+          final remote = await api.addTrip(payload);
+          await (_db.update(_db.trips)..where((t) => t.id.equals(op.localId)))
+              .write(TripsCompanion(
+                  remoteId: Value(remote['id'] as int),
+                  synced: const Value(true)));
+        } else if (op.operation == 'delete' && payload['remote_id'] != null) {
+          try {
+            await api.deleteTrip(payload['remote_id'] as int);
+          } on DioException catch (e) {
+            if (e.response?.statusCode != 404) rethrow;
+          }
+        }
+        if (op.operation == 'delete' &&
+            payload['remote_id'] == null &&
+            payload['client_id'] != null) {
+          await api.deleteTripByClient(payload['client_id'] as String);
+        }
+        await _db.syncQueueDao.removeById(op.id);
+      } catch (e, st) {
+        AppLogger.instance.log('Trip sync remains pending: $e',
+            name: 'TravelRepo', error: e, stackTrace: st);
+        // Keep recoverable operations, including deletes, without a retry cap.
+      }
+    }
+  }
+
+  Future<void> _removeTripData(int localId) async {
+    final expenseIds = (await _db.tripDao.getExpensesForTrip(localId))
+        .map((e) => e.id)
+        .toList();
+    await (_db.delete(_db.syncQueue)
+          ..where((q) =>
+              (q.entityType.equals('trip') & q.localId.equals(localId)) |
+              (q.entityType.equals('travel_expense') &
+                  q.localId.isIn(expenseIds))))
+        .go();
+    await (_db.delete(_db.travelExpenses)
+          ..where((e) => e.tripId.equals(localId)))
+        .go();
+    await (_db.delete(_db.tripPlans)..where((p) => p.tripId.equals(localId)))
+        .go();
+    await _db.tripDao.removeTripById(localId);
+  }
+
+  Future<void> _enqueue(String entity, String operation, int localId,
+          Map<String, dynamic> payload) =>
       _db.syncQueueDao.enqueue(SyncQueueCompanion.insert(
         entityType: entity,
         operation: operation,
@@ -26,15 +123,20 @@ class TravelRepository {
       ));
 
   Stream<List<model.Trip>> watchAllTrips() {
-    return _db.tripDao.watchAll().asyncMap((tripRows) async {
-      final trips = <model.Trip>[];
-      for (final tripRow in tripRows) {
-        final expenseRows =
-            await _db.tripDao.getExpensesForTrip(tripRow.id);
-        trips.add(_tripToModel(tripRow, expenseRows));
-      }
-      return trips;
-    });
+    return _db
+        .customSelect('SELECT id FROM trips',
+            readsFrom: {_db.trips, _db.travelExpenses})
+        .watch()
+        .asyncMap((_) async {
+          final tripRows = await _db.tripDao.getAllTrips();
+          final trips = <model.Trip>[];
+          for (final tripRow in tripRows) {
+            final expenseRows =
+                await _db.tripDao.getExpensesForTrip(tripRow.id);
+            trips.add(_tripToModel(tripRow, expenseRows));
+          }
+          return trips;
+        });
   }
 
   Future<model.Trip?> getTripWithExpenses(int tripId) async {
@@ -45,9 +147,14 @@ class TravelRepository {
   }
 
   Stream<model.Trip?> watchTripWithExpenses(int tripId) {
-    return _db.tripDao.watchExpensesForTrip(tripId).asyncMap((_) async {
-      return getTripWithExpenses(tripId);
-    });
+    return _db
+        .customSelect('SELECT id FROM trips WHERE id = ?',
+            variables: [Variable.withInt(tripId)],
+            readsFrom: {_db.trips, _db.travelExpenses})
+        .watch()
+        .asyncMap((_) async {
+          return getTripWithExpenses(tripId);
+        });
   }
 
   Future<void> addTrip({
@@ -56,54 +163,50 @@ class TravelRepository {
     required DateTime endDate,
     String notes = '',
   }) async {
-    final companion = TripsCompanion.insert(
-      destination: destination,
-      startDate: startDate,
-      endDate: endDate,
-      notes: Value(notes),
-      createdAt: Value(DateTime.now()),
-    );
-    final localId = await _db.tripDao.insertTrip(companion);
-
-    final api = _api;
-    if (api != null) {
-      try {
-        final remote = await api.addTrip({
+    await _serializeTrips(() async {
+      await _db.transaction(() async {
+        final localId = await _db.tripDao.insertTrip(TripsCompanion.insert(
+            destination: destination,
+            startDate: startDate,
+            endDate: endDate,
+            notes: Value(notes),
+            createdAt: Value(DateTime.now())));
+        await _enqueue('trip', 'create', localId, {
           'destination': destination,
           'start_date': AppDateUtils.formatDate(startDate),
           'end_date': AppDateUtils.formatDate(endDate),
           'notes': notes,
+          'client_id': newPlanId(),
         });
-        await (_db.update(_db.trips)..where((t) => t.id.equals(localId)))
-            .write(TripsCompanion(
-          remoteId: Value(remote['id'] as int),
-          synced: const Value(true),
-        ));
-      } catch (e, st) {
-        AppLogger.instance.log('addTrip push failed: $e', name: 'TravelRepo', error: e, stackTrace: st);
-        await _enqueue('trip', 'create', localId, {
-          'destination': destination,
-          'start_date': startDate.toIso8601String(),
-          'end_date': endDate.toIso8601String(),
-          'notes': notes,
-        });
-      }
-    }
+      });
+    });
+    unawaited(flushTrips());
   }
 
   Future<void> deleteTrip(int localId) async {
-    final row = await _db.tripDao.getById(localId);
-    await _db.tripDao.removeTripById(localId);
-
-    final api = _api;
-    if (api != null && row?.remoteId != null) {
-      try {
-        await api.deleteTrip(row!.remoteId!);
-      } catch (e, st) {
-        AppLogger.instance.log('deleteTrip push failed: $e', name: 'TravelRepo', error: e, stackTrace: st);
-        await _enqueue('trip', 'delete', localId, {'remote_id': row!.remoteId});
-      }
-    }
+    await _serializeTrips(() async {
+      await _db.transaction(() async {
+        final row = await _db.tripDao.getById(localId);
+        final creation = (await _db.syncQueueDao.getPending())
+            .where((q) =>
+                q.entityType == 'trip' &&
+                q.localId == localId &&
+                q.operation == 'create')
+            .firstOrNull;
+        final clientId = creation == null
+            ? null
+            : (jsonDecode(creation.payload) as Map)['client_id'];
+        await _removeTripData(localId);
+        if (row?.remoteId == null && clientId != null) {
+          await _enqueue('trip', 'delete', localId, {'client_id': clientId});
+        }
+        if (row?.remoteId != null) {
+          await _enqueue(
+              'trip', 'delete', localId, {'remote_id': row!.remoteId});
+        }
+      });
+    });
+    unawaited(flushTrips());
   }
 
   Future<void> addTravelExpense({
@@ -135,9 +238,21 @@ class TravelRepository {
       createdAt: Value(DateTime.now()),
     );
     final localId = await _db.tripDao.insertTravelExpense(companion);
+    if (_api == null || tripRow?.remoteId == null) {
+      await _enqueue('travel_expense', 'create', localId, {
+        'trip_id': tripId,
+        'amount': amount,
+        'currency': currency,
+        'date': AppDateUtils.formatDate(date),
+        'category': category,
+        'name': name,
+        'notes': notes,
+      });
+      return;
+    }
 
     final api = _api;
-    if (api != null && tripRow?.remoteId != null) {
+    if (tripRow?.remoteId != null) {
       try {
         final remote = await api.addTripExpense(tripRow!.remoteId!, {
           'amount': amount,
@@ -154,7 +269,8 @@ class TravelRepository {
           synced: const Value(true),
         ));
       } catch (e, st) {
-        AppLogger.instance.log('addTravelExpense push failed: $e', name: 'TravelRepo', error: e, stackTrace: st);
+        AppLogger.instance.log('addTravelExpense push failed: $e',
+            name: 'TravelRepo', error: e, stackTrace: st);
         await _enqueue('travel_expense', 'create', localId, {
           'trip_id': tripId,
           'amount': amount,
@@ -243,12 +359,12 @@ class TravelRepository {
         'name': name,
         'notes': notes,
       });
-      await (_db.update(_db.travelExpenses)
-            ..where((e) => e.id.equals(localId)))
+      await (_db.update(_db.travelExpenses)..where((e) => e.id.equals(localId)))
           .write(const TravelExpensesCompanion(synced: Value(true)));
       return true;
     } catch (e, st) {
-      AppLogger.instance.log('updateTravelExpense push failed: $e', name: 'TravelRepo', error: e, stackTrace: st);
+      AppLogger.instance.log('updateTravelExpense push failed: $e',
+          name: 'TravelRepo', error: e, stackTrace: st);
       return false;
     }
   }
@@ -265,7 +381,8 @@ class TravelRepository {
       try {
         await api.deleteTripExpense(tripRow!.remoteId!, row!.remoteId!);
       } catch (e, st) {
-        AppLogger.instance.log('deleteTravelExpense push failed: $e', name: 'TravelRepo', error: e, stackTrace: st);
+        AppLogger.instance.log('deleteTravelExpense push failed: $e',
+            name: 'TravelRepo', error: e, stackTrace: st);
         await _enqueue('travel_expense', 'delete', localId, {
           'remote_id': row!.remoteId,
           'trip_remote_id': tripRow!.remoteId,
@@ -274,13 +391,47 @@ class TravelRepository {
     }
   }
 
-  Future<void> syncFromServer(String currency) async {
+  Future<void> syncFromServer(String currency) =>
+      _serializeTrips(() => _syncFromServer(currency));
+
+  Future<void> _syncFromServer(String currency) async {
     final api = _api;
     if (api == null) return;
     try {
+      await _flushTrips();
       final trips = await api.getTrips(currency: currency);
+      final deleted = (await _db.syncQueueDao.getPending())
+          .where((q) => q.entityType == 'trip' && q.operation == 'delete')
+          .map((q) => (jsonDecode(q.payload) as Map)['remote_id'])
+          .toSet();
+      final deletedClients = (await _db.syncQueueDao.getPending())
+          .where((q) => q.entityType == 'trip' && q.operation == 'delete')
+          .map((q) => (jsonDecode(q.payload) as Map)['client_id'])
+          .whereType<String>()
+          .toSet();
+      final remoteIds = trips.map((t) => t['id'] as int).toSet();
+      for (final local in await _db.tripDao.getAllTrips()) {
+        if (local.remoteId != null && !remoteIds.contains(local.remoteId)) {
+          final plan = await (_db.select(_db.tripPlans)
+                ..where((p) => p.tripId.equals(local.id)))
+              .getSingleOrNull();
+          if (plan?.dirty == true) {
+            await (_db.update(_db.tripPlans)
+                  ..where((p) => p.tripId.equals(local.id)))
+                .write(const TripPlansCompanion(
+                    syncError: Value(
+                        'This trip was removed on the server. Your local plan is preserved.')));
+          } else {
+            await _db.transaction(() => _removeTripData(local.id));
+          }
+        }
+      }
       for (final t in trips) {
         final remoteId = t['id'] as int;
+        if (deleted.contains(remoteId) ||
+            deletedClients.contains(t['client_id'])) {
+          continue;
+        }
         final existingTrip = await (_db.select(_db.trips)
               ..where((row) => row.remoteId.equals(remoteId)))
             .getSingleOrNull();
@@ -303,7 +454,8 @@ class TravelRepository {
             .getSingleOrNull();
         if (localTrip == null) continue;
 
-        final expenses = await api.getTripExpenses(remoteId, currency: currency);
+        final expenses =
+            await api.getTripExpenses(remoteId, currency: currency);
         for (final e in expenses) {
           final existingExp = await (_db.select(_db.travelExpenses)
                 ..where((row) => row.remoteId.equals(e['id'] as int)))
@@ -331,7 +483,8 @@ class TravelRepository {
         }
       }
     } catch (e, st) {
-      AppLogger.instance.log('syncFromServer failed: $e', name: 'TravelRepo', error: e, stackTrace: st);
+      AppLogger.instance.log('syncFromServer failed: $e',
+          name: 'TravelRepo', error: e, stackTrace: st);
     }
   }
 

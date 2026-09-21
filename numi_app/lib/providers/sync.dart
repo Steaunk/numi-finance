@@ -4,11 +4,13 @@ import '../data/sync/sync_service.dart';
 import 'assets.dart';
 import 'core.dart';
 import 'expenses.dart';
+import 'travel.dart';
 
 final syncServiceProvider = Provider<SyncService?>((ref) {
   final client = ref.watch(apiClientProvider);
   if (client == null) return null;
   return SyncService(
+    planRepo: ref.watch(tripPlanRepositoryProvider),
     db: ref.watch(databaseProvider),
     expenseApi: ref.watch(expenseApiProvider)!,
     travelApi: ref.watch(travelApiProvider)!,
@@ -32,7 +34,7 @@ class SyncStateNotifier extends StateNotifier<AsyncValue<void>> {
 
   Future<void> syncNow() async {
     final service = _ref.read(syncServiceProvider);
-    if (service == null) return;
+    if (service == null || state.isLoading) return;
     state = const AsyncLoading();
     try {
       final currency = _ref.read(displayCurrencyProvider);

@@ -566,3 +566,51 @@ Same fields as Expense, plus `trip` (FK to Trip).
 | `rate_date` | date | Unique, one entry per day |
 | `cny/hkd/sgd/jpy` | float | 1 USD = X rate |
 | `fetched_at` | datetime | Auto-set on creation |
+
+## Travel planner (additive API)
+
+`GET /expenses/api/travel/trips/<id>/plan/` returns
+`{"content":{"items":[]},"revision":0}` for an existing trip with no plan.
+
+`PUT` at the same URL accepts `content`, `revision` (the last server revision), and a stable `mutation_id` for that specific update. Items have stable string IDs and kinds `place`, `activity`, `booking`, or `task`. Scalar item fields are strings; `links` is a list of `{purpose, label, url}`. Activities may reference a place with `placeId`. Array order defines manual itinerary order. Accommodation requires checkout after check-in; transport local dates are not compared across time zones.
+
+A successful PUT returns the document and incremented revision. Repeating the last mutation with identical content returns the same revision. A stale revision or reused mutation with different content returns HTTP 409; stale-revision responses include the current document. Invalid input returns 400; missing trips return 404. Limits: 2 MB request, 2,000 items, 50 links per item, 10,000 characters per string. Links accept only HTTP/HTTPS without embedded user credentials.
+
+Trip creation additionally accepts an optional `client_id` (1–64 characters) to make offline retries idempotent; trip lists include this value. `DELETE /expenses/api/travel/trips/by-client/<client_id>/` idempotently removes a trip after an uncertain creation response. Existing clients may continue using the original trip ID endpoints.
+
+See [Travel planner](../docs/travel-planner.md) for client behavior and deployment order.
+
+Example PUT body (replace the mutation ID for every new edit, retain it for retries):
+
+```json
+{
+  "revision": 0,
+  "mutation_id": "4c979d83e56247989c9b65ddcc5a9981",
+  "content": {
+    "items": [
+      {
+        "id": "place-cafe", "kind": "place", "title": "River Cafe",
+        "category": "Cafe", "priority": "Must go", "status": "planned",
+        "address": "Kyoto", "notes": "Try the matcha",
+        "links": [{"purpose": "Website", "label": "Menu", "url": "https://example.com/menu"}]
+      },
+      {
+        "id": "activity-cafe", "kind": "activity", "title": "",
+        "placeId": "place-cafe", "date": "2026-10-01", "time": "10:00",
+        "status": "planned", "links": []
+      },
+      {
+        "id": "booking-hotel", "kind": "booking", "title": "Riverside Hotel",
+        "category": "Accommodation", "date": "2026-10-01", "endDate": "2026-10-03",
+        "status": "confirmed", "confirmation": "ABC123", "cancelBy": "2026-09-28", "links": []
+      },
+      {
+        "id": "task-charger", "kind": "task", "title": "Pack charger",
+        "category": "Packing", "date": "2026-09-30", "assignee": "Me", "status": "todo", "links": []
+      }
+    ]
+  }
+}
+```
+
+Dates use `YYYY-MM-DD`; optional times use `HH:MM`. Empty activity `date` means unassigned; empty `time` means flexible. Transport additionally uses `endDate`, `endTime`, `timezone`, `endTimezone`, `address` and `endAddress`. Booking contact details use `contact`; free text uses `notes`. Normal statuses are `planned`, `confirmed`, `completed`, `skipped`, `cancelled`; tasks use `todo` or `completed`. Link purposes are `Map`, `Website`, `Booking`, `Guide`, `Other`.

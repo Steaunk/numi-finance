@@ -1,3 +1,4 @@
+import '../repositories/trip_plan_repository.dart';
 import 'dart:convert';
 import 'package:drift/drift.dart';
 import '../../utils/app_logger.dart';
@@ -13,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../utils/account_icon_utils.dart';
 
 class SyncService {
+  final TripPlanRepository? planRepo;
   static const _maxRetries = 5;
   final AppDatabase _db;
   final ExpenseApi _expenseApi;
@@ -25,6 +27,7 @@ class SyncService {
   final SharedPreferences _prefs;
 
   SyncService({
+    this.planRepo,
     required AppDatabase db,
     required ExpenseApi expenseApi,
     required TravelApi travelApi,
@@ -48,7 +51,13 @@ class SyncService {
   static String _toDateStr(dynamic v) =>
       v is String && v.contains('T') ? v.split('T').first : v.toString();
 
-  Future<void> fullSync(String currency) async {
+  Future<void>? _running;
+  Future<void> fullSync(String currency) {
+    if (_running != null) return _running!;
+    return _running = _fullSync(currency).whenComplete(() => _running = null);
+  }
+
+  Future<void> _fullSync(String currency) async {
     await _rateRepo.fetchAndCacheRates();
     // Trigger backend to fetch external API balances first
     await _assetRepo.syncApiAccounts();
@@ -59,6 +68,7 @@ class SyncService {
       _syncAccountIcons(),
     ]);
     await _processSyncQueue();
+    await planRepo?.syncAll();
   }
 
   Future<void> _syncAccountIcons() async {
@@ -91,6 +101,9 @@ class SyncService {
   Future<void> _processSyncQueue() async {
     final pending = await _db.syncQueueDao.getPending();
     for (final op in pending) {
+      if (op.entityType == 'trip') {
+        continue; // TravelRepository serializes parent lifecycle.
+      }
       // If the record was already synced (e.g. by syncFromServer), drop the op.
       if (op.operation != 'delete' && await _isAlreadySynced(op)) {
         await _db.syncQueueDao.removeById(op.id);
@@ -110,8 +123,6 @@ class SyncService {
         switch (op.entityType) {
           case 'expense':
             handled = await _handleExpenseOp(op);
-          case 'trip':
-            handled = await _handleTripOp(op);
           case 'travel_expense':
             handled = await _handleTravelExpenseOp(op);
           case 'account':
@@ -191,39 +202,12 @@ class SyncService {
           'name': p['name'],
           'notes': p['notes'] ?? '',
         });
-        await (_db.update(_db.expenses)
-              ..where((e) => e.id.equals(op.localId)))
+        await (_db.update(_db.expenses)..where((e) => e.id.equals(op.localId)))
             .write(const ExpensesCompanion(synced: Value(true)));
         return true;
       case 'delete':
         final remoteId = p['remote_id'] as int?;
         if (remoteId != null) await _expenseApi.deleteExpense(remoteId);
-        return true;
-      default:
-        return false;
-    }
-  }
-
-  Future<bool> _handleTripOp(DbSyncOperation op) async {
-    final p = jsonDecode(op.payload) as Map<String, dynamic>;
-    switch (op.operation) {
-      case 'create':
-        final remote = await _travelApi.addTrip({
-          'destination': p['destination'],
-          'start_date': _toDateStr(p['start_date']),
-          'end_date': _toDateStr(p['end_date']),
-          'notes': p['notes'] ?? '',
-        });
-        await (_db.update(_db.trips)
-              ..where((t) => t.id.equals(op.localId)))
-            .write(TripsCompanion(
-          remoteId: Value(remote['id'] as int),
-          synced: const Value(true),
-        ));
-        return true;
-      case 'delete':
-        final remoteId = p['remote_id'] as int?;
-        if (remoteId != null) await _travelApi.deleteTrip(remoteId);
         return true;
       default:
         return false;
@@ -248,6 +232,7 @@ class SyncService {
               ..where((e) => e.id.equals(op.localId)))
             .write(TravelExpensesCompanion(
           remoteId: Value(remote['id'] as int),
+          tripRemoteId: Value(tripRow.remoteId),
           synced: const Value(true),
         ));
         return true;
@@ -258,8 +243,8 @@ class SyncService {
         if (localRow?.remoteId == null || localRow?.tripRemoteId == null) {
           return false;
         }
-        await _travelApi.updateTripExpense(
-            localRow!.tripRemoteId!, localRow.remoteId!, {
+        await _travelApi
+            .updateTripExpense(localRow!.tripRemoteId!, localRow.remoteId!, {
           'amount': p['amount'],
           'currency': p['currency'],
           'date': _toDateStr(p['date']),
@@ -294,8 +279,7 @@ class SyncService {
           'include_in_total': p['include_in_total'],
           'notes': p['notes'] ?? '',
         });
-        await (_db.update(_db.accounts)
-              ..where((a) => a.id.equals(op.localId)))
+        await (_db.update(_db.accounts)..where((a) => a.id.equals(op.localId)))
             .write(AccountsCompanion(
           remoteId: Value(remote['id'] as int),
           synced: const Value(true),
@@ -311,8 +295,7 @@ class SyncService {
           'include_in_total': p['include_in_total'],
           'notes': p['notes'] ?? '',
         });
-        await (_db.update(_db.accounts)
-              ..where((a) => a.id.equals(op.localId)))
+        await (_db.update(_db.accounts)..where((a) => a.id.equals(op.localId)))
             .write(const AccountsCompanion(synced: Value(true)));
         return true;
       case 'delete':

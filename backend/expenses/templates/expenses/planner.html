@@ -1,0 +1,249 @@
+<style>
+.plan-tabs,.plan-actions,.plan-filters { display:flex; gap:8px; flex-wrap:wrap; margin:14px 0; }
+.plan-tabs { flex-wrap:nowrap; overflow-x:auto; border-bottom:1px solid #ddd; padding-bottom:8px; }
+.plan-tabs button { white-space:nowrap; }
+.plan-tabs .active { background:#4a90d9; color:white; }
+.plan-panel { min-height:180px; }
+.plan-card { border:1px solid #e0e4eb; border-radius:8px; padding:14px; margin:12px 0; overflow-wrap:anywhere; background:#fff; }
+.plan-card summary { cursor:pointer; font-weight:600; }
+.plan-card p { margin:10px 0; white-space:pre-wrap; }
+.plan-muted { color:#657082; font-size:.85rem; margin:8px 0; }
+.plan-status { padding:12px; background:#eef4fb; border-radius:6px; }
+.plan-link { display:flex; align-items:center; gap:8px; margin:8px 0; }
+.plan-link a { flex:1; overflow-wrap:anywhere; }
+.plan-filters label { display:flex; flex-direction:column; gap:4px; min-width:140px; }
+.plan-filters select { padding:8px; }
+.plan-dialog { width:min(680px,calc(100% - 24px)); max-height:90dvh; border:0; border-radius:12px; padding:24px; margin:auto; overflow:auto; box-shadow:0 12px 50px #0004; }
+.plan-dialog::backdrop { background:#0006; }
+.plan-dialog h2 { margin-bottom:16px; }
+.plan-dialog label { display:flex; flex-direction:column; gap:5px; margin-bottom:12px; font-size:.9rem; }
+.plan-dialog input,.plan-dialog select,.plan-dialog textarea { width:100%; border:1px solid #ccd1d9; border-radius:5px; padding:10px; font:inherit; }
+.plan-dialog textarea { min-height:75px; }
+.plan-dialog .wide { grid-column:1/-1; }
+.plan-link-edit { border:1px solid #ddd; padding:12px; margin:10px 0; border-radius:6px; }
+.plan-link-edit .form-grid { grid-template-columns:1fr 1fr; }
+.plan-toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+.plan-notice { color:#a03a28; margin:8px 0; }
+@media(max-width:480px) { .plan-dialog { padding:16px; } .plan-link-edit .form-grid { grid-template-columns:1fr; } .trip-header { gap:10px; flex-wrap:wrap; } }
+</style>
+<script>
+// Shared document format with Flutter. No external SDK or webpage fetching.
+window.TravelPlanner = (() => {
+    const tabs = ['Overview','Itinerary','Places','Bookings','Preparation','Expenses'];
+    const categories = {place:['Sightseeing','Restaurant','Cafe','Shopping','Park','Practical','Other'], booking:['Accommodation','Flight','Train','Bus','Car rental','Reservation','No accommodation needed'], task:['Preparation','Packing','Shopping']};
+    const priorities = ['Must go','If nearby','Nice to have'];
+    const statuses = ['planned','confirmed','completed','skipped','cancelled'];
+    const purposes = ['Map','Website','Booking','Guide','Other'];
+    const states = new Map(), running = new Map();
+    const id = () => crypto.randomUUID().replaceAll('-','');
+    const escape = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+    const key = tripId => `numi.travel.plan.v1.${tripId}`;
+    const empty = () => ({content:{items:[]},revision:0,mutation:'',dirty:false,error:''});
+    const read = tripId => JSON.parse(localStorage.getItem(key(tripId)) || 'null') || empty();
+    const write = (tripId, row) => localStorage.setItem(key(tripId), JSON.stringify(row));
+    const items = s => read(s.trip.id).content.items;
+    const kind = (s,k) => items(s).filter(i => i.kind === k);
+    const cancelled = i => ['cancelled','skipped'].includes(i.status);
+    const title = (s,i) => i.title || items(s).find(p => p.id === i.placeId)?.title || 'Activity';
+    function days(trip) {
+        const result = [], d = new Date(trip.start_date+'T12:00:00Z');
+        while(d.toISOString().slice(0,10) <= trip.end_date && result.length < 36600) { result.push(d.toISOString().slice(0,10)); d.setUTCDate(d.getUTCDate()+1); }
+        return result;
+    }
+    const phase = trip => today() < trip.start_date ? 'Upcoming' : today() > trip.end_date ? 'Completed' : 'Travelling';
+    const hasStay = (s,day) => kind(s,'booking').some(i => !cancelled(i) && (i.category === 'No accommodation needed' ? i.date === day : i.category === 'Accommodation' && i.date <= day && i.endDate > day));
+    const bookingsOn = (s,day) => kind(s,'booking').filter(i => i.date === day || i.endDate === day || (i.category === 'Accommodation' && i.date < day && i.endDate > day));
+    function safeURL(value) { try { const u = new URL(value); return ['https:','http:'].includes(u.protocol) && !u.username && !u.password && !/\s/.test(value) && u.port !== '0' ? u.href : null; } catch { return null; } }
+    function extract(text) { return [...new Set((text.match(/https?:\/\/[^\s<>"“”]+/gi) || []).map(v => v.replace(/[.,;!，。；！、）)\]】]+$/g,'')).filter(safeURL))]; }
+    function platform(value) {
+        let host; try { host = new URL(value).hostname; } catch { return 'Website'; }
+        const names = {'google.com':'Google Maps','maps.app.goo.gl':'Google Maps','goo.gl':'Google Maps','baidu.com':'Baidu Maps','amap.com':'Amap','gaode.com':'Amap','booking.com':'Booking.com','agoda.com':'Agoda','airbnb.com':'Airbnb','trip.com':'Trip.com','ctrip.com':'Ctrip','klook.com':'Klook','kkday.com':'KKday','getyourguide.com':'GetYourGuide','xiaohongshu.com':'Xiaohongshu','xhslink.com':'Xiaohongshu','instagram.com':'Instagram','tripadvisor.com':'Tripadvisor'};
+        for(const [domain,name] of Object.entries(names)) if(host === domain || host.endsWith('.'+domain)) return name;
+        return host;
+    }
+    function mapURL(provider,name,address,region) {
+        const query = [name,address].filter(Boolean).join(' ');
+        return provider === 'baidu' ? 'https://api.map.baidu.com/place/search?'+new URLSearchParams({query,region:region || '全国',output:'html',src:'webapp.steaunk.numi'}) : 'https://www.google.com/maps/search/?'+new URLSearchParams({api:'1',query});
+    }
+    function action(label,name,itemId='',extra='') { return `<button type="button" class="btn btn-secondary btn-sm" data-action="${name}" data-id="${escape(itemId)}" ${extra}>${escape(label)}</button>`; }
+    function linksHTML(links) { return links.filter(l => safeURL(l.url)).map(l => `<div class="plan-link"><a href="${escape(l.url)}" target="_blank" rel="noopener noreferrer">${escape(l.label || platform(l.url))} <small>· ${escape(l.purpose || 'Other')}</small></a>${action('Copy','copy','',`data-url="${escape(l.url)}"`)}</div>`).join(''); }
+    function card(s,i,reorder=false) {
+        const p = items(s).find(p => p.id === i.placeId), address = p?.address || i.address || '';
+        const subtitle = [i.category,i.status,i.date,i.time,i.timezone,i.endDate && 'to '+i.endDate,i.endTime,i.endTimezone].filter(Boolean).join(' · ');
+        const mapLinks = [];
+        if(address || i.kind === 'place') for(const provider of ['google','baidu']) mapLinks.push({url:mapURL(provider,p?.title || title(s,i),address,s.trip.destination),label:provider === 'google' ? 'Google Maps' : 'Baidu Maps',purpose:'Map'});
+        if(i.endAddress) for(const provider of ['google','baidu']) mapLinks.push({url:mapURL(provider,'',i.endAddress,s.trip.destination),label:'Arrival · '+(provider === 'google' ? 'Google Maps' : 'Baidu Maps'),purpose:'Map'});
+        return `<details class="plan-card" data-item="${escape(i.id)}" ${reorder ? 'draggable="true"' : ''}><summary>${escape(title(s,i))}<span class="plan-muted" style="display:block;font-weight:normal;">${escape(subtitle)}</span></summary>${[address,i.endAddress && 'Arrival: '+i.endAddress,i.confirmation && 'Confirmation: '+i.confirmation,i.contact && 'Contact: '+i.contact,i.cancelBy && 'Cancellation deadline: '+i.cancelBy,i.assignee && 'Responsible: '+i.assignee,i.notes,p?.notes].filter(Boolean).map(v=>`<p>${escape(v)}</p>`).join('')}${linksHTML([...(p?.links || []),...(i.links || []),...mapLinks])}<div class="plan-actions">${action('Edit','edit',i.id)}${i.kind === 'place' ? action('Add to itinerary','schedule',i.id) : ''}${i.kind === 'task' ? action(i.status === 'completed' ? 'Reopen' : 'Complete','complete',i.id) : ''}${reorder ? action('↑ Move up','up',i.id)+action('↓ Move down','down',i.id) : ''}${action('Delete','delete',i.id)}</div></details>`;
+    }
+    function select(name,values,value,label) { return `<label>${escape(label)}<select data-filter="${name}">${values.map(v=>`<option value="${escape(v)}" ${v === value ? 'selected' : ''}>${escape(v || 'Unassigned')}</option>`).join('')}</select></label>`; }
+    function render(s) {
+        const root = document.getElementById(`planner_${s.trip.id}`); if(!root) return;
+        const row = read(s.trip.id), list = row.content.items, tasks = list.filter(i=>i.kind === 'task');
+        root.querySelector('.plan-status').innerHTML = `${escape(row.error === 'conflict' ? 'This plan changed on another device. Choose which complete version to keep.' : row.error || (row.dirty ? 'Saved in this browser · pending sync' : 'Plan synced'))}<div class="plan-actions">${action('Sync now','sync')}${row.error === 'conflict' ? action('Keep this browser','local')+action('Use server version','server') : ''}</div>`;
+        root.querySelector('.plan-tabs').innerHTML = tabs.map(t=>`<button class="btn ${s.tab===t?'active':'btn-secondary'}" data-tab="${t}" role="tab" aria-selected="${s.tab===t}">${t}</button>`).join('');
+        const panel = root.querySelector('.plan-panel');
+        root.querySelector('.plan-expenses').hidden = s.tab !== 'Expenses'; panel.hidden = s.tab === 'Expenses';
+        if(s.tab === 'Expenses') return;
+        let html = '';
+        if(s.tab === 'Overview') {
+            const day = today() < s.trip.start_date ? s.trip.start_date : today() > s.trip.end_date ? s.trip.end_date : today();
+            html = `<h3>${phase(s.trip)}</h3><p class="plan-muted">${escape(s.trip.start_date)} — ${escape(s.trip.end_date)} · ${list.filter(i=>i.kind!=='task').length} planned · ${tasks.filter(i=>i.status==='completed').length}/${tasks.length} prepared</p><h3>${day === today() ? 'Today' : 'Itinerary'} · ${day}</h3>`;
+            const current = [...bookingsOn(s,day),...kind(s,'activity').filter(i=>i.date===day)];
+            html += current.length ? current.map(i=>card(s,i)).join('') : '<p class="plan-muted">Nothing scheduled yet. Save places or add an activity.</p>';
+            const upcoming = kind(s,'booking').filter(i=>!cancelled(i) && i.date > day).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,5);
+            if(upcoming.length) html += '<h3>Upcoming bookings</h3>'+upcoming.map(i=>card(s,i)).join('');
+            const deadlines = kind(s,'booking').filter(i=>!cancelled(i) && i.cancelBy >= today()).sort((a,b)=>a.cancelBy.localeCompare(b.cancelBy));
+            if(deadlines.length) html += '<h3>Cancellation deadlines</h3>'+deadlines.slice(0,5).map(i=>`<p class="plan-muted">${escape(i.cancelBy)} · ${escape(i.title)}</p>`).join('');
+            html += '<h3>Before you go</h3>'+(tasks.filter(i=>i.status!=='completed').slice(0,5).map(i=>card(s,i)).join('') || '<p class="plan-muted">All preparation items are complete.</p>');
+            const gaps = days(s.trip).slice(0,-1).filter(day=>!hasStay(s,day));
+            if(gaps.length) html += '<h3>Accommodation gaps</h3>'+gaps.map(d=>`<p class="plan-muted">Night of ${d} ${action('Not needed','no-stay','',`data-date="${d}"`)}</p>`).join('');
+        } else if(s.tab === 'Places') {
+            html = `<div class="plan-toolbar"><h3>Places to eat, explore and shop</h3>${action('+ Add place','add-place')}</div><div class="plan-filters">${select('category',['All',...categories.place],s.category,'Category')}${select('priority',['All',...priorities],s.priority,'Priority')}${select('scheduled',['All','Scheduled','Unscheduled'],s.scheduled,'Itinerary')}</div>`;
+            const filtered = kind(s,'place').filter(i=>(s.category==='All'||i.category===s.category)&&(s.priority==='All'||i.priority===s.priority)&&(s.scheduled==='All'||(s.scheduled==='Scheduled')===kind(s,'activity').some(a=>a.placeId===i.id && a.date && !cancelled(a))));
+            html += filtered.map(i=>card(s,i)).join('') || '<p class="plan-muted">Save somewhere you want to visit.</p>';
+        } else if(s.tab === 'Itinerary') {
+            const dates = [...new Set([...days(s.trip),...kind(s,'activity').map(i=>i.date).filter(Boolean)])].sort();
+            html = `<div class="plan-toolbar"><div class="plan-filters">${select('day',['',...dates],s.day,'Day')}</div>${action('+ Add activity','add-activity')}</div><p class="plan-muted">Drag activities or use move buttons. Edit to change the day. Empty dates stay unassigned; empty times are flexible.</p>`;
+            if(s.day) html += bookingsOn(s,s.day).map(i=>card(s,i)).join('');
+            html += kind(s,'activity').filter(i=>(i.date||'')===s.day).map(i=>card(s,i,true)).join('') || '<p class="plan-muted">No activities for this day.</p>';
+        } else if(s.tab === 'Bookings') {
+            html = `<div class="plan-toolbar"><h3>Stays, transport and reservations</h3>${action('+ Add booking','add-booking')}</div><p class="plan-muted">Times remain local to each time zone. Bookings do not create expenses.</p>`+kind(s,'booking').sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map(i=>card(s,i)).join('');
+        } else {
+            html = `<div class="plan-toolbar"><h3>Get ready</h3>${action('+ Add checklist item','add-task')}</div><div class="plan-filters">${select('checklist',['All',...categories.task],s.checklist,'Checklist')}</div>`+tasks.filter(i=>s.checklist==='All'||i.category===s.checklist).map(i=>card(s,i)).join('');
+        }
+        panel.innerHTML = html;
+    }
+    function change(s,fn) {
+        const row = read(s.trip.id); row.content.items = fn(row.content.items); row.dirty = true; row.mutation = id();
+        if(row.error !== 'conflict') row.error = '';
+        write(s.trip.id,row); render(s); void sync(s.trip.id);
+    }
+    async function request(tripId,options={}) {
+        const resp = await fetch(`/expenses/api/travel/trips/${tripId}/plan/`,{...options,headers:{'Content-Type':'application/json','X-CSRFToken':getCsrf()}});
+        const data = await resp.json(); if(!resp.ok) throw Object.assign(new Error(data.error || `Server returned ${resp.status}`),{status:resp.status}); return data;
+    }
+    function sync(tripId) {
+        if(running.has(tripId)) return running.get(tripId);
+        const work = (async()=>{
+            try {
+                while(true) {
+                    let row = read(tripId); if(row.error === 'conflict' || !states.has(tripId)) return;
+                    if(row.dirty) {
+                        const result = await request(tripId,{method:'PUT',body:JSON.stringify({content:row.content,revision:row.revision,mutation_id:row.mutation})});
+                        if(!states.has(tripId)) return;
+                        const latest = read(tripId); latest.revision = result.revision; latest.dirty = latest.mutation !== row.mutation; latest.error = ''; write(tripId,latest);
+                        continue;
+                    }
+                    const result = await request(tripId);
+                    if(!states.has(tripId)) return;
+                    const latest = read(tripId); if(latest.dirty) continue;
+                    write(tripId,{...latest,content:result.content,revision:result.revision,error:''}); break;
+                }
+            } catch(e) {
+                if(states.has(tripId)) { const row = read(tripId); row.error = e.status === 409 ? 'conflict' : 'Could not sync. Saved browser changes are retained. Retry when connected.'; try {write(tripId,row);} catch {} }
+            } finally { if(states.has(tripId)) render(states.get(tripId)); }
+        })().finally(()=>running.delete(tripId));
+        running.set(tripId,work); return work;
+    }
+    async function resolve(s,local) {
+        if(!confirm(local ? 'Replace the complete server plan with this browser’s version?' : 'Replace the complete browser plan with the server version? Unsynced edits will be discarded.')) return;
+        await running.get(s.trip.id);
+        const before = read(s.trip.id), result = await request(s.trip.id), latest = read(s.trip.id);
+        if(latest.mutation !== before.mutation) throw new Error('Plan changed while resolving. Review it and try again.');
+        write(s.trip.id,{...latest,content:local ? latest.content : result.content,revision:result.revision,dirty:local,mutation:id(),error:''}); render(s); await sync(s.trip.id);
+    }
+    async function copy(value) { try { await navigator.clipboard.writeText(value); showMessage('Link copied','success'); } catch { prompt('Copy this link:',value); } }
+    function reorder(s,source,target) {
+        change(s,list=>{const selected=list.filter(i=>i.kind==='activity'&&(i.date||'')===s.day), a=selected.findIndex(i=>i.id===source), b=selected.findIndex(i=>i.id===target); if(a<0||b<0)return list; selected.splice(b,0,selected.splice(a,1)[0]); let n=0; return list.map(i=>i.kind==='activity'&&(i.date||'')===s.day ? selected[n++] : i);});
+    }
+    function editor(s,initial) {
+        const item = structuredClone(initial), dialog = document.createElement('dialog'); dialog.className='plan-dialog';
+        let links = item.links || [];
+        const input = (name,label,type='text',required=false) => `<label>${escape(label)}<input name="${name}" type="${type}" value="${escape(item[name]||'')}" ${required?'required':''} maxlength="${name==='notes'?10000:500}"></label>`;
+        const choice = (name,label,values) => `<label>${escape(label)}<select name="${name}">${values.map(v=>`<option ${v===item[name]?'selected':''} value="${escape(v)}">${escape(v)}</option>`).join('')}</select></label>`;
+        let fields = input('title','Name (optional for a linked activity)','text',item.kind!=='activity');
+        if(categories[item.kind]) fields += choice('category',item.kind==='task'?'Checklist':'Category',categories[item.kind]);
+        if(item.kind==='place') fields += choice('priority','Priority',priorities);
+        fields += choice('status','Status',item.kind==='task'?['todo','completed']:statuses);
+        if(item.kind==='activity') fields += `<label>Saved place<select name="placeId"><option value="">No linked place</option>${kind(s,'place').map(p=>`<option value="${escape(p.id)}" ${p.id===item.placeId?'selected':''}>${escape(p.title)}</option>`).join('')}</select></label>`;
+        if(item.kind!=='place') fields += input('date',item.kind==='task'?'Due date':item.kind==='activity'?'Day (empty = unassigned)':'Start / check-in / night','date',item.kind==='booking');
+        if(['booking','activity'].includes(item.kind)) fields += input('time','Start time (empty = flexible)','time')+input('endTime','End time','time');
+        if(item.kind==='booking') fields += input('endDate','Arrival / check-out date','date')+input('timezone','Start time zone')+input('endTimezone','Arrival time zone');
+        if(item.kind!=='task') fields += input('address','Address / departure');
+        if(item.kind==='booking') fields += input('endAddress','Arrival address')+input('confirmation','Confirmation / flight / train number')+input('contact','Contact')+input('cancelBy','Cancellation deadline','date');
+        if(item.kind==='task') fields += input('assignee','Responsible person');
+        fields += `<label class="wide">Notes<textarea name="notes" maxlength="10000">${escape(item.notes||'')}</textarea></label>`;
+        dialog.innerHTML = `<form><h2>${initial.title ? 'Edit' : 'Add'} ${item.kind==='task'?'checklist item':item.kind}</h2><div class="form-grid">${fields}</div><p class="plan-muted">All times are local; there is no automatic time-zone conversion.</p>${item.kind!=='task'?'<h3>External links</h3><div class="link-rows"></div><label>URL or share text<textarea class="share-text" placeholder="Paste links or a shared post"></textarea></label><div class="link-preview plan-muted"></div><button class="btn btn-secondary" type="button" data-import>Add detected links</button>':''}<p class="plan-notice" role="alert"></p><div class="plan-actions"><button class="btn btn-primary" type="submit">Save item</button><button class="btn btn-secondary" type="button" data-close>Cancel</button></div></form>`;
+        document.body.append(dialog); dialog.showModal();
+        dialog.addEventListener('close',()=>dialog.remove()); dialog.querySelector('[data-close]').onclick=()=>dialog.close();
+        const form = dialog.querySelector('form'), error = dialog.querySelector('[role=alert]');
+        function renderLinks() {
+            const host=dialog.querySelector('.link-rows'); if(!host)return;
+            host.innerHTML=links.map((l,n)=>`<div class="plan-link-edit"><div class="form-grid"><label>Purpose<select data-link="${n}" data-field="purpose">${purposes.map(p=>`<option ${l.purpose===p?'selected':''}>${p}</option>`).join('')}</select></label><label>Display name<input data-link="${n}" data-field="label" maxlength="500" value="${escape(l.label)}"></label></div><label>URL<input type="url" required data-link="${n}" data-field="url" value="${escape(l.url)}"></label><small>${escape(platform(l.url))}</small> <button type="button" class="btn btn-secondary btn-sm" data-remove-link="${n}">Remove link</button></div>`).join('');
+        }
+        renderLinks();
+        dialog.addEventListener('input',e=>{
+            if(e.target.dataset.link!==undefined) links[Number(e.target.dataset.link)][e.target.dataset.field]=e.target.value;
+            if(e.target.matches('.share-text')) dialog.querySelector('.link-preview').textContent=extract(e.target.value).map(u=>`${platform(u)} · ${u}`).join('\n') || 'Paste a valid HTTP or HTTPS URL.';
+        });
+        dialog.addEventListener('click',e=>{
+            if(e.target.dataset.removeLink!==undefined) {links.splice(Number(e.target.dataset.removeLink),1);renderLinks();}
+            if(e.target.matches('[data-import]')) { const field=dialog.querySelector('.share-text'); const found=extract(field.value); if(links.length+found.length>50){error.textContent='Keep at most 50 links.';return;} links.push(...found.map(url=>({url,purpose:'Other',label:''}))); field.value='';dialog.querySelector('.link-preview').textContent='';renderLinks(); }
+        });
+        form.onsubmit=e=>{
+            e.preventDefault();
+            try {
+                const value={...item,...Object.fromEntries(new FormData(form)),links:structuredClone(links)};
+                for(const k of Object.keys(value)) if(typeof value[k]==='string') value[k]=value[k].trim();
+                if(!value.title && !value.placeId) throw new Error('Enter a name or select a saved place.');
+                if(links.some(l=>!safeURL(l.url))) throw new Error('Links must be valid HTTP or HTTPS URLs.');
+                if(value.kind==='booking' && value.category==='Accommodation' && (!value.endDate || value.endDate<=value.date)) throw new Error('Checkout must be after check-in.');
+                if(value.kind==='activity' && value.date && (value.date<s.trip.start_date || value.date>s.trip.end_date)) throw new Error('Choose a day within this trip or leave it unassigned.');
+                if(value.placeId) value.address='';
+                change(s,list=>{if(value.placeId&&!list.some(p=>p.kind==='place'&&p.id===value.placeId))throw new Error('The linked place was removed. Choose another place.');const n=list.findIndex(i=>i.id===value.id);if(n<0)list.push(value);else list[n]=value;return list;});
+                dialog.close();
+            } catch(e) {error.textContent=e.message;}
+        };
+    }
+    function create(kind,fields={}) { return {id:id(),kind,title:'',category:categories[kind]?.[0]||'Activity',status:kind==='task'?'todo':'planned',priority:'Nice to have',links:[],...fields}; }
+    async function handle(s,event) {
+        const b=event.target.closest('button'); if(!b)return;
+        try {
+            if(b.dataset.tab){s.tab=b.dataset.tab;render(s);return;}
+            const a=b.dataset.action, item=items(s).find(i=>i.id===b.dataset.id);
+            if(a==='sync') await sync(s.trip.id);
+            else if(a==='local'||a==='server') await resolve(s,a==='local');
+            else if(a==='copy') await copy(b.dataset.url);
+            else if(a?.startsWith('add-')) editor(s,create(a.slice(4),a==='add-activity'?{date:s.day}:{}));
+            else if(a==='edit'&&item) editor(s,item);
+            else if(a==='schedule'&&item) editor(s,create('activity',{placeId:item.id,date:s.day}));
+            else if(a==='no-stay') editor(s,create('booking',{title:'No accommodation needed',category:'No accommodation needed',date:b.dataset.date,status:'confirmed'}));
+            else if(a==='complete'&&item) change(s,list=>list.map(i=>i.id===item.id?{...i,status:i.status==='completed'?'todo':'completed'}:i));
+            else if(a==='delete'&&item&&confirm(item.kind==='place'?'Delete this place? Linked activities will be kept.':'Delete this item?')) change(s,list=>list.filter(i=>i.id!==item.id).map(i=>i.placeId===item.id?{...i,placeId:'',title:i.title||item.title}:i));
+            else if((a==='up'||a==='down')&&item) {const day=kind(s,'activity').filter(i=>(i.date||'')===s.day), n=day.findIndex(i=>i.id===item.id), target=day[n+(a==='up'?-1:1)];if(target)reorder(s,item.id,target.id);}
+        } catch(e) {showMessage(e.message,'error');}
+    }
+    function mount(el,trip) {
+        let s=states.get(trip.id);
+        if(!s) {s={trip,tab:'Overview',day:trip.start_date,category:'All',priority:'All',scheduled:'All',checklist:'All'};states.set(trip.id,s);}
+        s.trip=trip;
+        if(!el.querySelector(`#planner_${trip.id}`)) {
+            el.innerHTML=`<div id="planner_${trip.id}"><div class="plan-status" role="status"></div><nav class="plan-tabs" role="tablist" aria-label="Trip sections"></nav><div class="plan-panel"></div><div class="plan-expenses" id="tripExpenses_${trip.id}" hidden></div></div>`;
+            const root=el.firstElementChild;
+            root.addEventListener('click',e=>{if(!e.target.closest('.plan-expenses'))void handle(s,e);});
+            root.addEventListener('change',e=>{if(e.target.dataset.filter){s[e.target.dataset.filter]=e.target.value;render(s);}});
+            let dragged;
+            root.addEventListener('dragstart',e=>{const card=e.target.closest('[draggable]');if(card){dragged=card.dataset.item;e.dataTransfer.setData('text/plain',dragged);}});
+            root.addEventListener('dragover',e=>{if(e.target.closest('[draggable]'))e.preventDefault();});
+            root.addEventListener('drop',e=>{const card=e.target.closest('[draggable]');if(card&&dragged){e.preventDefault();reorder(s,dragged,card.dataset.item);dragged=null;}});
+        }
+        render(s); void sync(trip.id);
+        return document.getElementById(`tripExpenses_${trip.id}`);
+    }
+    function forget(tripId) { states.delete(tripId); localStorage.removeItem(key(tripId)); }
+    window.addEventListener('online',()=>states.forEach(s=>void sync(s.trip.id)));
+    window.addEventListener('storage',e=>states.forEach(s=>{if(e.key===key(s.trip.id))render(s);}));
+    return {mount,forget,phase,safeURL,extract,platform,mapURL};
+})();
+</script>
