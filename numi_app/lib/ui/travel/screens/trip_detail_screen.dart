@@ -11,6 +11,7 @@ import '../widgets/plan_item_editor.dart';
 import '../widgets/plan_links.dart';
 import '../widgets/travel_surfaces.dart';
 import 'trip_expenses_screen.dart';
+import '../widgets/trip_destinations.dart';
 
 class TripDetailScreen extends ConsumerStatefulWidget {
   final int tripId;
@@ -23,6 +24,17 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
     with SingleTickerProviderStateMixin {
   late final TabController tabs;
   String? selectedDay;
+  String selectedDestination = '';
+  String destinationFilter(TripPlan plan) =>
+      plan.destinations.any((d) => d.id == selectedDestination)
+          ? selectedDestination
+          : '';
+  String suggestedDestination(Trip trip, TripPlan plan) {
+    if (destinationFilter(plan).isNotEmpty) return selectedDestination;
+    final onDay = plan.destinationsOn(dayFor(trip));
+    return onDay.length == 1 ? onDay.single.id : '';
+  }
+
   String category = 'All', priority = 'All', scheduled = 'All';
   bool reordering = false, resolving = false;
   @override
@@ -138,6 +150,8 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
           title: plan.itemTitle(item),
           subtitle: [
             subtitle ?? itemSubtitle(plan, item),
+            if (plan.destinationLabel(item).isNotEmpty)
+              plan.destinationLabel(item),
             if (item['amount'].isNotEmpty)
               '${item['currency']} ${item['amount']} · ${item['paymentStatus'] == 'paid' ? 'Paid' : 'Unpaid'}',
           ].join(' · '),
@@ -214,7 +228,17 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                               onPressed: () => openPlanLink(
                                   context,
                                   baiduMapSearchLink(
-                                          name, address, trip.destination)
+                                          name,
+                                          address,
+                                          plan
+                                                  .find(arrival
+                                                      ? item['endDestinationId']
+                                                      : plan.destinationIdFor(
+                                                          item))
+                                                  ?.title ??
+                                              (item.kind == 'destination'
+                                                  ? item.title
+                                                  : trip.destination))
                                       .toString()),
                               icon: const Icon(Icons.map_outlined, size: 18),
                               label: Text(arrival
@@ -369,7 +393,11 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                 final plan = ref.watch(tripPlanProvider(trip.id)).valueOrNull ??
                     TripPlan();
                 if (panel == 'bookings') {
-                  final records = plan.ofKind('booking')
+                  final records = plan
+                      .ofKind('booking')
+                      .where((i) =>
+                          plan.matchesDestination(i, destinationFilter(plan)))
+                      .toList()
                     ..sort((a, b) => a['date'].compareTo(b['date']));
                   return ListView(
                       padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
@@ -391,6 +419,8 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                                 trip,
                                 plan,
                                 PlanItem.create('booking').copy({
+                                  'destinationId':
+                                      suggestedDestination(trip, plan),
                                   'date': dayFor(trip).isEmpty
                                       ? planDate(trip.startDate)
                                       : dayFor(trip)
@@ -564,7 +594,12 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
       return;
     }
     await edit(
-        trip, plan, PlanItem.create(choice).copy({'date': dayFor(trip)}));
+        trip,
+        plan,
+        PlanItem.create(choice).copy({
+          'date': dayFor(trip),
+          'destinationId': suggestedDestination(trip, plan)
+        }));
   }
 
   Widget timeline(Trip trip, TripPlan plan) {
@@ -577,13 +612,18 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
           .where((d) => d.isNotEmpty)
     }.toList()
       ..sort();
-    final activities =
-        plan.ofKind('activity').where((i) => i['date'] == day).toList();
+    final activities = plan
+        .ofKind('activity')
+        .where((i) =>
+            i['date'] == day &&
+            plan.matchesDestination(i, destinationFilter(plan)))
+        .toList();
     final bookings = day.isEmpty
         ? <PlanItem>[]
         : plan
             .bookingsOn(day)
             .where((i) =>
+                plan.matchesDestination(i, destinationFilter(plan)) &&
                 i['category'] != 'No accommodation needed' &&
                 (i['category'] != 'Accommodation' || i['endDate'] == day))
             .toList();
@@ -626,6 +666,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
             .ofKind('booking')
             .where((i) =>
                 !i.cancelled &&
+                plan.matchesDestination(i, destinationFilter(plan)) &&
                 (i['category'] == 'Accommodation' &&
                         i['date'].compareTo(day) <= 0 &&
                         i['endDate'].compareTo(day) > 0 ||
@@ -634,6 +675,12 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
             .toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       const SizedBox(height: 20),
+      if (day.isNotEmpty && plan.destinationsOn(day).isNotEmpty)
+        Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+                plan.destinationsOn(day).map((d) => d.title).join(' / '),
+                style: Theme.of(context).textTheme.titleMedium)),
       TripDayStrip(
           days: days,
           selected: day,
@@ -722,6 +769,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                     : '${i['date'] == day ? 'Check-in' : 'Your stay'} · ${travelDate(i['date'])}–${travelDate(i['endDate'])} · ${i.stayDuration}'))),
       if (day.isNotEmpty &&
           day.compareTo(planDate(trip.endDate)) < 0 &&
+          destinationFilter(plan).isEmpty &&
           !plan.hasStay(day))
         Padding(
             padding: const EdgeInsets.only(top: 6),
@@ -762,6 +810,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
     final records = plan
         .ofKind('place')
         .where((i) =>
+            plan.matchesDestination(i, destinationFilter(plan)) &&
             (category == 'All' || category == i['category']) &&
             (priority == 'All' || priority == i['priority']) &&
             (scheduled == 'All' ||
@@ -779,7 +828,11 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                     size: 21)),
             IconButton(
                 tooltip: 'Add place',
-                onPressed: () => edit(trip, plan, PlanItem.create('place')),
+                onPressed: () => edit(
+                    trip,
+                    plan,
+                    PlanItem.create('place').copy(
+                        {'destinationId': suggestedDestination(trip, plan)})),
                 icon: const Icon(Icons.add, size: 23)),
           ])),
       if (active.isNotEmpty)
@@ -924,6 +977,15 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
           '${DateFormat('d MMM').format(trip.startDate)} – ${DateFormat('d MMM yyyy').format(trip.endDate)} · ${tripDays(trip.startDate, trip.endDate).length} days',
           style: TextStyle(fontSize: 13, color: colors.onSurfaceVariant)),
       const SizedBox(height: 10),
+      ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.route_outlined),
+          title: const Text('Destinations'),
+          subtitle: Text(plan.destinations.isEmpty
+              ? 'Add cities, regions or countries'
+              : plan.destinations.map((d) => d.title).join(' → ')),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => showTripDestinations(context, trip)),
       Wrap(spacing: 12, runSpacing: 0, children: [
         shortcut('View bookings', Icons.confirmation_number_outlined,
             '${plan.ofKind('booking').length} bookings', 'bookings'),
@@ -1016,6 +1078,46 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                                     const EdgeInsets.fromLTRB(16, 16, 16, 32),
                                 children: [
                                   header(trip, plan),
+                                  if (plan.destinations.isNotEmpty)
+                                    Padding(
+                                        padding:
+                                            const EdgeInsets.only(bottom: 12),
+                                        child: DropdownButtonFormField<String>(
+                                          key: ValueKey(
+                                              'destination-filter-${destinationFilter(plan)}'),
+                                          initialValue: destinationFilter(plan),
+                                          isExpanded: true,
+                                          decoration: const InputDecoration(
+                                              labelText: 'Show destination'),
+                                          items: [
+                                            const DropdownMenuItem(
+                                                value: '',
+                                                child:
+                                                    Text('All destinations')),
+                                            ...plan.destinations.map((d) =>
+                                                DropdownMenuItem(
+                                                    value: d.id,
+                                                    child: Text(d.title,
+                                                        overflow: TextOverflow
+                                                            .ellipsis)))
+                                          ],
+                                          onChanged: (v) => setState(() {
+                                            selectedDestination = v!;
+                                            reordering = false;
+                                            final destination = plan.find(v);
+                                            if (destination != null &&
+                                                (dayFor(trip).compareTo(
+                                                            destination[
+                                                                'date']) <
+                                                        0 ||
+                                                    dayFor(trip).compareTo(
+                                                            destination[
+                                                                'endDate']) >
+                                                        0)) {
+                                              selectedDay = destination['date'];
+                                            }
+                                          }),
+                                        )),
                                   TabBar(
                                       controller: tabs,
                                       isScrollable: true,

@@ -99,6 +99,7 @@ class PlanItem {
           'place' => 'Sightseeing',
           'booking' => 'Accommodation',
           'task' => 'Preparation',
+          'destination' => 'Destination',
           _ => 'Activity'
         },
         'priority': 'Nice to have',
@@ -138,6 +139,39 @@ class TripPlan {
   String itemTitle(PlanItem item) => item.title.isNotEmpty
       ? item.title
       : find(item['placeId'])?.title ?? 'Activity';
+  List<PlanItem> get destinations => ofKind('destination');
+  List<PlanItem> destinationsOn(String day) => destinations
+      .where((d) =>
+          !d.cancelled &&
+          d['date'].compareTo(day) <= 0 &&
+          d['endDate'].compareTo(day) >= 0)
+      .toList();
+  String destinationIdFor(PlanItem item) => item['placeId'].isNotEmpty
+      ? (find(item['placeId'])?['destinationId'] ?? '')
+      : item['destinationId'];
+  String destinationLabel(PlanItem item) {
+    final from = find(destinationIdFor(item))?.title ?? '';
+    final to = find(item['endDestinationId'])?.title ?? '';
+    return to.isNotEmpty && item['endDestinationId'] != destinationIdFor(item)
+        ? '${from.isEmpty ? 'Outside trip' : from} → $to'
+        : from;
+  }
+
+  bool matchesDestination(PlanItem item, String id) =>
+      id.isEmpty ||
+      destinationIdFor(item) == id ||
+      item['endDestinationId'] == id;
+  String expenseDestination(String? itemId) {
+    final item = find(itemId ?? '');
+    if (item == null) return '';
+    final from = destinationIdFor(item), to = item['endDestinationId'];
+    if (to.isNotEmpty && to != from) return '__transfers__';
+    return from;
+  }
+
+  String expenseDestinationLabel(String id) => id == '__transfers__'
+      ? 'Between destinations'
+      : find(id)?.title ?? 'Unassigned';
   bool hasStay(String day) => ofKind('booking').any((i) =>
       !i.cancelled &&
       ((i['category'] == 'No accommodation needed' && i['date'] == day) ||

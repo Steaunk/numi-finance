@@ -135,15 +135,40 @@ class _PlanItemEditorState extends State<PlanItemEditor> {
               setState(() => values[key] = planDate(picked));
             }
           });
-  Widget stayDurationField() {
+  Widget destinationChoice(String key, String label) => Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: DropdownButtonFormField<String>(
+        key: ValueKey('$key-${values[key]}'),
+        initialValue: widget.plan.destinations.any((d) => d.id == values[key])
+            ? values[key]
+            : '',
+        isExpanded: true,
+        decoration: InputDecoration(labelText: label),
+        items: [
+          const DropdownMenuItem(value: '', child: Text('Unassigned')),
+          ...widget.plan.destinations.map((d) => DropdownMenuItem(
+              value: d.id,
+              child: Text(d.title, overflow: TextOverflow.ellipsis)))
+        ],
+        onChanged: (v) => setState(() => values[key] = v!),
+      ));
+  bool get transport =>
+      kind == 'booking' &&
+      ['Flight', 'Train', 'Bus', 'Car rental'].contains(values['category']);
+  Widget stayDurationField({bool destination = false}) {
     final item = widget.item.copy(values);
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      title: const Text('Stay duration'),
-      subtitle: Text(item.stayNights == null
-          ? 'Choose check-in and check-out dates'
-          : 'Check-in ${values['date']}\nCheck-out ${values['endDate']} · ${item.stayDuration}'),
-      isThreeLine: item.stayNights != null,
+      title: Text(destination ? 'Visit dates' : 'Stay duration'),
+      subtitle: Text(destination
+          ? (values['date']?.isNotEmpty == true &&
+                  values['endDate']?.isNotEmpty == true
+              ? '${values['date']} – ${values['endDate']}'
+              : 'Choose arrival and departure dates')
+          : item.stayNights == null
+              ? 'Choose check-in and check-out dates'
+              : 'Check-in ${values['date']}\nCheck-out ${values['endDate']} · ${item.stayDuration}'),
+      isThreeLine: !destination && item.stayNights != null,
       trailing: const Icon(Icons.date_range_outlined),
       onTap: () async {
         final start =
@@ -155,12 +180,16 @@ class _PlanItemEditorState extends State<PlanItemEditor> {
           lastDate: DateTime(2200),
           initialDateRange: DateTimeRange(
               start: start,
-              end: end != null && end.isAfter(start)
+              end: end != null && !end.isBefore(start)
                   ? end
-                  : start.add(const Duration(days: 1))),
-          helpText: 'Select check-in and check-out',
-          fieldStartLabelText: 'Check-in date',
-          fieldEndLabelText: 'Check-out date',
+                  : destination
+                      ? start
+                      : start.add(const Duration(days: 1))),
+          helpText: destination
+              ? 'Select arrival and departure'
+              : 'Select check-in and check-out',
+          fieldStartLabelText: destination ? 'Arrival date' : 'Check-in date',
+          fieldEndLabelText: destination ? 'Departure date' : 'Check-out date',
           saveText: 'Use dates',
         );
         if (range != null && mounted) {
@@ -207,8 +236,22 @@ class _PlanItemEditorState extends State<PlanItemEditor> {
     if (kind == 'activity' && updated['placeId']?.isNotEmpty == true) {
       // Title overrides are allowed; address and links remain on the linked place.
       updated['address'] = '';
+      updated['destinationId'] = '';
     }
+    if (!transport) updated['endDestinationId'] = '';
     String? problem;
+    if (kind == 'destination' &&
+        ((updated['date'] ?? '').isEmpty ||
+            (updated['endDate'] ?? '').isEmpty ||
+            updated['endDate']!.compareTo(updated['date']!) < 0)) {
+      problem = 'Choose arrival and departure dates in order.';
+    }
+    if (kind == 'destination' &&
+        problem == null &&
+        (updated['date']!.compareTo(planDate(widget.trip.startDate)) < 0 ||
+            updated['endDate']!.compareTo(planDate(widget.trip.endDate)) > 0)) {
+      problem = 'Destination dates must be within the trip dates.';
+    }
     if (kind == 'booking' && (updated['date'] ?? '').isEmpty) {
       problem = 'Choose a booking date.';
     }
@@ -295,6 +338,22 @@ class _PlanItemEditorState extends State<PlanItemEditor> {
                 choice('category', 'Booking type', bookingCategories),
               if (kind == 'task')
                 choice('category', 'Checklist', taskCategories),
+              if (kind == 'destination') stayDurationField(destination: true),
+              if (['place', 'activity', 'booking'].contains(kind) &&
+                  !linked &&
+                  widget.plan.destinations.isNotEmpty)
+                destinationChoice('destinationId',
+                    transport ? 'From destination' : 'Destination'),
+              if (transport && widget.plan.destinations.isNotEmpty)
+                destinationChoice('endDestinationId', 'To destination'),
+              if (linked &&
+                  widget.plan
+                      .destinationLabel(widget.item.copy(values))
+                      .isNotEmpty)
+                Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Text(
+                        'Destination: ${widget.plan.destinationLabel(widget.item.copy(values))} · from saved place')),
               if (kind == 'activity') ...[
                 DropdownButtonFormField<String>(
                     initialValue: values['placeId'] ?? '',

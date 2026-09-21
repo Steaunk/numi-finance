@@ -53,6 +53,19 @@ class TripPlanRepository {
   }
 
   Future<void> save(int tripId, PlanItem item) => _edit(tripId, (items) {
+        if (item.kind == 'destination' &&
+            (item['date'].isEmpty ||
+                item['endDate'].isEmpty ||
+                item['endDate'].compareTo(item['date']) < 0)) {
+          throw StateError('Choose arrival and departure dates in order.');
+        }
+        for (final key in ['destinationId', 'endDestinationId']) {
+          if (item[key].isNotEmpty &&
+              !items.any((i) => i.kind == 'destination' && i.id == item[key])) {
+            throw StateError(
+                'The linked destination was removed. Choose another destination.');
+          }
+        }
         if (item['placeId'].isNotEmpty &&
             !items.any((i) => i.kind == 'place' && i.id == item['placeId'])) {
           throw StateError(
@@ -141,14 +154,18 @@ class TripPlanRepository {
       tripId,
       (items) => items
           .where((i) => i.id != id)
-          .map((i) => i['placeId'] == id
-              ? i.copy({
+          .map((i) => i.copy({
+                if (i['destinationId'] == id) 'destinationId': '',
+                if (i['endDestinationId'] == id) 'endDestinationId': '',
+                if (i['placeId'] == id) ...{
                   'placeId': '',
+                  'destinationId':
+                      items.firstWhere((p) => p.id == id)['destinationId'],
                   'title': i.title.isEmpty
                       ? items.firstWhere((p) => p.id == id).title
                       : i.title
-                })
-              : i)
+                }
+              }))
           .toList());
 
   Future<void> reorder(int tripId, List<String> orderedIds) =>

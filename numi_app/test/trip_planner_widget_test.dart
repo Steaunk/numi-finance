@@ -262,6 +262,100 @@ void main() {
     await tester.pumpAndSettle();
   });
   testWidgets(
+      'destinations can be added, reordered and selected without extra tabs',
+      (tester) async {
+    await show(tester, const Size(390, 844));
+    await tapVisible(tester, find.text('Destinations'));
+    for (final name in ['Tokyo', 'Kyoto']) {
+      await tapVisible(tester, find.text('Add destination'));
+      await tester.enterText(find.widgetWithText(TextFormField, 'Name'), name);
+      tester.testTextInput.hide();
+      expect(find.text('Visit dates'), findsOneWidget);
+      await tapVisible(tester, find.text('Save item'));
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 40)));
+      await tester.pumpAndSettle();
+    }
+    await tapVisible(tester, find.byTooltip('Move destination up').last);
+    await tester
+        .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 40)));
+    await tester.pumpAndSettle();
+    final plan = (await tester.runAsync(() => repo.watch(trip.id).first))!;
+    expect(plan.destinations.map((d) => d.title), ['Kyoto', 'Tokyo']);
+    await capture(tester, 'destinations');
+    await tapVisible(tester, find.byTooltip('Close panel'));
+    expect(find.text('Kyoto → Tokyo'), findsOneWidget);
+    await tapVisible(
+        tester,
+        find.widgetWithText(
+            DropdownButtonFormField<String>, 'Show destination'));
+    await tester.tap(find.text('Tokyo').last);
+    await tester.pumpAndSettle();
+    expect(find.byType(Tab), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('spending filters separate destination payments from transfers',
+      (tester) async {
+    await tester.runAsync(() async {
+      final tokyo = PlanItem.create('destination').copy(
+          {'title': 'Tokyo', 'date': '2026-10-01', 'endDate': '2026-10-02'});
+      final kyoto = PlanItem.create('destination').copy(
+          {'title': 'Kyoto', 'date': '2026-10-02', 'endDate': '2026-10-03'});
+      await repo.save(trip.id, tokyo);
+      await repo.save(trip.id, kyoto);
+      final hotel = PlanItem.create('booking').copy({
+        'title': 'Kyoto paid hotel',
+        'date': '2026-10-02',
+        'endDate': '2026-10-03',
+        'destinationId': kyoto.id,
+        'amount': '200',
+        'currency': 'SGD',
+        'paymentStatus': 'paid',
+        'paidDate': '2026-09-21'
+      });
+      await repo.save(trip.id, hotel);
+      await repo.save(
+          trip.id,
+          PlanItem.create('booking').copy({
+            'title': 'Intercity train',
+            'category': 'Train',
+            'date': '2026-10-02',
+            'destinationId': tokyo.id,
+            'endDestinationId': kyoto.id,
+            'amount': '50',
+            'currency': 'SGD',
+            'paymentStatus': 'paid',
+            'paidDate': '2026-09-21'
+          }));
+    });
+    await show(tester, const Size(390, 844));
+    await tapVisible(tester, find.byTooltip('View expenses'));
+    await tapVisible(
+        tester,
+        find.widgetWithText(
+            DropdownButtonFormField<String>, 'Spending by destination'));
+    await tester.tap(find.textContaining('Kyoto ·').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Kyoto paid hotel'), findsOneWidget);
+    expect(find.text('Intercity train'), findsNothing);
+    await capture(tester, 'destination-spending');
+    await tapVisible(
+        tester,
+        find.widgetWithText(
+            DropdownButtonFormField<String>, 'Spending by destination'));
+    await tester.tap(find.textContaining('Between destinations ·').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Intercity train'), findsOneWidget);
+    expect(find.text('Kyoto paid hotel'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets(
       'paid booking appears in expenses and either entry edits the same record',
       (tester) async {
     await show(tester, const Size(390, 844));

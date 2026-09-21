@@ -53,8 +53,9 @@ class TripListScreen extends ConsumerWidget {
                   final tasks = plan.ofKind('task');
                   final done =
                       tasks.where((i) => i['status'] == 'completed').length;
-                  final count =
-                      plan.items.where((i) => i.kind != 'task').length;
+                  final count = plan.items
+                      .where((i) => i.kind != 'task' && i.kind != 'destination')
+                      .length;
                   final total = trip.expenses.fold<double>(
                       0, (sum, e) => sum + e.displayAmount(currency));
                   final theme = Theme.of(context);
@@ -85,6 +86,12 @@ class TripListScreen extends ConsumerWidget {
                                           children: [
                                         Text(trip.destination,
                                             style: theme.textTheme.titleSmall),
+                                        if (plan.destinations.isNotEmpty)
+                                          Text(
+                                              plan.destinations
+                                                  .map((d) => d.title)
+                                                  .join(' → '),
+                                              style: secondary),
                                         const SizedBox(height: 4),
                                         Text(
                                             '${DateFormat('d MMM').format(trip.startDate)} – ${DateFormat('d MMM yyyy').format(trip.endDate)}',

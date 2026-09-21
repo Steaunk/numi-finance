@@ -9,11 +9,19 @@ import 'add_travel_expense_screen.dart';
 import '../widgets/plan_item_editor.dart';
 import '../../../models/travel_expense.dart';
 import '../../../models/trip.dart';
+import '../../../models/trip_plan.dart';
 
 /// Existing expense workflow embedded beneath the trip planner navigation.
-class TripExpensesScreen extends ConsumerWidget {
+class TripExpensesScreen extends ConsumerStatefulWidget {
   final int tripId;
   const TripExpensesScreen({super.key, required this.tripId});
+  @override
+  ConsumerState<TripExpensesScreen> createState() => _TripExpensesScreenState();
+}
+
+class _TripExpensesScreenState extends ConsumerState<TripExpensesScreen> {
+  int get tripId => widget.tripId;
+  String selectedDestination = '__all__';
   Future<void> editExpense(BuildContext context, WidgetRef ref, Trip trip,
       TravelExpense expense) async {
     if (expense.planItemId == null) {
@@ -45,13 +53,29 @@ class TripExpensesScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final currency = ref.watch(displayCurrencyProvider);
+    final plan = ref.watch(tripPlanProvider(tripId)).valueOrNull ?? TripPlan();
     return ref.watch(tripDetailProvider(tripId)).when(
         data: (trip) {
           if (trip == null) return const Center(child: Text('Trip not found'));
-          final totals = <String, double>{};
+          final groups = <String, double>{};
           for (final e in trip.expenses) {
+            final key = plan.expenseDestination(e.planItemId);
+            groups.update(key, (v) => v + e.displayAmount(currency),
+                ifAbsent: () => e.displayAmount(currency));
+          }
+          final selected = selectedDestination == '__all__' ||
+                  groups.containsKey(selectedDestination)
+              ? selectedDestination
+              : '__all__';
+          final expenses = trip.expenses
+              .where((e) =>
+                  selected == '__all__' ||
+                  plan.expenseDestination(e.planItemId) == selected)
+              .toList();
+          final totals = <String, double>{};
+          for (final e in expenses) {
             totals.update(e.category, (v) => v + e.displayAmount(currency),
                 ifAbsent: () => e.displayAmount(currency));
           }
@@ -64,6 +88,29 @@ class TripExpensesScreen extends ConsumerWidget {
                     child: ListView(
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
                         children: [
+                          if (plan.destinations.isNotEmpty ||
+                              groups.length > 1) ...[
+                            DropdownButtonFormField<String>(
+                              key: ValueKey('expense-destination-$selected'),
+                              initialValue: selected,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                  labelText: 'Spending by destination'),
+                              items: [
+                                const DropdownMenuItem(
+                                    value: '__all__',
+                                    child: Text('All destinations')),
+                                ...groups.entries.map((e) => DropdownMenuItem(
+                                    value: e.key,
+                                    child: Text(
+                                        '${plan.expenseDestinationLabel(e.key)} · ${CurrencyUtils.format(e.value, currency)}',
+                                        overflow: TextOverflow.ellipsis)))
+                              ],
+                              onChanged: (v) =>
+                                  setState(() => selectedDestination = v!),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
                           Card(
                               child: ListTile(
                                   title: const Text('Recorded expenses'),
@@ -79,15 +126,15 @@ class TripExpensesScreen extends ConsumerWidget {
                                       label: Text(
                                           '${e.key}: ${CurrencyUtils.format(e.value, currency)}')))
                                   .toList()),
-                          if (trip.expenses.isEmpty)
+                          if (expenses.isEmpty)
                             const Padding(
                                 padding: EdgeInsets.all(32),
                                 child: Center(child: Text('No expenses yet'))),
-                          ...trip.expenses.map((expense) => Card(
+                          ...expenses.map((expense) => Card(
                                   child: ListTile(
                                 title: Text(expense.name),
                                 subtitle: Text(
-                                    '${AppDateUtils.displayDate(expense.date)} · ${expense.category}${expense.planItemId == null ? '' : ' · Itinerary'}'),
+                                    '${AppDateUtils.displayDate(expense.date)} · ${expense.category}${expense.planItemId == null ? '' : ' · Itinerary'} · ${plan.expenseDestinationLabel(plan.expenseDestination(expense.planItemId))}'),
                                 onTap: () =>
                                     editExpense(context, ref, trip, expense),
                                 trailing: Row(

@@ -126,7 +126,7 @@
         <form onsubmit="handleAddTrip(event)">
             <div class="form-grid">
                 <div class="form-group">
-                    <label>Destination *</label>
+                    <label>Trip name *</label>
                     <input type="text" id="tripDest" required placeholder="e.g. Japan">
                 </div>
                 <div class="form-group">
@@ -297,9 +297,9 @@
         function renderTripDetail(tripId, data) {
             const container = document.getElementById(`tripDetail_${tripId}`);
             if (!container) return;
-            const el = TravelPlanner.mount(container, data.trip, data.expenses);
+            const el = TravelPlanner.mount(container, data.trip, data.expenses, data.display_currency);
 
-            let html = '';
+            let html = '<div data-expense-destinations style="margin-bottom:16px"></div>';
 
             // Expense table
             if (data.expenses.length > 0) {
@@ -315,7 +315,7 @@
                         const catOpts = TRAVEL_CATEGORIES.map(c =>
                             `<option value="${c}" ${c === exp.category ? 'selected' : ''}>${c}</option>`
                         ).join('');
-                        html += `<tr id="expRow_${exp.id}" class="editing-row"
+                        html += `<tr id="expRow_${exp.id}" data-expense-id="${exp.id}" class="editing-row"
                             onfocusout="onExpRowFocusOut(event, ${tripId}, ${exp.id})"
                             onkeydown="if(event.key==='Escape'){editingExpenseId=null;editingTripId=null;loadTripDetail(${tripId});}">
                             <td><input type="date" id="editExpDate_${exp.id}" value="${exp.date}" style="width:120px;"></td>
@@ -330,7 +330,7 @@
                             <td><button class="btn btn-danger" onclick="event.stopPropagation(); deleteExpense(${tripId}, ${exp.id})">Del</button></td>
                         </tr>`;
                     } else {
-                        html += `<tr class="exp-row-clickable" onclick="startEditExpense(${tripId}, ${exp.id})">
+                        html += `<tr data-expense-id="${exp.id}" class="exp-row-clickable" onclick="startEditExpense(${tripId}, ${exp.id})">
                             <td>${exp.date}</td>
                             <td>${esc(exp.name)}${exp.plan_item_id ? '<small style="display:block">Itinerary</small>' : `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); TravelPlanner.editExpense(${tripId}, ${exp.id}, true)">Add booking details</button><button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); TravelPlanner.editExpense(${tripId}, ${exp.id}, true, 'activity')">Add to itinerary</button>`}</td>
                             <td>${esc(exp.category)}</td>
@@ -344,7 +344,7 @@
                 html += `<tr class="total-row">
                     <td colspan="3">Total</td>
                     <td></td>
-                    <td style="text-align:right;">${data.total_converted.toLocaleString(undefined, {minimumFractionDigits: 2})} ${data.display_currency}</td>
+                    <td data-expense-total style="text-align:right;">${data.total_converted.toLocaleString(undefined, {minimumFractionDigits: 2})} ${data.display_currency}</td>
                     <td class="hide-mobile"></td><td></td>
                 </tr></tbody></table>`;
             } else {
@@ -393,6 +393,7 @@
             </div>`;
 
             el.innerHTML = html;
+            TravelPlanner.refreshExpenses(tripId);
 
             // Focus name input when entering edit mode
             if (editingExpenseId) {

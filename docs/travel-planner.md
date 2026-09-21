@@ -16,6 +16,18 @@ Each booking or activity supports one payment in this release. Cancelling an ite
 
 Forms show the essential fields first; expand **More details** for status, notes, links and booking references. Map actions and edit controls are in item details, keeping the daily itinerary compact.
 
+## Multiple destinations in one trip
+
+Give the whole trip a name (for example “Japan autumn trip”), then open **Destinations** to add Tokyo, Kyoto and Osaka as separate visits. Cities, regions and countries all use the same destination record. Each visit has arrival and departure dates within the trip dates; same-day visits and overlapping transfer days are valid. Use the arrows to reorder the route. The App retains its two primary tabs.
+
+Choose **Show destination** to filter the itinerary, saved places and booking panel. Place-linked activities inherit the place’s destination. Free activities and accommodation can select a destination directly. Flights, trains, buses and car rentals can select **From destination** and **To destination**. A transfer appears in both relevant destination views while remaining one record.
+
+**Spending by destination** groups linked payments by destination; transfers between different destinations have their own group, and standalone/unassigned payments remain **Unassigned**. No amount is counted twice. Existing standalone expenses can gain destination information through **Add booking details** or **Add to itinerary**. Removing a destination clears its references while preserving places, activities, bookings and payments; removing a saved place preserves its destination on the surviving activities.
+
+Destinations are `kind: destination` items in the existing revisioned plan, with `id`, `title`, `date` and `endDate`. Other items reference them using `destinationId`; transport can also use `endDestinationId`. References must resolve within the same trip. The array preserves route order, and existing offline persistence, retries and conflict handling apply. No database schema change is needed; the existing trip API’s `destination` field now serves as the trip name.
+
+Run `node backend/expenses/browser_tests/travel_destinations.cjs` against the isolated preview (`NUMI_TEST_URL`, default `http://127.0.0.1:8767`) for route editing, overlapping dates, place inheritance, transfer spending, offline removal and reload recovery.
+
 ## External links
 
 Places, activities and bookings support multiple links with a purpose, optional display name and URL. Paste a URL or share text into **Add links** and review the detected URLs before saving. Short URLs are preserved; the app does not expand or scrape them. Known services get platform names, and other links show their host.

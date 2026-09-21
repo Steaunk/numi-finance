@@ -12,13 +12,13 @@ from django.views.decorators.http import require_http_methods
 from .models import Trip, TripPlan, TravelExpense, TRAVEL_CATEGORIES
 from core.services import compute_snapshot_amounts, get_rates
 
-KINDS = {'place', 'activity', 'booking', 'task'}
+KINDS = {'place', 'activity', 'booking', 'task', 'destination'}
 FIELDS = {
     'id', 'kind', 'title', 'category', 'status', 'priority', 'date', 'endDate',
     'time', 'endTime', 'timezone', 'endTimezone', 'address', 'endAddress',
     'links', 'notes', 'placeId', 'confirmation', 'contact',
     'cancelBy', 'assignee', 'amount', 'currency', 'paymentStatus', 'paidDate',
-    'expenseClientId', 'expenseCategory',
+    'expenseClientId', 'expenseCategory', 'destinationId', 'endDestinationId',
 }
 
 
@@ -56,6 +56,11 @@ def validate_content(content):
                 raise ValueError('Invalid item status')
         if item['kind'] == 'booking' and not item.get('date'):
             raise ValueError('Bookings require a start date')
+        if item['kind'] == 'destination':
+            if not item.get('date') or not item.get('endDate') or item['endDate'] < item['date']:
+                raise ValueError('Destinations need arrival and departure dates in order')
+            if item.get('destinationId') or item.get('endDestinationId') or item.get('placeId'):
+                raise ValueError('A destination cannot link to another destination or place')
         if item.get('paymentStatus'):
             if item['kind'] not in ('booking', 'activity') or item['paymentStatus'] not in ('unpaid', 'paid'):
                 raise ValueError('Invalid payment status')
@@ -99,6 +104,13 @@ def validate_content(content):
     places = {i['id'] for i in items if i['kind'] == 'place'}
     if any(i.get('placeId') and i['placeId'] not in places for i in items):
         raise ValueError('Linked place does not exist in this trip')
+    destinations = {i['id'] for i in items if i['kind'] == 'destination'}
+    for item in items:
+        for key in ('destinationId', 'endDestinationId'):
+            if item.get(key) and item[key] not in destinations:
+                raise ValueError('Linked destination does not exist in this trip')
+        if item.get('endDestinationId') and (item['kind'] != 'booking' or item.get('category') not in ('Flight', 'Train', 'Bus', 'Car rental')):
+            raise ValueError('Only transport bookings can link an arrival destination')
     return content
 
 
@@ -119,7 +131,8 @@ def serialize(plan):
 
 @require_http_methods(['GET', 'PUT'])
 def trip_plan(request, trip_id):
-    if not Trip.objects.filter(pk=trip_id).exists():
+    trip = Trip.objects.filter(pk=trip_id).first()
+    if trip is None:
         return JsonResponse({'error': 'Trip not found'}, status=404)
     if request.method == 'GET':
         plan = TripPlan.objects.filter(trip_id=trip_id).first()
@@ -132,6 +145,8 @@ def trip_plan(request, trip_id):
         if not isinstance(data, dict):
             raise ValueError('Expected an object')
         content = validate_content(data.get('content'))
+        if any(i['kind'] == 'destination' and (i['date'] < trip.start_date.isoformat() or i['endDate'] > trip.end_date.isoformat()) for i in content['items']):
+            raise ValueError('Destination dates must be within the trip dates')
         revision = data.get('revision')
         mutation = data.get('mutation_id')
         if type(revision) is not int or revision < 0:

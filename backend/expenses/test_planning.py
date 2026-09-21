@@ -14,6 +14,31 @@ class TripPlanTests(TestCase):
         return self.client.put(url or self.url, data=json.dumps({'content': self.content if content is None else content,
             'revision': revision, 'mutation_id': mutation}), content_type='application/json')
 
+    def test_multi_destination_route_and_overlapping_transfer_day(self):
+        tokyo = {'id': 'tokyo', 'kind': 'destination', 'title': 'Tokyo', 'date': '2026-10-01', 'endDate': '2026-10-02'}
+        kyoto = {'id': 'kyoto', 'kind': 'destination', 'title': 'Kyoto', 'date': '2026-10-02', 'endDate': '2026-10-03'}
+        rail = {'id': 'rail', 'kind': 'booking', 'title': 'Shinkansen', 'category': 'Train', 'date': '2026-10-02', 'destinationId': 'tokyo', 'endDestinationId': 'kyoto'}
+        restaurant = {'id': 'restaurant', 'kind': 'place', 'title': 'Dinner', 'destinationId': 'kyoto'}
+        content = {'items': [tokyo, kyoto, rail, restaurant]}
+        self.assertEqual(self.put(content).status_code, 200)
+        self.assertEqual(self.client.get(self.url).json()['content'], content)
+        reordered = {'items': [kyoto, tokyo, rail, restaurant]}
+        self.assertEqual(self.put(reordered, revision=1, mutation='reorder').status_code, 200)
+        self.assertEqual(self.client.get(self.url).json()['content']['items'][0]['id'], 'kyoto')
+        self.assertEqual(self.put(reordered, revision=1, mutation='reorder').status_code, 200)
+        self.assertEqual(self.put(content, revision=1, mutation='stale').status_code, 409)
+
+    def test_destination_validation_and_trip_isolation(self):
+        destination = {'id': 'tokyo', 'kind': 'destination', 'title': 'Tokyo', 'date': '2026-10-01', 'endDate': '2026-10-02'}
+        for change in [{'date': ''}, {'endDate': '2026-09-30'}, {'endDate': '2026-10-04'}, {'destinationId': 'tokyo'}, {'paymentStatus': 'paid'}]:
+            self.assertEqual(self.put({'items': [{**destination, **change}]}).status_code, 400)
+        self.assertEqual(self.put({'items': [destination]}).status_code, 200)
+        other = Trip.objects.create(destination='Other', start_date='2026-10-01', end_date='2026-10-03')
+        content = {'items': [{'id': 'place', 'kind': 'place', 'title': 'Cafe', 'destinationId': 'tokyo'}]}
+        self.assertEqual(self.put(content, url=f'/expenses/api/travel/trips/{other.id}/plan/').status_code, 400)
+        content = {'items': [destination, {'id': 'hotel', 'kind': 'booking', 'category': 'Accommodation', 'title': 'Hotel', 'date': '2026-10-01', 'endDate': '2026-10-02', 'endDestinationId': 'tokyo'}]}
+        self.assertEqual(self.put(content, revision=1, mutation='invalid-end').status_code, 400)
+
     def test_old_trip_returns_empty_plan_without_creating_row(self):
         self.assertEqual(self.client.get(self.url).json(), {'content': {'items': []}, 'revision': 0, 'payment_ids': {}})
         self.assertFalse(TripPlan.objects.exists())

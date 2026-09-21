@@ -432,6 +432,54 @@ void main() {
     expect(row.amount, 200);
   });
 
+  test(
+      'multiple destinations preserve route, inherited places, transfers and payments',
+      () async {
+    final repo = TripPlanRepository(db, null);
+    final tokyo = PlanItem.create('destination').copy(
+        {'title': 'Tokyo', 'date': '2026-10-01', 'endDate': '2026-10-02'});
+    final kyoto = PlanItem.create('destination').copy(
+        {'title': 'Kyoto', 'date': '2026-10-02', 'endDate': '2026-10-03'});
+    await repo.save(id, tokyo);
+    await repo.save(id, kyoto);
+    final sight = place('Temple').copy({'destinationId': kyoto.id});
+    await repo.save(id, sight);
+    final visit = paidBooking()
+        .copy({'kind': 'activity', 'title': '', 'placeId': sight.id});
+    await repo.save(id, visit);
+    final rail = paidBooking().copy({
+      'title': 'Train',
+      'category': 'Train',
+      'destinationId': tokyo.id,
+      'endDestinationId': kyoto.id
+    });
+    await repo.save(id, rail);
+    var plan = await read(repo);
+    expect(plan.destinationsOn('2026-10-02').length, 2);
+    expect(plan.destinationIdFor(visit), kyoto.id);
+    expect(plan.expenseDestination(visit.id), kyoto.id);
+    expect(plan.expenseDestination(rail.id), '__transfers__');
+    expect(plan.matchesDestination(rail, tokyo.id), true);
+    expect(plan.matchesDestination(rail, kyoto.id), true);
+    expect(plan.expenseDestination(null), '');
+    await repo.reorder(id, [kyoto.id, tokyo.id]);
+    plan = await read(TripPlanRepository(db, null));
+    expect(plan.destinations.map((d) => d.id), [kyoto.id, tokyo.id]);
+    await repo.remove(id, sight.id);
+    plan = await read(repo);
+    expect(plan.destinationIdFor(plan.find(visit.id)!), kyoto.id);
+    expect(plan.find(visit.id)!.title, 'Temple');
+    await repo.remove(id, kyoto.id);
+    plan = await read(repo);
+    expect(plan.find(visit.id), isNotNull);
+    expect(plan.destinationIdFor(plan.find(visit.id)!), '');
+    expect(plan.find(rail.id)!['endDestinationId'], '');
+    expect((await db.tripDao.getExpensesForTrip(id)).length, 2);
+    await expectLater(
+        repo.save(id, place('Dangling').copy({'destinationId': kyoto.id})),
+        throwsStateError);
+  });
+
   test('conflict server choice removes discarded local payment', () async {
     api.revision = 1;
     final repo = TripPlanRepository(db, api);
