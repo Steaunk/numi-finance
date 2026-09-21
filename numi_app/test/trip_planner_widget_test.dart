@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:drift/native.dart';
+import 'package:numi_app/config/theme.dart';
 import 'package:numi_app/data/local/database.dart';
 import 'package:numi_app/data/repositories/trip_plan_repository.dart';
 import 'package:numi_app/models/trip.dart';
@@ -80,7 +81,8 @@ void main() {
             .copy({'title': 'Pack chargers', 'category': 'Packing'}));
   });
   tearDown(() async => db.close());
-  Future<void> show(WidgetTester tester, Size size) async {
+  Future<void> show(WidgetTester tester, Size size,
+      {bool dark = false, double scale = 1}) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -94,43 +96,86 @@ void main() {
           displayCurrencyProvider.overrideWith((ref) => 'SGD'),
           tripDetailProvider(trip.id).overrideWith((ref) => Stream.value(trip)),
         ],
-        child: MaterialApp(
-            home: RepaintBoundary(
-                key: boundary, child: TripDetailScreen(tripId: trip.id)))));
+        child: RepaintBoundary(
+            key: boundary,
+            child: MaterialApp(
+                debugShowCheckedModeBanner: false,
+                theme: dark ? AppTheme.dark : AppTheme.light,
+                builder: (context, child) => MediaQuery(
+                    data: MediaQuery.of(context)
+                        .copyWith(textScaler: TextScaler.linear(scale)),
+                    child: child!),
+                home: TripDetailScreen(tripId: trip.id)))));
     await tester.pumpAndSettle();
   }
 
   Future<void> tab(WidgetTester tester, String name) async {
     final target = find.widgetWithText(Tab, name);
+    if (target.evaluate().isEmpty) {
+      await tester.scrollUntilVisible(target, 200,
+          scrollable: find.byType(Scrollable).last);
+    }
+    await tester.ensureVisible(target);
+    await tester.tap(target);
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> capture(WidgetTester tester, String name) async {
+    final prefix = Platform.environment['NUMI_PLANNER_SCREENSHOT'];
+    if (prefix == null) return;
+    final render =
+        boundary.currentContext!.findRenderObject() as RenderRepaintBoundary;
+    final image = (await tester.runAsync(() => render.toImage(pixelRatio: 1)))!;
+    final bytes = await tester
+        .runAsync(() => image.toByteData(format: ui.ImageByteFormat.png));
+    await tester.runAsync(() =>
+        File('$prefix-$name.png').writeAsBytes(bytes!.buffer.asUint8List()));
+    image.dispose();
+  }
+
+  Future<void> tapVisible(WidgetTester tester, Finder target) async {
+    if (target.evaluate().isEmpty) {
+      await tester.scrollUntilVisible(target, 200,
+          scrollable: find.byType(Scrollable).last);
+    }
     await tester.ensureVisible(target);
     await tester.tap(target);
     await tester.pumpAndSettle();
   }
 
   testWidgets(
-      'phone flows preserve expenses and support places, itinerary, bookings and tasks',
+      'two views and sheets preserve the selected day and existing features',
       (tester) async {
     await show(tester, const Size(390, 844));
-    expect(find.text('Upcoming'), findsOneWidget);
-    expect(find.text('Accommodation gaps'), findsNothing);
-    await tab(tester, 'Places');
-    expect(find.textContaining('A very long cafe'), findsOneWidget);
-    await tester.tap(find.byTooltip('Add place'));
-    await tester.pumpAndSettle();
+    expect(find.byType(Tab), findsNWidgets(2));
+    await capture(tester, 'phone-itinerary');
+    await tapVisible(tester, find.byKey(const ValueKey('day-2026-10-02')));
+    expect(find.text('Friday, 2 Oct'), findsOneWidget);
+    await tab(tester, 'Saved places');
+    await capture(tester, 'phone-places');
+    await tapVisible(tester, find.byTooltip('Add place'));
     await tester.enterText(
         find.widgetWithText(TextFormField, 'Name'), 'Nishiki Market');
     tester.testTextInput.hide();
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Save item'));
-    await tester.tap(find.text('Save item'));
-    await tester.pumpAndSettle();
-    final savedPlan = await tester.runAsync(() => repo.watch(trip.id).first);
-    expect(savedPlan!.ofKind('place').length, 2);
+    await tapVisible(tester, find.text('More details'));
+    await capture(tester, 'phone-form');
+    expect(find.text('Add links'), findsOneWidget);
+    await tapVisible(tester, find.text('Save item'));
+    expect(
+        (await tester.runAsync(() => repo.watch(trip.id).first))!
+            .ofKind('place')
+            .length,
+        2);
     await tab(tester, 'Itinerary');
-    expect(find.text('Activities'), findsOneWidget);
-    await tab(tester, 'Bookings');
-    expect(find.text('Kyoto riverside hotel'), findsOneWidget);
-    await tab(tester, 'Preparation');
+    expect(find.text('Friday, 2 Oct'), findsOneWidget);
+    await tapVisible(tester, find.byTooltip('View bookings'));
+    expect(find.text('Kyoto riverside hotel'), findsWidgets);
+    await tapVisible(tester, find.text('Kyoto riverside hotel').last);
+    expect(find.text('KYOTO-123'), findsOneWidget);
+    await tapVisible(tester, find.byTooltip('Close panel').last);
+    await tapVisible(tester, find.byTooltip('Close panel'));
+    await tapVisible(tester, find.byTooltip('View preparation'));
     await tester.tap(find.byType(Checkbox).first);
     await tester.pumpAndSettle();
     expect(
@@ -138,9 +183,74 @@ void main() {
             .ofKind('task')
             .single['status'],
         'completed');
-    await tab(tester, 'Expenses');
+    await capture(tester, 'phone-preparation');
+    await tapVisible(tester, find.byTooltip('Close panel'));
+    await tapVisible(tester, find.byTooltip('View expenses'));
     expect(find.text('No expenses yet'), findsOneWidget);
     expect(find.byTooltip('Add expense'), findsOneWidget);
+    await tapVisible(tester, find.byTooltip('Close panel'));
+    expect(find.text('Friday, 2 Oct'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('activity edits, moves and reordering remain persistent',
+      (tester) async {
+    final extra = PlanItem.create('activity')
+        .copy({'title': 'Evening walk', 'date': '2026-10-01'});
+    await repo.save(trip.id, extra);
+    await show(tester, const Size(390, 1000));
+    await tapVisible(tester, find.byTooltip('Reorder activities'));
+    final handles = find.byType(ReorderableDragStartListener);
+    final start = tester.getCenter(handles.last);
+    final end = tester.getTopLeft(handles.first) - const Offset(0, 40);
+    final gesture = await tester.startGesture(start);
+    await tester.pump(const Duration(milliseconds: 100));
+    for (var step = 1; step <= 10; step++) {
+      await gesture.moveTo(Offset.lerp(start, end, step / 10)!);
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.pumpAndSettle();
+    await gesture.up();
+    await tester.pumpAndSettle();
+    var plan = (await tester.runAsync(() => repo.watch(trip.id).first))!;
+    expect(plan.ofKind('activity').first.id, extra.id);
+    expect(plan.ofKind('booking').length, 1);
+    await tapVisible(tester, find.byTooltip('Finish reordering'));
+    await tapVisible(tester, find.text('Evening walk'));
+    await tapVisible(tester, find.text('Edit activity'));
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Name'), 'River walk');
+    tester.testTextInput.hide();
+    await tapVisible(tester, find.text('Save item'));
+    expect(find.text('River walk'), findsWidgets);
+    await tapVisible(tester, find.byTooltip('Item actions'));
+    await tapVisible(tester, find.text('Move to another day'));
+    await tester.tap(find.text('2').last);
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    plan = (await tester.runAsync(() => repo.watch(trip.id).first))!;
+    expect(plan.find(extra.id)!['date'], '2026-10-02');
+    await tapVisible(tester, find.byTooltip('Item actions'));
+    await tapVisible(tester, find.text('Leave unassigned'));
+    await tapVisible(tester, find.byTooltip('Close panel'));
+    expect(find.text('Friday, 2 Oct'), findsOneWidget);
+    await tapVisible(tester, find.byKey(const ValueKey('day-')));
+    expect(find.text('River walk'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('small screen and large text work in dark mode', (tester) async {
+    await show(tester, const Size(320, 700), dark: true, scale: 1.5);
+    await capture(tester, 'small-dark');
+    await tab(tester, 'Saved places');
+    await tapVisible(tester, find.textContaining('A very long cafe'));
+    await tapVisible(tester, find.text('Edit place'));
+    await tapVisible(tester, find.text('More details'));
+    await tapVisible(tester, find.text('Save item'));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
@@ -212,25 +322,13 @@ void main() {
       'desktop renders expanded links and supports imported share links',
       (tester) async {
     await show(tester, const Size(1100, 900));
-    await tab(tester, 'Places');
+    await tab(tester, 'Saved places');
     await tester.tap(find.textContaining('A very long cafe'));
     await tester.pumpAndSettle();
     expect(find.text('Menu'), findsOneWidget);
-    expect(find.widgetWithText(TextButton, 'Google Maps'), findsOneWidget);
-    expect(find.widgetWithText(TextButton, 'Baidu Maps'), findsOneWidget);
-    // Optional visual QA artifact; never writes a golden into the repository.
-    if (Platform.environment['NUMI_PLANNER_SCREENSHOT']
-        case final String path) {
-      final render =
-          boundary.currentContext!.findRenderObject() as RenderRepaintBoundary;
-      final image =
-          (await tester.runAsync(() => render.toImage(pixelRatio: 1)))!;
-      final bytes = await tester
-          .runAsync(() => image.toByteData(format: ui.ImageByteFormat.png));
-      await tester
-          .runAsync(() => File(path).writeAsBytes(bytes!.buffer.asUint8List()));
-      image.dispose();
-    }
+    expect(find.widgetWithText(OutlinedButton, 'Google Maps'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Baidu Maps'), findsOneWidget);
+    await capture(tester, 'desktop-details');
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(MaterialApp(
         home: Scaffold(body: StatefulBuilder(builder: (context, setState) {

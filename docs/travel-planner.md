@@ -1,15 +1,17 @@
 # Travel planner
 
-The Travel tab now includes Overview, Itinerary, Places, Bookings, Preparation and Expenses. All planner records save locally before network work. Existing trip expense records remain separate: adding a reservation does not create a payment.
+The Flutter Travel workspace has two main views: **Itinerary** and **Saved places**. Compact booking, preparation and spending summaries open panels without losing the selected day. Past trips are collapsed in the trip list. All planner records save locally before network work. Existing trip expense records remain separate: adding a reservation does not create a payment.
 
 ## Using the planner
 
-1. Create a trip and open **Places** to save restaurants, shops, sights or practical stops. Use category, priority and scheduled filters.
-2. Expand a place and select **Add to itinerary**. Pick a day and optional local start/end time; leave the day empty for an unassigned activity. Activities reference their place, so updating the place updates its displayed address and links. An optional activity name overrides the place name. Deleting the place keeps the activity and its last display name.
-3. In **Itinerary**, select a day and drag activity handles to choose the order. Edit an activity to move it to another date. Bookings appear alongside activities from the original record, without duplication.
-4. Add accommodation, transport and reservations in **Bookings**. Check-in and checkout use local calendar dates; checkout is not counted as an overnight stay. For overnight flights or trains, use **No accommodation needed** for the relevant night. Transport can arrive on an earlier local date across time zones; times retain the entered zone labels, without automatic conversion.
-5. Track preparation, packing and shopping in **Preparation**. Due dates, responsible names and cancellation deadlines are displayed in the app, without notifications or messages to other people.
-6. Continue recording payments in **Expenses**. No budgeting, expense splitting or automatic booking-to-expense conversion is included in this release.
+1. Create a trip and open **Saved places** to save restaurants, shops, sights or practical stops. Open the filter button for category, priority and scheduled filters.
+2. Tap a place and select **Add to itinerary**. Pick a day and optional local start/end time; leave the day empty for an unassigned activity. Activities reference their place, so updating the place updates its displayed address and links. An optional activity name overrides the place name. Deleting the place keeps the activity and its last display name.
+3. In **Itinerary**, select a day, tap **Reorder activities**, and drag handles to choose the order. Tap an activity for details; its menu offers **Move to another day**, **Leave unassigned**, completion and deletion. Bookings appear alongside activities from the original record, without duplication.
+4. Add accommodation, transport and reservations from the booking summary at the top. Check-in and checkout use local calendar dates; checkout is not counted as an overnight stay. For overnight flights or trains, use **No accommodation needed** for the relevant night. Transport can arrive on an earlier local date across time zones; times retain the entered zone labels, without automatic conversion.
+5. Track preparation, packing and shopping from the preparation summary. Due dates, responsible names and cancellation deadlines are displayed in the app, without notifications or messages to other people.
+6. Continue recording payments from the spending summary. No budgeting, expense splitting or automatic booking-to-expense conversion is included in this release.
+
+Forms show the essential fields first; expand **More details** for status, notes, links and booking references. Map actions and edit controls are in item details, keeping the daily itinerary compact.
 
 ## External links
 
@@ -35,7 +37,7 @@ Trips must sync before their documents. Trip creation uses an optional stable `c
 
 ## Validation
 
-The Django web page at `/expenses/travel/` shares the same six sections and planning API. It supports browser-local pending documents, retry and explicit conflict resolution. Planning edits remain in browser storage across reloads; opening the web page itself and managing trips or expenses requires a connection. Flutter remains the fully offline client.
+The Django web page at `/expenses/travel/` retains its six sections and shares the planning API. It supports browser-local pending documents, retry and explicit conflict resolution. Planning edits remain in browser storage across reloads; opening the web page itself and managing trips or expenses requires a connection. Flutter remains the fully offline client.
 
 Backend tests: `python manage.py test expenses`; migration check: `python manage.py makemigrations --check --dry-run`.
 
@@ -43,7 +45,7 @@ Client: `flutter analyze --no-fatal-infos` and `flutter test`. Planner tests cov
 
 Web browser regression: start Django on `127.0.0.1:8765` using an isolated test database, then run `node backend/expenses/browser_tests/travel_planner.cjs` from the repository root with Playwright available. `CHROME_PATH` optionally selects an installed Chrome executable. This test creates trips on the local preview and covers mobile/desktop layout, planning, links, offline retry, conflicts and reload recovery; it refuses non-local hosts.
 
-To save a visual QA artifact outside the repository, set `NUMI_PLANNER_SCREENSHOT=/tmp/planner.png` when running `flutter test test/trip_planner_widget_test.dart`.
+To save named phone, desktop, form and dark-mode PNG artifacts outside the repository, set `NUMI_PLANNER_SCREENSHOT=/tmp/planner` when running `flutter test test/trip_planner_widget_test.dart`.
 For readable text in that artifact, also set `NUMI_PLANNER_FONT_DIR` to the Flutter SDK's `bin/cache/artifacts/material_fonts` directory.
 
 Baidu links follow the [official web map URL documentation](https://lbsyun.baidu.com/docs/webapi?title=mapadjustment%2Furi%2Fweb); no API key or location permission is required for generated search links.
