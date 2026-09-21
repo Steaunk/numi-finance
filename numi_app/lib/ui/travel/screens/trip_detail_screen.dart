@@ -883,11 +883,10 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
       ]),
       const SizedBox(height: 9),
       Text(trip.destination,
-          style: const TextStyle(
-              fontSize: 34,
-              height: 1.12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: -1)),
+          style: Theme.of(context)
+              .textTheme
+              .headlineSmall
+              ?.copyWith(fontWeight: FontWeight.bold)),
       const SizedBox(height: 10),
       Text(
           '${DateFormat('d MMM').format(trip.startDate)} – ${DateFormat('d MMM yyyy').format(trip.endDate)} · ${tripDays(trip.startDate, trip.endDate).length} days',
@@ -960,33 +959,20 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
           return planAsync.when(
               data: (plan) => Scaffold(
                     backgroundColor: travelBackground(context),
-                    appBar: AppBar(
-                        backgroundColor: travelBackground(context),
-                        surfaceTintColor: Colors.transparent,
-                        centerTitle: true,
-                        title: Text('MY TRIPS',
-                            style: TextStyle(
-                                fontSize: 12,
-                                letterSpacing: 1.5,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant)),
-                        actions: [
-                          PopupMenuButton<String>(
-                              tooltip: 'Trip options',
-                              onSelected: (value) => tripMenu(value, trip),
-                              itemBuilder: (_) => const [
-                                    PopupMenuItem(
-                                        value: 'sync',
-                                        child: Text('Sync trip')),
-                                    PopupMenuItem(
-                                        value: 'notes',
-                                        child: Text('Trip notes')),
-                                    PopupMenuItem(
-                                        value: 'delete',
-                                        child: Text('Delete trip')),
-                                  ])
-                        ]),
+                    appBar: AppBar(title: const Text('Trip details'), actions: [
+                      PopupMenuButton<String>(
+                          tooltip: 'Trip options',
+                          onSelected: (value) => tripMenu(value, trip),
+                          itemBuilder: (_) => const [
+                                PopupMenuItem(
+                                    value: 'sync', child: Text('Sync trip')),
+                                PopupMenuItem(
+                                    value: 'notes', child: Text('Trip notes')),
+                                PopupMenuItem(
+                                    value: 'delete',
+                                    child: Text('Delete trip')),
+                              ])
+                    ]),
                     body: Align(
                         alignment: Alignment.topCenter,
                         child: ConstrainedBox(
@@ -995,7 +981,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                                 key:
                                     PageStorageKey('trip-workspace-${trip.id}'),
                                 padding:
-                                    const EdgeInsets.fromLTRB(24, 12, 24, 32),
+                                    const EdgeInsets.fromLTRB(16, 16, 16, 32),
                                 children: [
                                   header(trip, plan),
                                   TabBar(

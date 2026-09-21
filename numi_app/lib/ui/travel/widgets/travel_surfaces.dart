@@ -3,13 +3,10 @@ import 'package:intl/intl.dart';
 import '../../../models/trip_plan.dart';
 
 Color travelBackground(BuildContext context) =>
-    Theme.of(context).brightness == Brightness.dark
-        ? const Color(0xFF15171E)
-        : const Color(0xFFF7F8FC);
+    Theme.of(context).scaffoldBackgroundColor;
 Color travelSurface(BuildContext context) =>
-    Theme.of(context).brightness == Brightness.dark
-        ? const Color(0xFF22252E)
-        : Colors.white;
+    Theme.of(context).cardTheme.color ??
+    Theme.of(context).colorScheme.surfaceContainerLow;
 
 String travelDate(String value) {
   final date = DateTime.tryParse(value);
@@ -33,7 +30,7 @@ IconData planIcon(PlanItem item) => switch (item['category']) {
           : Icons.place_outlined,
     };
 
-/// Opaque, quiet surfaces shared by trip lists, timelines and modal details.
+/// Travel items use the same card theme as the other app sections.
 class TravelTile extends StatelessWidget {
   final String title;
   final String subtitle;
@@ -52,16 +49,16 @@ class TravelTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Material(
+    return Card(
+      margin: EdgeInsets.zero,
       color: tinted
           ? colors.primaryContainer.withValues(alpha: .45)
           : travelSurface(context),
-      borderRadius: BorderRadius.circular(18),
       child: InkWell(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         onTap: onTap,
         child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
             child: Row(children: [
               Icon(icon,
                   size: 22,
