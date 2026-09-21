@@ -63,6 +63,21 @@ class PlanItem {
   String get title => this['title'];
   bool get cancelled =>
       this['status'] == 'cancelled' || this['status'] == 'skipped';
+  bool get isStay => kind == 'booking' && this['category'] == 'Accommodation';
+  int? get stayNights {
+    if (!isStay) return null;
+    final start = DateTime.tryParse(this['date']);
+    final end = DateTime.tryParse(this['endDate']);
+    if (start == null || end == null) return null;
+    final nights = DateTime.utc(end.year, end.month, end.day)
+        .difference(DateTime.utc(start.year, start.month, start.day))
+        .inDays;
+    return nights > 0 ? nights : null;
+  }
+
+  String get stayDuration => stayNights == null
+      ? ''
+      : '${stayNights!} ${stayNights == 1 ? 'night' : 'nights'}';
   PlanItem copy(Map<String, String> changes, {List<PlanLink>? links}) =>
       PlanItem({...fields, ...changes}, links: links ?? this.links);
   Map<String, dynamic> toJson() =>

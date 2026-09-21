@@ -536,6 +536,13 @@ void main() {
       'category': 'No accommodation needed',
       'date': '2026-10-03'
     });
+    expect(stay.stayNights, 2);
+    expect(stay.stayDuration, '2 nights');
+    expect(stay.copy({'endDate': '2026-10-02'}).stayDuration, '1 night');
+    expect(stay.copy({'endDate': '2026-10-01'}).stayNights, isNull);
+    expect(
+        stay.copy({'date': '2026-10-31', 'endDate': '2026-11-02'}).stayNights,
+        2);
     expect(TripPlan(items: [stay]).hasStay('2026-10-02'), true);
     expect(TripPlan(items: [stay]).hasStay('2026-10-03'), false);
     expect(

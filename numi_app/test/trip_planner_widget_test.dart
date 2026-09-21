@@ -270,10 +270,20 @@ void main() {
     await tester.enterText(
         find.widgetWithText(TextFormField, 'Name'), 'One-entry hotel');
     tester.testTextInput.hide();
-    await tapVisible(tester, find.text('Check-out date'));
-    await tester.tap(find.text('3').last);
+    await tapVisible(tester, find.text('Stay duration'));
+    await tester.tap(find.byTooltip('Switch to input'));
+    await tester.pumpAndSettle();
+    final rangeFields = find.descendant(
+        of: find.byType(DateRangePickerDialog),
+        matching: find.byType(TextField));
+    await tester.enterText(rangeFields.first, '10/01/2026');
+    await tester.enterText(rangeFields.last, '10/03/2026');
     await tester.tap(find.text('OK'));
     await tester.pumpAndSettle();
+    expect(find.textContaining('Check-in 2026-10-01\nCheck-out 2026-10-03'),
+        findsOneWidget);
+    expect(find.textContaining('2 nights'), findsWidgets);
+    await capture(tester, 'stay-duration');
     await tapVisible(tester,
         find.widgetWithText(TextFormField, 'Amount (optional until paid)'));
     await tester.enterText(

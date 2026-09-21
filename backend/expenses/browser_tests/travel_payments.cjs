@@ -73,6 +73,27 @@ const assert = require('node:assert/strict');
   ledger=await api(ledgerURL);assert.equal(ledger.expenses.length,3);
   await page.getByRole('tab',{name:'Expenses',exact:true}).click();
   await page.screenshot({path:'/tmp/numi-itinerary-payments-web.png',fullPage:true});
+  // Accommodation is one multi-night duration and one total payment.
+  await page.getByRole('tab',{name:'Bookings',exact:true}).click();
+  await page.getByRole('button',{name:'+ Add booking'}).click();
+  await dialog.locator('[name=title]').fill('Two-night hotel');
+  await dialog.getByLabel('Check-in date',{exact:true}).fill('2026-10-01');
+  await dialog.getByLabel('Check-out date',{exact:true}).fill('2026-10-03');
+  assert.match(await dialog.locator('[data-stay-duration]').textContent(),/2 nights/);
+  await dialog.locator('[name=amount]').fill('400');
+  await dialog.locator('[name=paymentStatus]').selectOption('paid');
+  await page.getByRole('button',{name:'Save item',exact:true}).click();
+  await waitLedger(data=>data.expenses.length===4);
+  ledger=await api(ledgerURL);
+  assert.equal(ledger.expenses.find(e=>e.name==='Two-night hotel').amount,400);
+  await page.getByRole('tab',{name:'Itinerary',exact:true}).click();
+  for(const [day,label] of [['2026-10-01','Check-in'],['2026-10-02','Your stay'],['2026-10-03','Check-out']]) {
+    await page.locator('[data-filter=day]').selectOption(day);
+    const hotel=page.locator('.plan-card').filter({hasText:'Two-night hotel'});
+    assert.match(await hotel.locator('summary').textContent(),new RegExp(label));
+    assert.match(await hotel.locator('summary').textContent(),/2 nights/);
+  }
+  await page.screenshot({path:'/tmp/numi-stay-duration-web.png',fullPage:true});
   assert.deepEqual(errors,[]);
   console.log('Web paid flight, shared edits, existing-ticket activity and offline payment passed');
  } finally {await browser.close();}

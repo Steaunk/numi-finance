@@ -160,6 +160,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
         travelDate(item['date']),
       if (item.kind == 'booking' && item['endDate'].isNotEmpty)
         'to ${travelDate(item['endDate'])}',
+      if (item.isStay) item.stayDuration,
       if (item.kind == 'activity' && item['time'].isEmpty) 'Flexible',
       if (item.kind == 'activity' && item['endTime'].isNotEmpty)
         'until ${item['endTime']}',
@@ -281,14 +282,18 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                                   .colorScheme
                                   .onSurfaceVariant)),
                       detail(
-                          item.kind == 'booking'
-                              ? 'Start · local time'
-                              : 'Scheduled',
+                          item.isStay
+                              ? 'Check-in · local time'
+                              : item.kind == 'booking'
+                                  ? 'Start · local time'
+                                  : 'Scheduled',
                           [item['date'], item['time'], item['timezone']]
                               .where((v) => v.isNotEmpty)
                               .join(' · ')),
                       detail(
-                          'End · local time',
+                          item.isStay
+                              ? 'Check-out · local time'
+                              : 'End · local time',
                           [
                             item['endDate'],
                             item['endTime'],
@@ -608,7 +613,12 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                               .colorScheme
                               .onSurfaceVariant)))),
           const SizedBox(width: 10),
-          Expanded(child: tile(trip, plan, item, trailing: handle)),
+          Expanded(
+              child: tile(trip, plan, item,
+                  trailing: handle,
+                  subtitle: item.isStay && item['endDate'] == day
+                      ? 'Check-out · ${item.stayDuration}'
+                      : null)),
         ]));
     final stays = day.isEmpty
         ? <PlanItem>[]
@@ -709,7 +719,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                 tinted: true,
                 subtitle: i['category'] == 'No accommodation needed'
                     ? 'Overnight travel · no stay needed'
-                    : 'Your stay · ${travelDate(i['date'])}–${travelDate(i['endDate'])}'))),
+                    : '${i['date'] == day ? 'Check-in' : 'Your stay'} · ${travelDate(i['date'])}–${travelDate(i['endDate'])} · ${i.stayDuration}'))),
       if (day.isNotEmpty &&
           day.compareTo(planDate(trip.endDate)) < 0 &&
           !plan.hasStay(day))

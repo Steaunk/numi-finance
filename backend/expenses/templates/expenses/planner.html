@@ -54,6 +54,8 @@ window.TravelPlanner = (() => {
         return result;
     }
     const phase = trip => today() < trip.start_date ? 'Upcoming' : today() > trip.end_date ? 'Completed' : 'Travelling';
+    const stayNights = i => { const n=(Date.parse(i.endDate+'T00:00:00Z')-Date.parse(i.date+'T00:00:00Z'))/86400000; return i.category==='Accommodation' && Number.isInteger(n) && n>0 ? n : null; };
+    const stayDuration = i => { const n=stayNights(i); return n ? `${n} ${n===1?'night':'nights'}` : ''; };
     const hasStay = (s,day) => kind(s,'booking').some(i => !cancelled(i) && (i.category === 'No accommodation needed' ? i.date === day : i.category === 'Accommodation' && i.date <= day && i.endDate > day));
     const bookingsOn = (s,day) => kind(s,'booking').filter(i => i.date === day || i.endDate === day || (i.category === 'Accommodation' && i.date < day && i.endDate > day));
     function safeURL(value) { try { const u = new URL(value); return ['https:','http:'].includes(u.protocol) && !u.username && !u.password && !/\s/.test(value) && u.port !== '0' ? u.href : null; } catch { return null; } }
@@ -70,9 +72,9 @@ window.TravelPlanner = (() => {
     }
     function action(label,name,itemId='',extra='') { return `<button type="button" class="btn btn-secondary btn-sm" data-action="${name}" data-id="${escape(itemId)}" ${extra}>${escape(label)}</button>`; }
     function linksHTML(links) { return links.filter(l => safeURL(l.url)).map(l => `<div class="plan-link"><a href="${escape(l.url)}" target="_blank" rel="noopener noreferrer">${escape(l.label || platform(l.url))} <small>· ${escape(l.purpose || 'Other')}</small></a>${action('Copy','copy','',`data-url="${escape(l.url)}"`)}</div>`).join(''); }
-    function card(s,i,reorder=false) {
+    function card(s,i,reorder=false,day='') {
         const p = items(s).find(p => p.id === i.placeId), address = p?.address || i.address || '';
-        const subtitle = [i.category,i.status,i.date,i.time,i.timezone,i.endDate && 'to '+i.endDate,i.endTime,i.endTimezone].filter(Boolean).join(' · ');
+        const subtitle = [i.category,i.status,i.category==='Accommodation' && day && (day===i.endDate?'Check-out':day===i.date?'Check-in':'Your stay'),i.date,i.time,i.timezone,i.endDate && 'to '+i.endDate,i.endTime,i.endTimezone,stayDuration(i)].filter(Boolean).join(' · ');
         const mapLinks = [];
         if(address || i.kind === 'place') for(const provider of ['google','baidu']) mapLinks.push({url:mapURL(provider,p?.title || title(s,i),address,s.trip.destination),label:provider === 'google' ? 'Google Maps' : 'Baidu Maps',purpose:'Map'});
         if(i.endAddress) for(const provider of ['google','baidu']) mapLinks.push({url:mapURL(provider,'',i.endAddress,s.trip.destination),label:'Arrival · '+(provider === 'google' ? 'Google Maps' : 'Baidu Maps'),purpose:'Map'});
@@ -92,7 +94,7 @@ window.TravelPlanner = (() => {
             const day = today() < s.trip.start_date ? s.trip.start_date : today() > s.trip.end_date ? s.trip.end_date : today();
             html = `<h3>${phase(s.trip)}</h3><p class="plan-muted">${escape(s.trip.start_date)} — ${escape(s.trip.end_date)} · ${list.filter(i=>i.kind!=='task').length} planned · ${tasks.filter(i=>i.status==='completed').length}/${tasks.length} prepared</p><h3>${day === today() ? 'Today' : 'Itinerary'} · ${day}</h3>`;
             const current = [...bookingsOn(s,day),...kind(s,'activity').filter(i=>i.date===day)];
-            html += current.length ? current.map(i=>card(s,i)).join('') : '<p class="plan-muted">Nothing scheduled yet. Save places or add an activity.</p>';
+            html += current.length ? current.map(i=>card(s,i,false,day)).join('') : '<p class="plan-muted">Nothing scheduled yet. Save places or add an activity.</p>';
             const upcoming = kind(s,'booking').filter(i=>!cancelled(i) && i.date > day).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,5);
             if(upcoming.length) html += '<h3>Upcoming bookings</h3>'+upcoming.map(i=>card(s,i)).join('');
             const deadlines = kind(s,'booking').filter(i=>!cancelled(i) && i.cancelBy >= today()).sort((a,b)=>a.cancelBy.localeCompare(b.cancelBy));
@@ -107,7 +109,7 @@ window.TravelPlanner = (() => {
         } else if(s.tab === 'Itinerary') {
             const dates = [...new Set([...days(s.trip),...kind(s,'activity').map(i=>i.date).filter(Boolean)])].sort();
             html = `<div class="plan-toolbar"><div class="plan-filters">${select('day',['',...dates],s.day,'Day')}</div>${action('+ Add activity','add-activity')}</div><p class="plan-muted">Drag activities or use move buttons. Edit to change the day. Empty dates stay unassigned; empty times are flexible.</p>`;
-            if(s.day) html += bookingsOn(s,s.day).map(i=>card(s,i)).join('');
+            if(s.day) html += bookingsOn(s,s.day).map(i=>card(s,i,false,s.day)).join('');
             html += kind(s,'activity').filter(i=>(i.date||'')===s.day).map(i=>card(s,i,true)).join('') || '<p class="plan-muted">No activities for this day.</p>';
         } else if(s.tab === 'Bookings') {
             html = `<div class="plan-toolbar"><h3>Stays, transport and reservations</h3>${action('+ Add booking','add-booking')}</div><p class="plan-muted">Times remain local to each time zone. Mark a booking paid to record its expense automatically.</p>`+kind(s,'booking').sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map(i=>card(s,i)).join('');
@@ -172,9 +174,11 @@ window.TravelPlanner = (() => {
         if(item.kind==='place') fields += choice('priority','Priority',priorities);
         fields += choice('status','Status',item.kind==='task'?['todo','completed']:statuses);
         if(item.kind==='activity') fields += `<label>Saved place<select name="placeId"><option value="">No linked place</option>${kind(s,'place').map(p=>`<option value="${escape(p.id)}" ${p.id===item.placeId?'selected':''}>${escape(p.title)}</option>`).join('')}</select></label>`;
+        if(item.kind==='booking') fields += '<h3 class="wide" data-stay-heading>Stay duration</h3>';
         if(item.kind!=='place') fields += input('date',item.kind==='task'?'Due date':item.kind==='activity'?'Day (empty = unassigned)':'Start / check-in / night','date',item.kind==='booking');
+        if(item.kind==='booking') fields += input('endDate','Arrival / check-out date','date')+'<p class="plan-muted wide" data-stay-duration aria-live="polite"></p>';
         if(['booking','activity'].includes(item.kind)) fields += input('time','Start time (empty = flexible)','time')+input('endTime','End time','time');
-        if(item.kind==='booking') fields += input('endDate','Arrival / check-out date','date')+input('timezone','Start time zone')+input('endTimezone','Arrival time zone');
+        if(item.kind==='booking') fields += input('timezone','Start time zone')+input('endTimezone','Arrival time zone');
         if(item.kind!=='task') fields += input('address','Address / departure');
         if(item.kind==='booking') fields += input('endAddress','Arrival address')+input('confirmation','Confirmation / flight / train number')+input('contact','Contact')+input('cancelBy','Cancellation deadline','date');
         if(['booking','activity'].includes(item.kind) && item.category!=='No accommodation needed') {
@@ -189,6 +193,23 @@ window.TravelPlanner = (() => {
         document.body.append(dialog); dialog.showModal();
         dialog.addEventListener('close',()=>dialog.remove()); dialog.querySelector('[data-close]').onclick=()=>dialog.close();
         const form = dialog.querySelector('form'), error = dialog.querySelector('[role=alert]');
+        function updateStayDuration() {
+            if(item.kind!=='booking') return;
+            const stay=form.elements.category.value==='Accommodation';
+            const heading=form.querySelector('[data-stay-heading]'), summary=form.querySelector('[data-stay-duration]');
+            heading.hidden=summary.hidden=!stay;
+            form.elements.date.parentElement.firstChild.textContent=stay?'Check-in date':'Start date / night';
+            form.elements.endDate.parentElement.firstChild.textContent=stay?'Check-out date':'Arrival / end date';
+            form.elements.endDate.required=stay;
+            form.elements.time.parentElement.firstChild.textContent=stay?'Check-in time (optional)':'Start time (empty = flexible)';
+            form.elements.endTime.parentElement.firstChild.textContent=stay?'Check-out time (optional)':'End time';
+            if(form.elements.amount) form.elements.amount.parentElement.firstChild.textContent=stay?'Total stay amount (optional until paid)':'Amount (optional until paid)';
+            const duration=stayDuration({category:'Accommodation',date:form.elements.date.value,endDate:form.elements.endDate.value});
+            summary.textContent=duration ? `${duration} · Check-out day is not an overnight stay. Payment is the total for the entire stay, recorded once.` : 'Choose check-in and check-out dates.';
+        }
+        updateStayDuration();
+        form.addEventListener('input',updateStayDuration);
+        form.addEventListener('change',updateStayDuration);
         function renderLinks() {
             const host=dialog.querySelector('.link-rows'); if(!host)return;
             host.innerHTML=links.map((l,n)=>`<div class="plan-link-edit"><div class="form-grid"><label>Purpose<select data-link="${n}" data-field="purpose">${purposes.map(p=>`<option ${l.purpose===p?'selected':''}>${p}</option>`).join('')}</select></label><label>Display name<input data-link="${n}" data-field="label" maxlength="500" value="${escape(l.label)}"></label></div><label>URL<input type="url" required data-link="${n}" data-field="url" value="${escape(l.url)}"></label><small>${escape(platform(l.url))}</small> <button type="button" class="btn btn-secondary btn-sm" data-remove-link="${n}">Remove link</button></div>`).join('');

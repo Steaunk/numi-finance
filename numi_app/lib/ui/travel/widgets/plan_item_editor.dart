@@ -135,6 +135,44 @@ class _PlanItemEditorState extends State<PlanItemEditor> {
               setState(() => values[key] = planDate(picked));
             }
           });
+  Widget stayDurationField() {
+    final item = widget.item.copy(values);
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: const Text('Stay duration'),
+      subtitle: Text(item.stayNights == null
+          ? 'Choose check-in and check-out dates'
+          : 'Check-in ${values['date']}\nCheck-out ${values['endDate']} · ${item.stayDuration}'),
+      isThreeLine: item.stayNights != null,
+      trailing: const Icon(Icons.date_range_outlined),
+      onTap: () async {
+        final start =
+            DateTime.tryParse(values['date'] ?? '') ?? widget.trip.startDate;
+        final end = DateTime.tryParse(values['endDate'] ?? '');
+        final range = await showDateRangePicker(
+          context: context,
+          firstDate: DateTime(1900),
+          lastDate: DateTime(2200),
+          initialDateRange: DateTimeRange(
+              start: start,
+              end: end != null && end.isAfter(start)
+                  ? end
+                  : start.add(const Duration(days: 1))),
+          helpText: 'Select check-in and check-out',
+          fieldStartLabelText: 'Check-in date',
+          fieldEndLabelText: 'Check-out date',
+          saveText: 'Use dates',
+        );
+        if (range != null && mounted) {
+          setState(() {
+            values['date'] = planDate(range.start);
+            values['endDate'] = planDate(range.end);
+          });
+        }
+      },
+    );
+  }
+
   Widget timeField(String key, String label) => ListTile(
       contentPadding: EdgeInsets.zero,
       title: Text(label),
@@ -279,18 +317,13 @@ class _PlanItemEditorState extends State<PlanItemEditor> {
                 timeField('time', 'Time'),
               ],
               if (kind == 'booking') ...[
-                dateField(
-                    'date',
-                    stay
-                        ? 'Check-in date'
-                        : noStay
-                            ? 'Night'
-                            : 'Start date',
-                    required: true),
+                if (stay)
+                  stayDurationField()
+                else
+                  dateField('date', noStay ? 'Night' : 'Start date',
+                      required: true),
                 if (!noStay) ...[
-                  dateField(
-                      'endDate', stay ? 'Check-out date' : 'Arrival / end date',
-                      required: stay),
+                  if (!stay) dateField('endDate', 'Arrival / end date'),
                   timeField('time',
                       stay ? 'Check-in time' : 'Departure / start time'),
                   timeField('endTime',
@@ -313,8 +346,11 @@ class _PlanItemEditorState extends State<PlanItemEditor> {
                     controller: _controllers['amount'],
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(
-                        labelText: 'Amount (optional until paid)')),
+                    decoration: InputDecoration(
+                        labelText: 'Amount (optional until paid)',
+                        helperText: stay
+                            ? 'Total for the entire stay, recorded once.'
+                            : null)),
                 const SizedBox(height: 12),
                 choice('currency', 'Currency', AppConstants.travelCurrencies),
                 SwitchListTile.adaptive(
