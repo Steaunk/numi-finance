@@ -34,7 +34,9 @@ def read_pdf(data, inspect_only=False):
         file = Path(directory) / 'ticket.pdf'
         file.write_bytes(data)
         try:
-            proc = subprocess.run([sys.executable, str(Path(__file__).with_name('pdf_worker.py')), str(file),
+            # Embedded Python hosts such as uWSGI set sys.executable to the host binary.
+            python = str(Path(sys.prefix) / 'bin' / 'python3')
+            proc = subprocess.run([python, str(Path(__file__).with_name('pdf_worker.py')), str(file),
                                    *(['--inspect'] if inspect_only else [])],
                                   stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=45 if not inspect_only else 10)
             result = json.loads(proc.stdout)

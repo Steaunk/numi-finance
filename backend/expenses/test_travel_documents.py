@@ -53,6 +53,11 @@ class TravelDocumentTests(TestCase):
         self.assertIn('attachment;', original['Content-Disposition'])
         self.assertEqual(original['Cache-Control'], 'no-store')
 
+    def test_worker_uses_python_under_embedded_uwsgi(self):
+        with patch('expenses.travel_documents.sys.executable', '/usr/local/bin/uwsgi'):
+            result = read_pdf(sample_pdf())
+        self.assertIn('YAYOI KUSAMA MUSEUM', result['text'])
+
     def test_multiple_flights_separate_dates_and_reference(self):
         items = ticket_items('Flight number: SQ637\nFrom: NRT\nTo: SIN\nDeparture date: 12 October 2026\nDeparture time: 11:10\nArrival: 2026-10-12 17:20\nBooking reference: ABC123\nFlight: SQ638\nDeparture: 2026-10-15 09:00', 'trip.pdf')
         self.assertEqual(len(items), 2)
