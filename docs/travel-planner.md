@@ -116,3 +116,25 @@ Remote fetching is HTTPS-only, uses explicit provider domains, rejects private
 DNS results, pins the validated address with TLS hostname verification, and
 rechecks each redirect. It sends no Numi/nginx cookies or authorization headers.
 Responses are size/time bounded and are never persisted until reviewed by the user.
+
+### Trip map
+
+Open the map button on an app trip, or the **Map** tab in its collaborative web
+workspace. Filter by day, destination and traveller; empty participants still mean
+Everyone. Stays remain visible through checkout. Saved places can be included for
+planning, and a saved place already represented by an activity appears only once.
+Transport can have separate departure and arrival pins.
+
+Google Maps imports retain explicit place coordinates, including resolved short
+links. Structured venue metadata can also supply coordinates. Viewport centres
+(`@lat,lng`, `ll`) and ambiguous multi-place links are not venue locations. Existing
+places without coordinates appear in **to locate**; paste a Google Maps place share
+link under **Locate**. Editors can change pins collaboratively, with the same
+revision conflict handling as other fields. Viewers can explore but cannot edit.
+
+Numbered pins correspond to the list. Select a place to compare straight-line
+kilometres; **Directions from selected** opens Google Maps for actual routes and
+travel times. The basemap is OpenStreetMap with visible attribution, standard tile
+caching, no prefetch and an identified native client. Shared web tile requests send
+only the site origin as referrer, never invitation tokens or trip paths. No Google
+Maps API key is needed. An unavailable basemap does not hide place details.

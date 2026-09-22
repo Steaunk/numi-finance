@@ -304,3 +304,20 @@ def invites(request, trip_id):
         return private_response(JsonResponse({'id': invite.id, 'url': url, 'expires_at': invite.expires_at.isoformat()}, status=201))
     except (ValueError, TypeError, UnicodeDecodeError) as error:
         return private_response(JsonResponse({'error': str(error)}, status=400))
+
+
+@require_http_methods(['POST'])
+def map_preview(request, trip_id, shared=False):
+    if shared and not invite_for(request, trip_id):
+        return private_response(JsonResponse({'error': 'Invitation required'}, status=403))
+    get_object_or_404(Trip, id=trip_id)
+    from .travel_import import analyze, provider
+    from .map_locations import google_point
+    try:
+        url = json_body(request).get('url', '')
+        if not isinstance(url, str) or len(url) > 3000 or provider(url) != 'Google Maps':
+            raise ValueError('Use a Google Maps place link.')
+        result = google_point(url) or analyze('', url)
+        return private_response(JsonResponse({key: result[key] for key in ('latitude', 'longitude') if key in result}))
+    except (ValueError, TypeError, UnicodeDecodeError):
+        return private_response(JsonResponse({'error': 'Use a Google Maps place link.'}, status=400))

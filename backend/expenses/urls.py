@@ -3,6 +3,7 @@ from django.urls import path
 from . import views, planning, collaboration, travel_import
 
 urlpatterns = [
+    path('api/travel/trips/<int:trip_id>/collaboration/map-preview/', collaboration.map_preview),
     path('api/travel/import-preview/', travel_import.preview),
     path('travel/trips/<int:trip_id>/plan/', collaboration.workspace, name='travel_collaboration'),
     path('api/travel/trips/<int:trip_id>/collaboration/data/', collaboration.data),

@@ -29,7 +29,16 @@ class TravelShareDraft {
   PlanItem item(String kind) {
     final category = value('category');
     return PlanItem.create(kind).copy({
-      for (final key in ['title', 'address', 'notes', 'endAddress'])
+      for (final key in [
+        'title',
+        'address',
+        'notes',
+        'endAddress',
+        'latitude',
+        'longitude',
+        'endLatitude',
+        'endLongitude'
+      ])
         key: value(key),
       if (kind == 'booking') ...{
         'category':

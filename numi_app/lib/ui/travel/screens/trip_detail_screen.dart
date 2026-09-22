@@ -11,6 +11,7 @@ import '../widgets/plan_item_editor.dart';
 import '../widgets/plan_links.dart';
 import '../widgets/travel_surfaces.dart';
 import 'trip_expenses_screen.dart';
+import 'trip_map_screen.dart';
 import '../widgets/trip_destinations.dart';
 import '../widgets/trip_people.dart';
 
@@ -1194,6 +1195,17 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
               data: (plan) => Scaffold(
                     backgroundColor: travelBackground(context),
                     appBar: AppBar(title: const Text('Trip details'), actions: [
+                      IconButton(
+                          tooltip: 'Trip map',
+                          icon: const Icon(Icons.map_outlined),
+                          onPressed: () =>
+                              Navigator.of(context, rootNavigator: true).push(
+                                  MaterialPageRoute(
+                                      builder: (_) => TripMapScreen(
+                                          trip: trip,
+                                          day: dayFor(trip),
+                                          destination: destinationFilter(plan),
+                                          person: personFilter(plan))))),
                       PopupMenuButton<String>(
                           tooltip: 'Trip options',
                           onSelected: (value) => tripMenu(value, trip),

@@ -1,4 +1,5 @@
 import json
+from django.utils import timezone
 from django.test import TestCase, Client
 from .models import Trip, TripPlan, TripInvite, TravelExpense, TripPlanChange
 from .collaboration import save_document, merge_content, PlanConflict
@@ -38,6 +39,22 @@ class CollaborationTests(TestCase):
 
     def edit(self, client, operations, revision=1, mutation='edit'):
         return self.post(self.shared+'data/', {'operations': operations, 'revision': revision, 'mutation_id': mutation}, client)
+
+    def test_map_preview_and_pin_edits_require_trip_access(self):
+        url = 'https://www.google.com/maps/search/?api=1&query=35,139'
+        self.assertEqual(self.post(self.shared+'map-preview/', {'url': url}).status_code, 403)
+        guest, invite_id = self.guest()
+        response = self.post(self.shared+'map-preview/', {'url': url}, guest)
+        self.assertEqual(response.json(), {'latitude': '35.0', 'longitude': '139.0'})
+        self.assertEqual(self.post(self.shared+'map-preview/', {'url': 'https://127.0.0.1'}, guest).status_code, 400)
+        self.assertEqual(TripPlan.objects.get(trip=self.trip).revision, 1)
+        changed = self.edit(guest, [{'id': 'visit', 'changes': response.json()}])
+        self.assertEqual(changed.status_code, 200)
+        self.assertEqual(changed.json()['content']['items'][2]['latitude'], '35.0')
+        viewer, _ = self.guest('viewer')
+        self.assertEqual(self.edit(viewer, [{'id': 'visit', 'changes': {'latitude': '36', 'longitude': '140'}}], revision=2).status_code, 403)
+        TripInvite.objects.filter(id=invite_id).update(revoked_at=timezone.now())
+        self.assertEqual(self.post(self.shared+'map-preview/', {'url': url}, guest).status_code, 403)
 
     def test_private_fields_never_leave_shared_api_or_history(self):
         guest, _ = self.guest()

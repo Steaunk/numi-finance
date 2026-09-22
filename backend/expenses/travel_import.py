@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, unquote, urljoin, urlsplit
 import urllib3
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
+from .map_locations import point, google_point
 
 PROVIDERS = {
     'Airbnb': ('airbnb.com', 'airbnb.co.uk', 'airbnb.com.sg', 'airbnb.com.hk', 'airbnb.jp', 'airbnb.cn', 'abnb.me'),
@@ -162,14 +163,16 @@ def structured_place(documents):
             if isinstance(country, dict):
                 country = country.get('name', '')
             address = ', '.join(filter(None, [clean(address.get(k, '')) for k in ('streetAddress', 'addressLocality', 'addressRegion', 'postalCode')] + [clean(country)]))
-        return {'title': clean(node.get('name')), 'address': clean(address), 'category': category}
+        geo = node.get('geo', {})
+        coordinates = point(geo.get('latitude'), geo.get('longitude')) if isinstance(geo, dict) else {}
+        return {'title': clean(node.get('name')), 'address': clean(address), 'category': category, **coordinates}
     return {}
 
 
 def url_fields(url):
     parts = urlsplit(url)
     query = {k.lower(): v[0] for k, v in parse_qs(parts.query).items() if v}
-    fields = {}
+    fields = google_point(url)
     if provider(url) == 'Google Maps':
         match = re.search(r'/maps/(?:place|search)/([^/]+)', parts.path)
         title = unquote(match.group(1)).replace('+', ' ') if match else query.get('query', query.get('q', ''))

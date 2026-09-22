@@ -16,6 +16,7 @@ KINDS = {'place', 'activity', 'booking', 'task', 'destination', 'person'}
 FIELDS = {
     'id', 'kind', 'title', 'category', 'status', 'priority', 'date', 'endDate',
     'time', 'endTime', 'timezone', 'endTimezone', 'address', 'endAddress',
+    'latitude', 'longitude', 'endLatitude', 'endLongitude',
     'links', 'notes', 'placeId', 'confirmation', 'contact',
     'cancelBy', 'assignee', 'amount', 'currency', 'paymentStatus', 'paidDate',
     'expenseClientId', 'expenseCategory', 'destinationId', 'endDestinationId', 'participantIds',
@@ -50,6 +51,11 @@ def validate_content(content):
                 parsed = time.fromisoformat(item[field])
                 if parsed.isoformat(timespec='minutes') != item[field] or len(item[field]) != 5:
                     raise ValueError('Times must use HH:MM')
+        for lat_key, lng_key in (('latitude', 'longitude'), ('endLatitude', 'endLongitude')):
+            if item.get(lat_key) or item.get(lng_key):
+                from .map_locations import point
+                if not point(item.get(lat_key), item.get(lng_key)):
+                    raise ValueError('Map pins need valid latitude and longitude together')
         if 'status' in item:
             statuses = {'todo', 'completed'} if item['kind'] == 'task' else {'planned', 'confirmed', 'completed', 'skipped', 'cancelled'}
             if item['status'] not in statuses:
