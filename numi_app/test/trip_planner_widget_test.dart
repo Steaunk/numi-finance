@@ -118,8 +118,15 @@ void main() {
   Future<void> tab(WidgetTester tester, String name) async {
     final target = find.widgetWithText(Tab, name);
     if (target.evaluate().isEmpty) {
+      tester
+          .state<ScrollableState>(find.byType(Scrollable).first)
+          .position
+          .jumpTo(0);
+      await tester.pumpAndSettle();
+    }
+    if (target.evaluate().isEmpty) {
       await tester.scrollUntilVisible(target, 200,
-          scrollable: find.byType(Scrollable).last);
+          scrollable: find.byType(Scrollable).first);
     }
     await tester.ensureVisible(target);
     await tester.pumpAndSettle();
@@ -151,6 +158,38 @@ void main() {
     await tester.tap(target);
     await tester.pumpAndSettle();
   }
+
+  testWidgets(
+      'whole itinerary includes every day and undated transport after jumping',
+      (tester) async {
+    final flight = PlanItem.create('booking')
+        .copy({'title': 'Undated connection', 'category': 'Flight'});
+    await repo.save(trip.id, flight);
+    await repo.save(
+        trip.id,
+        PlanItem.create('activity').copy(
+            {'title': 'Last day walk', 'date': '2026-10-03', 'time': '15:00'}));
+    await show(tester, const Size(390, 844));
+    // Day selection scrolls; it never removes the other days or Anytime.
+    expect(find.text('Thursday, 1 Oct'), findsOneWidget);
+    expect(find.text('Saturday, 3 Oct'), findsOneWidget);
+    expect(find.text('Undated connection'), findsOneWidget);
+    await tapVisible(tester, find.byKey(const ValueKey('day-2026-10-03')));
+    expect(find.text('Thursday, 1 Oct'), findsOneWidget);
+    expect(find.text('Undated connection'), findsOneWidget);
+    expect(find.text('Last day walk'), findsOneWidget);
+    expect(tester.getTopLeft(find.text('Saturday, 3 Oct')).dy, lessThan(700));
+    await tapVisible(tester, find.text('Undated connection'));
+    await tapVisible(tester, find.text('Edit booking'));
+    await tapVisible(tester, find.text('Save item'));
+    final saved = (await tester.runAsync(() => repo.watch(trip.id).first))!
+        .find(flight.id)!;
+    expect(saved['date'], '');
+    expect(saved['endDate'], '');
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
 
   testWidgets(
       'participants editor saves a specific traveller and filter keeps everyone arrangements',
@@ -245,7 +284,7 @@ void main() {
   ) async {
     await show(tester, const Size(390, 844));
     await tapVisible(tester, find.byKey(const ValueKey('day-2026-10-02')));
-    await tapVisible(tester, find.text('Add to this day'));
+    await tapVisible(tester, find.byKey(const ValueKey('add-day-2026-10-02')));
     await tester.enterText(
       find.widgetWithText(TextField, 'Search saved places'),
       'coffee',

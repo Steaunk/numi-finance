@@ -211,6 +211,7 @@ class TripPlan {
               matchesDestination(i, destination) &&
               matchesPerson(i, person) &&
               ((i.kind == 'activity' && i['date'] == day) ||
+                  (day.isEmpty && i.kind == 'booking' && i['date'].isEmpty) ||
                   (day.isNotEmpty &&
                       i.kind == 'booking' &&
                       i['category'] != 'No accommodation needed' &&

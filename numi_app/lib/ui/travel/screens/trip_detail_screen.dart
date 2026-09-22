@@ -27,6 +27,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
     with SingleTickerProviderStateMixin {
   late final TabController tabs;
   String? selectedDay;
+  final dayAnchors = <String, GlobalKey>{};
   String selectedDestination = '';
   String selectedPerson = '';
   String personFilter(TripPlan plan) =>
@@ -698,15 +699,12 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
         plan,
         PlanItem.create(choice == 'activity' ? 'activity' : 'booking').copy({
           if (choice != 'activity') 'category': choice,
-          'date': choice != 'activity' && dayFor(trip).isEmpty
-              ? planDate(trip.startDate)
-              : dayFor(trip),
+          'date': dayFor(trip),
           'destinationId': suggestedDestination(trip, plan)
         }));
   }
 
   Widget timeline(Trip trip, TripPlan plan) {
-    final day = dayFor(trip);
     final days = {
       ...tripDays(trip.startDate, trip.endDate).map(planDate),
       ...plan.items
@@ -715,6 +713,43 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
           .where((d) => d.isNotEmpty)
     }.toList()
       ..sort();
+    final unassigned = plan.timelineOn('',
+        destination: destinationFilter(plan), person: personFilter(plan));
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const SizedBox(height: 16),
+      const Text('Whole trip · jump to a day', style: TextStyle(fontSize: 12)),
+      const SizedBox(height: 8),
+      TripDayStrip(
+          days: days,
+          selected: dayFor(trip),
+          unassigned: unassigned.length,
+          onSelected: (day) {
+            setState(() {
+              selectedDay = day;
+              reordering = false;
+            });
+            final target = dayAnchors[day]?.currentContext;
+            if (target != null) {
+              Scrollable.ensureVisible(target,
+                  duration: const Duration(milliseconds: 300), alignment: 0.03);
+            }
+          }),
+      for (final day in ['', ...days])
+        Container(
+            key: dayAnchors.putIfAbsent(day, () => GlobalKey()),
+            margin: const EdgeInsets.only(top: 20),
+            padding: const EdgeInsets.only(left: 12, bottom: 16),
+            decoration: BoxDecoration(
+                border: Border(
+                    left: BorderSide(
+                        color: Theme.of(context).colorScheme.outlineVariant,
+                        width: 2))),
+            child: timelineDay(trip, plan, day)),
+    ]);
+  }
+
+  Widget timelineDay(Trip trip, TripPlan plan, String day) {
+    final isReordering = reordering && selectedDay == day;
     final activities = plan
         .ofKind('activity')
         .where((i) =>
@@ -724,8 +759,9 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
         .toList();
     final entries = plan.timelineOn(day,
         destination: destinationFilter(plan), person: personFilter(plan));
-    final flexible = activities.where((i) => i['time'].isEmpty).toList();
-    String time(PlanItem i) => plan.timelineTime(i, day);
+    final flexible =
+        activities.where((i) => day.isEmpty || i['time'].isEmpty).toList();
+    String time(PlanItem i) => day.isEmpty ? '' : plan.timelineTime(i, day);
     Widget row(PlanItem item, {Widget? handle}) => Padding(
         padding: const EdgeInsets.only(bottom: 14),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -762,64 +798,44 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                         i['date'] == day))
             .toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      const SizedBox(height: 20),
+      Text(
+          day.isEmpty
+              ? 'UNSCHEDULED'
+              : day.compareTo(planDate(trip.startDate)) < 0
+                  ? 'BEFORE DEPARTURE'
+                  : 'DAY ${DateTime.parse('${day}T00:00:00Z').difference(DateTime.utc(trip.startDate.year, trip.startDate.month, trip.startDate.day)).inDays + 1}',
+          style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 1,
+              color: Theme.of(context).colorScheme.primary)),
+      section(
+          day.isEmpty
+              ? 'Anytime'
+              : DateFormat('EEEE, d MMM').format(DateTime.parse(day)),
+          action: flexible.length > 1
+              ? IconButton(
+                  tooltip: isReordering
+                      ? 'Finish reordering'
+                      : 'Reorder flexible activities',
+                  onPressed: () => setState(() {
+                        reordering = !isReordering;
+                        selectedDay = day;
+                      }),
+                  icon: Icon(isReordering ? Icons.check : Icons.swap_vert,
+                      size: 21))
+              : null),
       if (day.isNotEmpty && plan.destinationsOn(day).isNotEmpty)
         Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: Text(
                 plan.destinationsOn(day).map((d) => d.title).join(' / '),
-                style: Theme.of(context).textTheme.titleMedium)),
-      TripDayStrip(
-          days: days,
-          selected: day,
-          unassigned: plan
-              .ofKind('activity')
-              .where(
-                (i) =>
-                    i['date'].isEmpty &&
-                    plan.matchesDestination(i, destinationFilter(plan)) &&
-                    plan.matchesPerson(i, personFilter(plan)),
-              )
-              .length,
-          onSelected: (v) => setState(() {
-                selectedDay = v;
-                reordering = false;
-              })),
-      section(
-          day.isEmpty
-              ? 'Waiting for a day'
-              : DateFormat('EEEE, d MMM').format(DateTime.parse(day)),
-          action: Row(mainAxisSize: MainAxisSize.min, children: [
-            if (flexible.length > 1)
-              IconButton(
-                  tooltip: reordering
-                      ? 'Finish reordering'
-                      : 'Reorder flexible activities',
-                  onPressed: () => setState(() => reordering = !reordering),
-                  icon: Icon(reordering ? Icons.check : Icons.swap_vert,
-                      size: 21)),
-            IconButton(
-                tooltip: 'Choose date',
-                icon: const Icon(Icons.calendar_today_outlined, size: 20),
-                onPressed: () async {
-                  final date = await showDatePicker(
-                      context: context,
-                      initialDate: DateTime.tryParse(day)
-                                      ?.isBefore(trip.startDate) ==
-                                  false &&
-                              DateTime.tryParse(day)?.isAfter(trip.endDate) ==
-                                  false
-                          ? DateTime.parse(day)
-                          : trip.startDate,
-                      firstDate: trip.startDate,
-                      lastDate: trip.endDate);
-                  if (date != null && mounted) {
-                    if (mounted) setState(() => selectedDay = planDate(date));
-                  }
-                }),
-          ])),
-      if (reordering) ...[
-        ...entries.where((i) => time(i).isNotEmpty).map((i) => row(i)),
+                style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant))),
+      if (isReordering) ...[
+        ...entries
+            .where((i) => time(i).isNotEmpty || i.kind == 'booking')
+            .map((i) => row(i)),
         const Padding(
             padding: EdgeInsets.only(bottom: 16),
             child: Text(
@@ -850,24 +866,25 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                             child: const Icon(Icons.drag_handle, size: 20))))))
       ] else ...[
         ...entries.where((i) => time(i).isNotEmpty).map((i) => row(i)),
-        if (entries.any((i) => time(i).isEmpty)) section('Flexible time'),
         ...entries.where((i) => time(i).isEmpty).map((i) => row(i)),
       ],
-      if (entries.isEmpty)
-        hint(
-          day.isEmpty
-              ? 'No unassigned arrangements'
-              : 'No arrangements for this day',
-          'Add an activity, transport, a stay or a saved place.',
-        ),
-      if (!reordering)
-        ...stays.map((i) => Padding(
-            padding: const EdgeInsets.only(top: 6, bottom: 10),
-            child: tile(trip, plan, i,
-                tinted: true,
-                subtitle: i['category'] == 'No accommodation needed'
-                    ? 'Overnight travel · no stay needed · ${plan.participantsLabel(i)}'
-                    : '${i['date'] == day ? 'Check-in' : 'Your stay'} · ${travelDate(i['date'])}–${travelDate(i['endDate'])} · ${i.stayDuration} · ${plan.participantsLabel(i)}'))),
+      if (entries.isEmpty && stays.isEmpty)
+        Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+                day.isEmpty
+                    ? 'Plans without a date live here.'
+                    : 'No arrangements yet.',
+                style: TextStyle(
+                    fontSize: 13,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant))),
+      ...stays.map((i) => Padding(
+          padding: const EdgeInsets.only(top: 6, bottom: 10),
+          child: tile(trip, plan, i,
+              tinted: true,
+              subtitle: i['category'] == 'No accommodation needed'
+                  ? 'Overnight travel · no stay needed · ${plan.participantsLabel(i)}'
+                  : '${i['date'] == day ? 'Check-in' : 'Your stay'} · ${travelDate(i['date'])}–${travelDate(i['endDate'])} · ${i.stayDuration} · ${plan.participantsLabel(i)}'))),
       if (day.isNotEmpty &&
           day.compareTo(planDate(trip.endDate)) < 0 &&
           destinationFilter(plan).isEmpty &&
@@ -901,9 +918,14 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                         ]))),
       const SizedBox(height: 10),
       TextButton.icon(
-          onPressed: () => addToDay(trip, plan),
+          key: ValueKey('add-day-$day'),
+          onPressed: () {
+            setState(() => selectedDay = day);
+            addToDay(trip, plan);
+          },
           icon: const Icon(Icons.add, size: 19),
-          label: const Text('Add to this day')),
+          label:
+              Text(day.isEmpty ? 'Add unscheduled plan' : 'Add to this day')),
     ]);
   }
 
@@ -1207,7 +1229,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                                   MaterialPageRoute(
                                       builder: (_) => TripMapScreen(
                                           trip: trip,
-                                          day: dayFor(trip),
+                                          day: '',
                                           destination: destinationFilter(plan),
                                           person: personFilter(plan))))),
                       PopupMenuButton<String>(

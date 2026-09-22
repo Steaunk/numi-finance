@@ -229,7 +229,7 @@ class _TripDayStripState extends State<TripDayStrip> {
                         children: [
                           Text(
                               date == null
-                                  ? 'Unassigned'
+                                  ? 'Anytime'
                                   : DateFormat('EEE').format(date),
                               style: const TextStyle(fontSize: 11)),
                           const SizedBox(height: 6),

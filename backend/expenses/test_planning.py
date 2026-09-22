@@ -16,6 +16,23 @@ class TripPlanTests(TestCase):
             'revision': revision, 'mutation_id': mutation}), content_type='application/json')
 
     @patch('expenses.views.get_rates', return_value={'sgd': 1.3, 'cny': 7, 'hkd': 7.8})
+    def test_paid_transport_can_be_unscheduled_without_changing_payment(self, _rates):
+        flight = {'id': 'flight', 'kind': 'booking', 'title': 'Connection', 'category': 'Flight',
+                  'date': '2026-10-01', 'time': '05:15', 'endDate': '2026-10-01', 'endTime': '09:25',
+                  'paymentStatus': 'paid', 'amount': '100', 'currency': 'SGD', 'paidDate': '2026-09-01',
+                  'expenseClientId': 'flight-payment', 'expenseCategory': 'Transportation'}
+        self.assertEqual(self.put({'items': [flight]}).status_code, 200)
+        payment = list(TravelExpense.objects.values())
+        flight.update(date='', time='', endDate='', endTime='')
+        response = self.put({'items': [flight]}, revision=1, mutation='unschedule')
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(self.client.get(self.url).json()['content']['items'][0]['date'], '')
+        self.assertEqual(list(TravelExpense.objects.values()), payment)
+        for category in ('Accommodation', 'No accommodation needed'):
+            self.assertEqual(self.put({'items': [{**flight, 'category': category, 'paymentStatus': 'unpaid'}]},
+                                     revision=2, mutation=category).status_code, 400)
+
+    @patch('expenses.views.get_rates', return_value={'sgd': 1.3, 'cny': 7, 'hkd': 7.8})
     def test_standalone_expense_city_roundtrip_and_destination_removal(self, _rates):
         city = {'id': 'kyoto', 'kind': 'destination', 'title': 'Kyoto',
                 'date': '2026-10-01', 'endDate': '2026-10-03'}

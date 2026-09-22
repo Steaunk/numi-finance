@@ -259,8 +259,16 @@ class _PlanItemEditorState extends State<PlanItemEditor> {
             updated['endDate']!.compareTo(planDate(widget.trip.endDate)) > 0)) {
       problem = 'Destination dates must be within the trip dates.';
     }
-    if (kind == 'booking' && (updated['date'] ?? '').isEmpty) {
+    if ((stay || noStay) && (updated['date'] ?? '').isEmpty) {
       problem = 'Choose a booking date.';
+    }
+    if (kind == 'booking' &&
+        !stay &&
+        !noStay &&
+        (updated['date'] ?? '').isEmpty) {
+      updated['endDate'] = '';
+      updated['time'] = '';
+      updated['endTime'] = '';
     }
     if (stay &&
         ((updated['endDate'] ?? '').isEmpty ||
@@ -401,7 +409,7 @@ class _PlanItemEditorState extends State<PlanItemEditor> {
                     stayDurationField()
                   else
                     dateField('date', noStay ? 'Night' : 'Start date',
-                        required: true),
+                        required: noStay),
                   if (!noStay) ...[
                     if (!stay) dateField('endDate', 'Arrival / end date'),
                     timeField('time',

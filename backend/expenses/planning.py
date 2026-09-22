@@ -60,7 +60,7 @@ def validate_content(content):
             statuses = {'todo', 'completed'} if item['kind'] == 'task' else {'planned', 'confirmed', 'completed', 'skipped', 'cancelled'}
             if item['status'] not in statuses:
                 raise ValueError('Invalid item status')
-        if item['kind'] == 'booking' and not item.get('date'):
+        if item['kind'] == 'booking' and item.get('category') == 'No accommodation needed' and not item.get('date'):
             raise ValueError('Bookings require a start date')
         if item['kind'] == 'destination':
             if not item.get('date') or not item.get('endDate') or item['endDate'] < item['date']:
