@@ -237,6 +237,12 @@ class TripPlan {
           ? item['endTime']
           : item['time'];
 
+  String timelineTimeLabel(PlanItem item, String day) {
+    final time = timelineTime(item, day);
+    if (time.isNotEmpty) return time;
+    return item.kind == 'booking' ? 'Time TBD' : 'Anytime';
+  }
+
   bool hasStay(String day, {String person = ''}) => ofKind('booking').any((i) =>
       !i.cancelled &&
       matchesPerson(i, person) &&
