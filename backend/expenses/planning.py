@@ -12,13 +12,13 @@ from django.views.decorators.http import require_http_methods
 from .models import Trip, TripPlan, TravelExpense, TRAVEL_CATEGORIES
 from core.services import compute_snapshot_amounts, get_rates
 
-KINDS = {'place', 'activity', 'booking', 'task', 'destination'}
+KINDS = {'place', 'activity', 'booking', 'task', 'destination', 'person'}
 FIELDS = {
     'id', 'kind', 'title', 'category', 'status', 'priority', 'date', 'endDate',
     'time', 'endTime', 'timezone', 'endTimezone', 'address', 'endAddress',
     'links', 'notes', 'placeId', 'confirmation', 'contact',
     'cancelBy', 'assignee', 'amount', 'currency', 'paymentStatus', 'paidDate',
-    'expenseClientId', 'expenseCategory', 'destinationId', 'endDestinationId',
+    'expenseClientId', 'expenseCategory', 'destinationId', 'endDestinationId', 'participantIds',
 }
 
 
@@ -32,7 +32,7 @@ def validate_content(content):
     for item in items:
         if not isinstance(item, dict) or set(item) - FIELDS:
             raise ValueError('Invalid item fields')
-        if any(not isinstance(v, str) or len(v) > 10000 for k, v in item.items() if k != 'links'):
+        if any(not isinstance(v, str) or len(v) > 10000 for k, v in item.items() if k not in ('links', 'participantIds')):
             raise ValueError('Item values must be strings of at most 10000 characters')
         item_id = item.get('id', '')
         if not item_id or len(item_id) > 64 or item_id in ids:
@@ -79,6 +79,15 @@ def validate_content(content):
                     raise ValueError('Payment identity or name is too long')
                 if item.get('expenseCategory') not in TRAVEL_CATEGORIES:
                     raise ValueError('Choose an expense category')
+        participants = item.get('participantIds', [])
+        if (not isinstance(participants, list) or len(participants) > 100 or
+                any(not isinstance(p, str) or not p or len(p) > 64 for p in participants) or
+                len(participants) != len(set(participants))):
+            raise ValueError('Invalid participants')
+        if participants and item['kind'] not in ('booking', 'activity'):
+            raise ValueError('Only arrangements can select participants')
+        if item['kind'] == 'person' and len(item['title'].strip()) > 100:
+            raise ValueError('Participant names must be at most 100 characters')
         links = item.get('links', [])
         if not isinstance(links, list) or len(links) > 50:
             raise ValueError('Links must be an array of at most 50 entries')
@@ -98,6 +107,9 @@ def validate_content(content):
             if not item.get('date') or not item.get('endDate') or item['endDate'] <= item['date']:
                 raise ValueError('Accommodation needs checkout after check-in')
         # Transport may arrive on an earlier local calendar date across time zones.
+    people = {i['id'] for i in items if i['kind'] == 'person'}
+    if any(p not in people for i in items for p in i.get('participantIds', [])):
+        raise ValueError('Participant no longer exists; archive people instead of deleting them')
     payment_ids = [i['expenseClientId'] for i in items if i.get('paymentStatus') == 'paid']
     if len(payment_ids) != len(set(payment_ids)):
         raise ValueError('An expense can only belong to one itinerary item')
@@ -155,21 +167,12 @@ def trip_plan(request, trip_id):
             raise ValueError('mutation_id is required (max 64 characters)')
     except (ValueError, TypeError, UnicodeDecodeError) as error:
         return JsonResponse({'error': str(error)}, status=400)
+    from .collaboration import save_document, PlanConflict
     try:
-        with transaction.atomic():
-            plan, _ = TripPlan.objects.get_or_create(trip_id=trip_id,
-                                                    defaults={'content': {'items': []}})
-            if plan.mutation_id == mutation:
-                if plan.content != content:
-                    return JsonResponse({'error': 'Mutation ID reused with different content'}, status=409)
-                return JsonResponse(serialize(plan))
-            changed = TripPlan.objects.filter(pk=plan.pk, revision=revision).update(
-                content=content, revision=revision + 1, mutation_id=mutation, updated_at=timezone.now())
-            if not changed:
-                plan.refresh_from_db()
-                return JsonResponse({'error': 'Plan changed on another device', **serialize(plan)}, status=409)
-            reconcile_payments(trip_id, plan.content, content)
-            return JsonResponse({'content': content, 'revision': revision + 1, 'payment_ids': payment_ids(trip_id)})
+        return JsonResponse(save_document(trip, content, revision, mutation, 'Owner',
+                                          choice=data.get('conflict_choice'), expected_revision=data.get('expected_revision')))
+    except PlanConflict as error:
+        return JsonResponse({'error': str(error), 'conflicts': error.conflicts}, status=409)
     except ValueError as error:
         return JsonResponse({'error': str(error)}, status=400)
 
@@ -189,6 +192,9 @@ def reconcile_payments(trip_id, previous, content):
                 expense.delete()
             else:
                 raise ValueError('Linked payment changed; refresh the plan')
+    removed_destinations = {i['id'] for i in previous.get('items', []) if i['kind'] == 'destination'} - {i['id'] for i in content['items'] if i['kind'] == 'destination'}
+    TravelExpense.objects.filter(trip_id=trip_id, destination_id__in=removed_destinations).update(destination_id='')
+    places = {i['id']: i for i in content['items'] if i['kind'] == 'place'}
     rates = None
     for booking in bookings.values():
         if booking.get('paymentStatus') != 'paid':
@@ -213,9 +219,10 @@ def reconcile_payments(trip_id, previous, content):
             amounts = compute_snapshot_amounts(amount, currency, rates)
         TravelExpense.objects.update_or_create(client_id=expense.client_id if expense else client_id, defaults={
             'trip_id': trip_id, 'plan_item_id': booking['id'], 'amount': amount,
+            'destination_id': places.get(booking.get('placeId'), booking).get('destinationId', ''),
             'currency': currency, 'date': booking['paidDate'],
-            'category': booking['expenseCategory'], 'name': booking.get('title') or next((i.get('title') for i in content['items'] if i['id'] == booking.get('placeId')), 'Activity'),
-            'notes': booking.get('notes', ''), **amounts,
+            'category': booking['expenseCategory'], 'name': expense.name if expense else (booking.get('title') or next((i.get('title') for i in content['items'] if i['id'] == booking.get('placeId')), 'Activity')),
+            'notes': expense.notes if expense else booking.get('notes', ''), **amounts,
         })
 
 

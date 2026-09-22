@@ -209,6 +209,20 @@ class TravelRepository {
     unawaited(flushTrips());
   }
 
+  Future<void> _validateDestination(int tripId, String destinationId) async {
+    if (destinationId.isEmpty) return;
+    final row = await (_db.select(
+      _db.tripPlans,
+    )..where((p) => p.tripId.equals(tripId)))
+        .getSingleOrNull();
+    if (row == null ||
+        !TripPlan.decode(
+          row.content,
+        ).destinations.any((d) => d.id == destinationId)) {
+      throw StateError('Choose a destination in this trip.');
+    }
+  }
+
   Future<void> addTravelExpense({
     required int tripId,
     required double amount,
@@ -217,7 +231,9 @@ class TravelRepository {
     required String category,
     required String name,
     String notes = '',
+    String destinationId = '',
   }) async {
+    await _validateDestination(tripId, destinationId);
     final clientId = newPlanId();
     final rates = await _rateRepo.getCachedRates();
     final computed = CurrencyUtils.computeAmounts(amount, currency, rates);
@@ -226,6 +242,7 @@ class TravelRepository {
     final companion = TravelExpensesCompanion.insert(
       tripId: tripId,
       clientId: Value(clientId),
+      destinationId: Value(destinationId),
       tripRemoteId: Value(tripRow?.remoteId),
       amount: amount,
       currency: currency,
@@ -250,6 +267,7 @@ class TravelRepository {
         'category': category,
         'name': name,
         'notes': notes,
+        'destination_id': destinationId,
       });
       return;
     }
@@ -265,6 +283,7 @@ class TravelRepository {
           'category': category,
           'name': name,
           'notes': notes,
+          'destination_id': destinationId,
         });
         await (_db.update(_db.travelExpenses)
               ..where((e) => e.id.equals(localId)))
@@ -284,6 +303,7 @@ class TravelRepository {
           'category': category,
           'name': name,
           'notes': notes,
+          'destination_id': destinationId,
         });
       }
     }
@@ -297,13 +317,17 @@ class TravelRepository {
     required String category,
     required String name,
     String notes = '',
+    String destinationId = '',
   }) async {
     final linked = await (_db.select(_db.travelExpenses)
           ..where((e) => e.id.equals(localId)))
         .getSingleOrNull();
     if (linked?.planItemId != null) {
-      throw StateError('Edit the linked itinerary item to change this payment.');
+      throw StateError(
+          'Edit the linked itinerary item to change this payment.');
     }
+    if (linked == null) throw StateError('Expense no longer exists.');
+    await _validateDestination(linked.tripId, destinationId);
     final rates = await _rateRepo.getCachedRates();
     final computed = CurrencyUtils.computeAmounts(amount, currency, rates);
 
@@ -316,6 +340,7 @@ class TravelRepository {
         category: Value(category),
         name: Value(name),
         notes: Value(notes),
+        destinationId: Value(destinationId),
         amountUsd: Value(computed['amount_usd']!),
         amountCny: Value(computed['amount_cny']!),
         amountHkd: Value(computed['amount_hkd']!),
@@ -325,7 +350,15 @@ class TravelRepository {
     );
 
     final pushed = await _pushTravelExpense(
-        localId, amount, currency, date, category, name, notes);
+      localId,
+      amount,
+      currency,
+      date,
+      category,
+      name,
+      notes,
+      destinationId,
+    );
     if (!pushed) {
       final row = await (_db.select(_db.travelExpenses)
             ..where((e) => e.id.equals(localId)))
@@ -338,6 +371,7 @@ class TravelRepository {
         'category': category,
         'name': name,
         'notes': notes,
+        'destination_id': destinationId,
       });
     }
   }
@@ -350,6 +384,7 @@ class TravelRepository {
     String category,
     String name,
     String notes,
+    String destinationId,
   ) async {
     final api = _api;
     final row = await (_db.select(_db.travelExpenses)
@@ -369,6 +404,7 @@ class TravelRepository {
         'category': category,
         'name': name,
         'notes': notes,
+        'destination_id': destinationId,
       });
       await (_db.update(_db.travelExpenses)..where((e) => e.id.equals(localId)))
           .write(const TravelExpensesCompanion(synced: Value(true)));
@@ -385,7 +421,8 @@ class TravelRepository {
           ..where((e) => e.id.equals(localId)))
         .getSingleOrNull();
     if (row?.planItemId != null) {
-      throw StateError('Edit the linked itinerary item to change this payment.');
+      throw StateError(
+          'Edit the linked itinerary item to change this payment.');
     }
     await _db.tripDao.removeTravelExpenseById(localId);
 
@@ -491,6 +528,7 @@ class TravelRepository {
               remoteId: Value(e['id'] as int),
               clientId: Value(e['client_id'] as String? ?? 'remote-${e['id']}'),
               planItemId: Value(e['plan_item_id'] as String?),
+              destinationId: Value(e['destination_id'] as String? ?? ''),
               tripId: Value(localTrip.id),
               tripRemoteId: Value(remoteId),
               amount: Value((e['amount'] as num).toDouble()),
@@ -535,6 +573,7 @@ class TravelRepository {
         tripRemoteId: row.tripRemoteId,
         clientId: row.clientId,
         planItemId: row.planItemId,
+        destinationId: row.destinationId,
         amount: row.amount,
         currency: row.currency,
         date: row.date,

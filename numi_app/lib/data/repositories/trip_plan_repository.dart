@@ -59,6 +59,10 @@ class TripPlanRepository {
                 item['endDate'].compareTo(item['date']) < 0)) {
           throw StateError('Choose arrival and departure dates in order.');
         }
+        if (item.participantIds
+            .any((id) => !items.any((p) => p.kind == 'person' && p.id == id))) {
+          throw StateError('Choose participants from this trip.');
+        }
         for (final key in ['destinationId', 'endDestinationId']) {
           if (item[key].isNotEmpty &&
               !items.any((i) => i.kind == 'destination' && i.id == item[key])) {
@@ -119,6 +123,7 @@ class TripPlanRepository {
           expense.id, TravelExpensesCompanion(clientId: Value(clientId)));
       return PlanItem.create(kind).copy({
         'title': expense.name,
+        'destinationId': expense.destinationId,
         'notes': expense.notes,
         'category': kind == 'activity'
             ? 'Activity'
@@ -234,6 +239,15 @@ class TripPlanRepository {
         await db.transaction(() async {
           final current = await _row(tripId);
           if (current == null) return;
+          final merged = current.mutationId == row!.mutationId
+              ? TripPlan.decode(jsonEncode(result['content']))
+              : mergePlanChanges(
+                  TripPlan.decode(row.content),
+                  TripPlan.decode(current.content),
+                  TripPlan.decode(jsonEncode(result['content'])));
+          await reconcileBookingPayments(db, tripId, merged.items,
+              serverIds:
+                  (result['payment_ids'] as Map?)?.cast<String, dynamic>());
           final ids = result['payment_ids'] as Map?;
           if (ids != null) {
             for (final entry in ids.entries) {
@@ -249,7 +263,8 @@ class TripPlanRepository {
           await (db.update(db.tripPlans)..where((p) => p.tripId.equals(tripId)))
               .write(TripPlansCompanion(
                   serverRevision: Value(result['revision'] as int),
-                  dirty: Value(current.mutationId != row!.mutationId),
+                  content: Value(merged.encode()),
+                  dirty: Value(current.mutationId != row.mutationId),
                   syncError: const Value('')));
         });
         row = await _row(tripId);
@@ -272,7 +287,9 @@ class TripPlanRepository {
             ));
       });
     } catch (error) {
-      final message = error is DioException && error.response?.statusCode == 409
+      final message = (error is DioException &&
+                  error.response?.statusCode == 409) ||
+              (error is StateError && error.message == 'conflict')
           ? 'conflict'
           : 'Could not sync. Your plan is saved on this device. Try again when connected.';
       await (db.update(db.tripPlans)..where((p) => p.tripId.equals(tripId)))
@@ -290,25 +307,31 @@ class TripPlanRepository {
     if (running != null) await running;
     final before = await _row(tripId);
     final result = await api!.getPlan(trip!.remoteId!);
+    if (before == null) return;
+    final resolved = await api!.putPlan(trip.remoteId!, {
+      'content': jsonDecode(before.content),
+      'revision': before.serverRevision,
+      'mutation_id': newPlanId(),
+      'conflict_choice': keepLocal ? 'local' : 'server',
+      'expected_revision': result['revision'],
+    });
     await db.transaction(() async {
       final latest = await _row(tripId);
-      if (latest == null || latest.mutationId != before?.mutationId) {
-        throw StateError(
-            'Plan changed while resolving. Review it and try again.');
-      }
-      if (!keepLocal) {
-        await reconcileBookingPayments(
-            db, tripId, TripPlan.decode(jsonEncode(result['content'])).items,
-            serverIds:
-                (result['payment_ids'] as Map?)?.cast<String, dynamic>() ?? {});
-      }
+      if (latest == null) return;
+      final merged = latest.mutationId == before.mutationId
+          ? TripPlan.decode(jsonEncode(resolved['content']))
+          : mergePlanChanges(
+              TripPlan.decode(before.content),
+              TripPlan.decode(latest.content),
+              TripPlan.decode(jsonEncode(resolved['content'])));
+      await reconcileBookingPayments(db, tripId, merged.items,
+          serverIds:
+              (resolved['payment_ids'] as Map?)?.cast<String, dynamic>() ?? {});
       await (db.update(db.tripPlans)..where((p) => p.tripId.equals(tripId)))
           .write(TripPlansCompanion(
-              serverRevision: Value(result['revision'] as int),
-              content: keepLocal
-                  ? const Value.absent()
-                  : Value(jsonEncode(result['content'])),
-              dirty: Value(keepLocal),
+              serverRevision: Value(resolved['revision'] as int),
+              content: Value(merged.encode()),
+              dirty: Value(latest.mutationId != before.mutationId),
               mutationId: Value(newPlanId()),
               syncError: const Value('')));
     });

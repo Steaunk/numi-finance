@@ -32,12 +32,16 @@ class _PlanItemEditorState extends State<PlanItemEditor> {
   final _controllers = <String, TextEditingController>{};
   late Map<String, String> values;
   late List<PlanLink> links;
+  late List<String> participants;
+  late bool everyone;
   String? error;
   @override
   void initState() {
     super.initState();
     values = Map.of(widget.item.fields);
     links = widget.item.links.toList();
+    participants = widget.item.participantIds.toList();
+    everyone = participants.isEmpty;
     if (payable) {
       values.putIfAbsent('currency', () => AppConstants.defaultCurrency);
       values.putIfAbsent('paymentStatus', () => 'unpaid');
@@ -240,6 +244,9 @@ class _PlanItemEditorState extends State<PlanItemEditor> {
     }
     if (!transport) updated['endDestinationId'] = '';
     String? problem;
+    if (payable && !everyone && participants.isEmpty) {
+      problem = 'Select at least one person, or Everyone.';
+    }
     if (kind == 'destination' &&
         ((updated['date'] ?? '').isEmpty ||
             (updated['endDate'] ?? '').isEmpty ||
@@ -296,7 +303,10 @@ class _PlanItemEditorState extends State<PlanItemEditor> {
               'This removes the linked expense and marks the item unpaid. The itinerary item will be kept.');
       if (!confirmed || !mounted) return;
     }
-    Navigator.pop(context, PlanItem(updated, links: links));
+    Navigator.pop(
+        context,
+        PlanItem(updated,
+            links: links, participantIds: everyone ? [] : participants));
   }
 
   @override
@@ -305,196 +315,266 @@ class _PlanItemEditorState extends State<PlanItemEditor> {
     final linked = (values['placeId'] ?? '').isNotEmpty;
     final existing = widget.plan.find(widget.item.id) != null;
     return SafeArea(
-        child: Padding(
-      padding: EdgeInsets.fromLTRB(
-          24, 20, 24, MediaQuery.viewInsetsOf(context).bottom + 24),
-      child: Form(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+            24, 20, 24, MediaQuery.viewInsetsOf(context).bottom + 24),
+        child: Form(
           key: _form,
           child: SingleChildScrollView(
-              child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(children: [
-                Expanded(
-                    child: Text(
-                        '${existing ? 'Edit' : 'New'} ${kind == 'task' ? 'checklist item' : kind}',
-                        style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: -.5))),
-                IconButton(
-                    tooltip: 'Close editor',
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close))
-              ]),
-              const SizedBox(height: 20),
-              text('title',
-                  linked ? 'Activity name (optional override)' : 'Name',
-                  required: !linked),
-              if (kind == 'place')
-                choice('category', 'Category', placeCategories),
-              if (kind == 'booking')
-                choice('category', 'Booking type', bookingCategories),
-              if (kind == 'task')
-                choice('category', 'Checklist', taskCategories),
-              if (kind == 'destination') stayDurationField(destination: true),
-              if (['place', 'activity', 'booking'].contains(kind) &&
-                  !linked &&
-                  widget.plan.destinations.isNotEmpty)
-                destinationChoice('destinationId',
-                    transport ? 'From destination' : 'Destination'),
-              if (transport && widget.plan.destinations.isNotEmpty)
-                destinationChoice('endDestinationId', 'To destination'),
-              if (linked &&
-                  widget.plan
-                      .destinationLabel(widget.item.copy(values))
-                      .isNotEmpty)
-                Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Text(
-                        'Destination: ${widget.plan.destinationLabel(widget.item.copy(values))} · from saved place')),
-              if (kind == 'activity') ...[
-                DropdownButtonFormField<String>(
-                    initialValue: values['placeId'] ?? '',
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Saved place'),
-                    items: [
-                      const DropdownMenuItem(
-                          value: '', child: Text('No linked place')),
-                      ...places.map((p) => DropdownMenuItem(
-                          value: p.id,
-                          child:
-                              Text(p.title, overflow: TextOverflow.ellipsis)))
-                    ],
-                    onChanged: (v) => setState(() {
-                          values['placeId'] = v!;
-                          values['expenseCategory'] = planExpenseCategory(
-                              widget.plan.find(v)?['category'] ?? 'Activity');
-                        })),
-                dateField('date', 'Day'),
-                timeField('time', 'Time'),
-              ],
-              if (kind == 'booking') ...[
-                if (stay)
-                  stayDurationField()
-                else
-                  dateField('date', noStay ? 'Night' : 'Start date',
-                      required: true),
-                if (!noStay) ...[
-                  if (!stay) dateField('endDate', 'Arrival / end date'),
-                  timeField('time',
-                      stay ? 'Check-in time' : 'Departure / start time'),
-                  timeField('endTime',
-                      stay ? 'Check-out time' : 'Arrival / end time'),
-                ],
-              ],
-              if (kind != 'task' && !linked && !noStay)
-                text(
-                    'address',
-                    kind == 'booking' && !stay
-                        ? 'Departure / start address'
-                        : 'Address'),
-              if (kind == 'booking' && !stay && !noStay)
-                text('endAddress', 'Arrival / end address'),
-              if (payable && !noStay) ...[
-                const SizedBox(height: 12),
-                Text('Payment', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 12),
-                TextFormField(
-                    controller: _controllers['amount'],
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
-                    decoration: InputDecoration(
-                        labelText: 'Amount (optional until paid)',
-                        helperText: stay
-                            ? 'Total for the entire stay, recorded once.'
-                            : null)),
-                const SizedBox(height: 12),
-                choice('currency', 'Currency', AppConstants.travelCurrencies),
-                SwitchListTile.adaptive(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(children: [
+                  Expanded(
+                      child: Text(
+                          '${existing ? 'Edit' : 'New'} ${kind == 'task' ? 'checklist item' : kind}',
+                          style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: -.5))),
+                  IconButton(
+                      tooltip: 'Close editor',
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close))
+                ]),
+                const SizedBox(height: 20),
+                text('title',
+                    linked ? 'Activity name (optional override)' : 'Name',
+                    required: !linked),
+                if (kind == 'place')
+                  choice('category', 'Category', placeCategories),
+                if (kind == 'booking')
+                  choice('category', 'Booking type', bookingCategories),
+                if (kind == 'task')
+                  choice('category', 'Checklist', taskCategories),
+                if (kind == 'destination') stayDurationField(destination: true),
+                if (['place', 'activity', 'booking'].contains(kind) &&
+                    !linked &&
+                    widget.plan.destinations.isNotEmpty)
+                  destinationChoice('destinationId',
+                      transport ? 'From destination' : 'Destination'),
+                if (transport && widget.plan.destinations.isNotEmpty)
+                  destinationChoice('endDestinationId', 'To destination'),
+                if (linked &&
+                    widget.plan
+                        .destinationLabel(widget.item.copy(values))
+                        .isNotEmpty)
+                  Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Text(
+                          'Destination: ${widget.plan.destinationLabel(widget.item.copy(values))} · from saved place')),
+                if (payable) ...[
+                  SwitchListTile.adaptive(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('Paid'),
+                    title: const Text('Everyone'),
                     subtitle: const Text(
-                        'Paid items appear in Trip spending automatically.'),
-                    value: values['paymentStatus'] == 'paid',
-                    onChanged: (paid) => setState(() =>
-                        values['paymentStatus'] = paid ? 'paid' : 'unpaid')),
-                if (values['paymentStatus'] == 'paid')
-                  dateField('paidDate', 'Payment date', required: true),
-              ],
-              if (kind == 'task') dateField('date', 'Due date'),
-              const SizedBox(height: 8),
-              Theme(
-                  data: Theme.of(context)
-                      .copyWith(dividerColor: Colors.transparent),
-                  child: ExpansionTile(
+                        'Participants · includes people added later'),
+                    value: everyone,
+                    onChanged: (v) => setState(() => everyone = v),
+                  ),
+                  if (!everyone) ...[
+                    if (widget.plan.people.isEmpty)
+                      const Text(
+                          'Add travellers from the trip’s People section.'),
+                    ...widget.plan.people.map((p) => CheckboxListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                              '${p.title}${p.cancelled ? ' (archived)' : ''}'),
+                          value: participants.contains(p.id),
+                          onChanged: (v) => setState(() {
+                            if (v == true) {
+                              participants.add(p.id);
+                            } else {
+                              participants.remove(p.id);
+                            }
+                          }),
+                        )),
+                  ],
+                ],
+                if (kind == 'activity') ...[
+                  dateField('date', 'Day'),
+                  timeField('time', 'Time'),
+                ],
+                if (kind == 'booking') ...[
+                  if (stay)
+                    stayDurationField()
+                  else
+                    dateField('date', noStay ? 'Night' : 'Start date',
+                        required: true),
+                  if (!noStay) ...[
+                    if (!stay) dateField('endDate', 'Arrival / end date'),
+                    timeField('time',
+                        stay ? 'Check-in time' : 'Departure / start time'),
+                    timeField('endTime',
+                        stay ? 'Check-out time' : 'Arrival / end time'),
+                  ],
+                ],
+                if (kind != 'task' && !linked && !noStay)
+                  text(
+                      'address',
+                      kind == 'booking' && !stay
+                          ? 'Departure / start address'
+                          : 'Address'),
+                if (kind == 'booking' && !stay && !noStay)
+                  text('endAddress', 'Arrival / end address'),
+                if (kind == 'booking' && !noStay)
+                  text('confirmation', 'Confirmation / flight / train number'),
+                if (kind == 'place') ...[
+                  text(
+                    'notes',
+                    'Notes, opening hours, things to try',
+                    lines: 3,
+                  ),
+                  PlanLinksEditor(
+                    links: links,
+                    onChanged: (v) => setState(() => links = v),
+                  ),
+                ],
+                if (payable && !noStay)
+                  ExpansionTile(
+                    key: ValueKey('payment-${widget.item.id}'),
+                    initiallyExpanded: widget.item['amount'].isNotEmpty ||
+                        widget.item['paymentStatus'] == 'paid',
                     tilePadding: EdgeInsets.zero,
-                    childrenPadding: const EdgeInsets.only(top: 12),
-                    title: const Text('More details',
-                        style: TextStyle(
-                            fontSize: 15, fontWeight: FontWeight.w500)),
+                    title: const Text('Payment (optional)'),
                     subtitle: Text(
-                        kind == 'task'
-                            ? 'Notes and responsible person'
-                            : 'Notes, status and external links',
-                        style: const TextStyle(fontSize: 12)),
+                      values['paymentStatus'] == 'paid'
+                          ? 'Paid · included in spending'
+                          : 'Add a cost or record a payment',
+                    ),
                     children: [
-                      choice(
-                          'status',
-                          'Status',
-                          kind == 'task'
-                              ? ['todo', 'completed']
-                              : planStatuses),
-                      if (kind == 'place')
-                        choice('priority', 'Priority', planPriorities),
-                      if (kind == 'activity') timeField('endTime', 'End time'),
-                      if (payable && !noStay)
-                        choice('expenseCategory', 'Expense category',
-                            AppConstants.travelCategories),
-                      if (kind == 'booking' && !noStay) ...[
-                        text('confirmation',
-                            'Confirmation / flight / train number'),
-                        text('contact', 'Contact'),
-                        text('timezone', 'Start time zone (e.g. Asia/Tokyo)'),
-                        if (!stay)
-                          text('endTimezone',
-                              'Arrival time zone (e.g. America/Los_Angeles)'),
-                        const Padding(
-                            padding: EdgeInsets.only(bottom: 12),
-                            child: Text(
-                                'Times are local to the stated time zone. No automatic time conversion.',
-                                style: TextStyle(fontSize: 12))),
-                        dateField('cancelBy', 'Cancellation deadline'),
-                      ],
-                      if (kind == 'task')
-                        text('assignee', 'Responsible person'),
-                      text(
-                          'notes',
-                          kind == 'place'
-                              ? 'Notes, opening hours, things to try'
-                              : 'Notes',
-                          lines: 3),
-                      if (kind != 'task')
-                        PlanLinksEditor(
-                            links: links,
-                            onChanged: (v) => setState(() => links = v)),
+                      TextFormField(
+                          controller: _controllers['amount'],
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          decoration: InputDecoration(
+                              labelText: 'Amount (optional until paid)',
+                              helperText: stay
+                                  ? 'Total for the entire stay, recorded once.'
+                                  : null)),
+                      const SizedBox(height: 12),
+                      choice('currency', 'Currency',
+                          AppConstants.travelCurrencies),
+                      SwitchListTile.adaptive(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Paid'),
+                          subtitle: const Text(
+                              'Paid items appear in Trip spending automatically.'),
+                          value: values['paymentStatus'] == 'paid',
+                          onChanged: (paid) => setState(() =>
+                              values['paymentStatus'] =
+                                  paid ? 'paid' : 'unpaid')),
+                      if (values['paymentStatus'] == 'paid')
+                        dateField('paidDate', 'Payment date', required: true),
                     ],
-                  )),
-              if (error != null)
-                Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Text(error!,
-                        style: TextStyle(
-                            color: Theme.of(context).colorScheme.error))),
-              const SizedBox(height: 18),
-              FilledButton(
-                  onPressed: save,
-                  child: const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      child: Text('Save item'))),
-            ],
-          ))),
-    ));
+                  ),
+                if (kind == 'task') dateField('date', 'Due date'),
+                const SizedBox(height: 8),
+                Theme(
+                    data: Theme.of(context)
+                        .copyWith(dividerColor: Colors.transparent),
+                    child: ExpansionTile(
+                      tilePadding: EdgeInsets.zero,
+                      childrenPadding: const EdgeInsets.only(top: 12),
+                      title: const Text('More details',
+                          style: TextStyle(
+                              fontSize: 15, fontWeight: FontWeight.w500)),
+                      subtitle: Text(
+                          kind == 'task'
+                              ? 'Notes and responsible person'
+                              : kind == 'place'
+                                  ? 'Status and priority'
+                                  : 'Notes, status and external links',
+                          style: const TextStyle(fontSize: 12)),
+                      children: [
+                        if (kind == 'activity')
+                          DropdownButtonFormField<String>(
+                            initialValue: values['placeId'] ?? '',
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                              labelText: 'Saved place',
+                            ),
+                            items: [
+                              const DropdownMenuItem(
+                                value: '',
+                                child: Text('No linked place'),
+                              ),
+                              ...places.map(
+                                (p) => DropdownMenuItem(
+                                  value: p.id,
+                                  child: Text(
+                                    p.title,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            onChanged: (v) => setState(() {
+                              values['placeId'] = v!;
+                              values['expenseCategory'] = planExpenseCategory(
+                                widget.plan.find(v)?['category'] ?? 'Activity',
+                              );
+                            }),
+                          ),
+                        choice(
+                            'status',
+                            'Status',
+                            kind == 'task'
+                                ? ['todo', 'completed']
+                                : planStatuses),
+                        if (kind == 'place')
+                          choice('priority', 'Priority', planPriorities),
+                        if (kind == 'activity')
+                          timeField('endTime', 'End time'),
+                        if (payable && !noStay)
+                          choice('expenseCategory', 'Expense category',
+                              AppConstants.travelCategories),
+                        if (kind == 'booking' && !noStay) ...[
+                          text('contact', 'Contact'),
+                          text('timezone', 'Start time zone (e.g. Asia/Tokyo)'),
+                          if (!stay)
+                            text('endTimezone',
+                                'Arrival time zone (e.g. America/Los_Angeles)'),
+                          const Padding(
+                              padding: EdgeInsets.only(bottom: 12),
+                              child: Text(
+                                  'Times are local to the stated time zone. No automatic time conversion.',
+                                  style: TextStyle(fontSize: 12))),
+                          dateField('cancelBy', 'Cancellation deadline'),
+                        ],
+                        if (kind == 'task')
+                          text('assignee', 'Responsible person'),
+                        if (kind != 'place')
+                          text(
+                              'notes',
+                              kind == 'place'
+                                  ? 'Notes, opening hours, things to try'
+                                  : 'Notes',
+                              lines: 3),
+                        if (kind != 'task' && kind != 'place')
+                          PlanLinksEditor(
+                              links: links,
+                              onChanged: (v) => setState(() => links = v)),
+                      ],
+                    )),
+                if (error != null)
+                  Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: Text(error!,
+                          style: TextStyle(
+                              color: Theme.of(context).colorScheme.error))),
+                const SizedBox(height: 18),
+                FilledButton(
+                    onPressed: save,
+                    child: const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Text('Save item'))),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

@@ -15,7 +15,8 @@ Tracks expenses, travel trips, asset accounts, and investment portfolios across 
 
 ### Travel
 - Trips with destination, dates, notes
-- Six planning tabs: Overview, Itinerary, Places, Bookings, Preparation and Expenses
+- App: Itinerary, Saved places and Spending, with explicit Bookings and Trip checklist shortcuts
+- One destination filter across views, direct saved-place scheduling, and standalone spending by destination
 - Saved places, daily activities, accommodation and transport, packing and preparation checklists
 - Multiple external links with Google Maps and Baidu Maps search and offline planning with explicit sync conflict resolution
 - Per-trip expenses in 6 categories (Transportation, Accommodation, Sightseeing, Food & Drinks, Shopping, Other)
@@ -121,7 +122,8 @@ Settings is a root-level modal at `/settings`.
 ### Key design patterns
 
 - **Offline-first sync queue** — local writes enqueue a `SyncOperation` (JSON payload); `SyncService.fullSync()` replays them on next connection, up to 5 retries per op.
-- **Travel planning sync** — revisioned documents and parent trip operations remain pending until acknowledged, with no retry cap; conflicts require an explicit choice.
+- **Shared travel planning** — named travellers, Everyone or selected participants per arrangement, person filters, scoped web invitations, field-level merge and item history. Participation is separate from payments.
+- **Travel planning sync** — revisioned documents and parent trip operations remain pending until acknowledged; independent changes merge and overlapping fields require a choice.
 - **Pre-computed multi-currency amounts** — every expense / snapshot stores USD / CNY / HKD / SGD at insert time; aggregation queries never hit the rate converter.
 - **Stale-while-revalidate snapshots** — `PUT /accounts/<id>/` only writes a new `BalanceSnapshot` if the previous one is >12h old; daily cron guarantees at least one snapshot per account per day.
 - **JSONPath account sync** — external broker / bank balances are pulled via `api_url` + `api_value_path` (e.g. `data.results.0.balance`) + optional `api_auth`.

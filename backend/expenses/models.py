@@ -67,6 +67,7 @@ class Trip(models.Model):
 class TravelExpense(models.Model):
     client_id = models.CharField(max_length=64, unique=True, default=expense_client_id)
     plan_item_id = models.CharField(max_length=64, null=True, blank=True)
+    destination_id = models.CharField(max_length=64, blank=True, default='')
     trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name='expenses')
     amount = models.FloatField()
     currency = models.CharField(max_length=3)
@@ -88,9 +89,34 @@ class TravelExpense(models.Model):
 
 
 class TripPlan(models.Model):
-    """Versioned single-traveller planning document; expenses remain separate."""
+    """Versioned shared travel plan; expenses remain private."""
     trip = models.OneToOneField(Trip, on_delete=models.CASCADE, related_name='plan')
     content = models.JSONField(default=dict)
     revision = models.PositiveIntegerField(default=0)
     mutation_id = models.CharField(max_length=64, blank=True, default='')
     updated_at = models.DateTimeField(auto_now=True)
+
+
+class TripPlanChange(models.Model):
+    trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name='plan_changes')
+    revision = models.PositiveIntegerField()
+    content = models.JSONField()
+    actor = models.CharField(max_length=100, default='Owner')
+    mutation_id = models.CharField(max_length=64, blank=True)
+    request_hash = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['trip', 'revision'], name='unique_trip_plan_revision')]
+        ordering = ['-revision']
+
+
+class TripInvite(models.Model):
+    trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name='invites')
+    token_hash = models.CharField(max_length=64, unique=True)
+    name = models.CharField(max_length=100)
+    person_id = models.CharField(max_length=64, blank=True)
+    role = models.CharField(max_length=10, choices=[('viewer', 'Viewer'), ('editor', 'Editor')])
+    expires_at = models.DateTimeField()
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)

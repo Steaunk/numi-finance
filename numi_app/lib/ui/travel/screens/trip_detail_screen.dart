@@ -12,6 +12,7 @@ import '../widgets/plan_links.dart';
 import '../widgets/travel_surfaces.dart';
 import 'trip_expenses_screen.dart';
 import '../widgets/trip_destinations.dart';
+import '../widgets/trip_people.dart';
 
 class TripDetailScreen extends ConsumerStatefulWidget {
   final int tripId;
@@ -25,12 +26,19 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
   late final TabController tabs;
   String? selectedDay;
   String selectedDestination = '';
-  String destinationFilter(TripPlan plan) =>
-      plan.destinations.any((d) => d.id == selectedDestination)
-          ? selectedDestination
-          : '';
+  String selectedPerson = '';
+  String personFilter(TripPlan plan) =>
+      plan.people.any((p) => p.id == selectedPerson) ? selectedPerson : '';
+  String destinationFilter(TripPlan plan) => (plan.destinations.isNotEmpty &&
+          (['__unassigned__', '__transfers__'].contains(selectedDestination) ||
+              plan.destinations.any((d) => d.id == selectedDestination)))
+      ? selectedDestination
+      : '';
   String suggestedDestination(Trip trip, TripPlan plan) {
-    if (destinationFilter(plan).isNotEmpty) return selectedDestination;
+    if (plan.destinations.any((d) => d.id == selectedDestination)) {
+      return selectedDestination;
+    }
+    if (selectedDestination == '__unassigned__') return '';
     final onDay = plan.destinationsOn(dayFor(trip));
     return onDay.length == 1 ? onDay.single.id : '';
   }
@@ -40,7 +48,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
   @override
   void initState() {
     super.initState();
-    tabs = TabController(length: 2, vsync: this)
+    tabs = TabController(length: 3, vsync: this)
       ..addListener(() {
         if (mounted) setState(() {});
       });
@@ -143,8 +151,15 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                 height: 1.5,
                 color: Theme.of(context).colorScheme.onSurfaceVariant)),
       ]));
-  Widget tile(Trip trip, TripPlan plan, PlanItem item,
-          {String? subtitle, bool tinted = false, Widget? trailing}) =>
+  Widget tile(
+    Trip trip,
+    TripPlan plan,
+    PlanItem item, {
+    String? subtitle,
+    bool tinted = false,
+    Widget? trailing,
+    VoidCallback? onTap,
+  }) =>
       TravelTile(
           key: ValueKey('item-${item.id}'),
           title: plan.itemTitle(item),
@@ -158,7 +173,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
           icon: planIcon(plan.find(item['placeId']) ?? item),
           tinted: tinted,
           trailing: trailing,
-          onTap: () => openItem(trip, item.id));
+          onTap: onTap ?? () => openItem(trip, item.id));
   String itemSubtitle(TripPlan plan, PlanItem item) {
     final place = plan.find(item['placeId']);
     return [
@@ -175,6 +190,8 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
       if (item.kind == 'booking' && item['endDate'].isNotEmpty)
         'to ${travelDate(item['endDate'])}',
       if (item.isStay) item.stayDuration,
+      if (item.kind == 'activity' || item.kind == 'booking')
+        plan.participantsLabel(item),
       if (item.kind == 'activity' && item['time'].isEmpty) 'Flexible',
       if (item.kind == 'activity' && item['endTime'].isNotEmpty)
         'until ${item['endTime']}',
@@ -329,7 +346,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                       detail('Arrival address', item['endAddress']),
                       if (item['endAddress'].isNotEmpty)
                         maps('', item['endAddress'], arrival: true),
-                      if (item.kind == 'booking' &&
+                      if (['booking', 'activity'].contains(item.kind) &&
                           item['amount'].isNotEmpty) ...[
                         detail('Payment',
                             '${item['currency']} ${item['amount']} · ${item['paymentStatus'] == 'paid' ? 'Paid' : 'Unpaid'}'),
@@ -360,15 +377,15 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                       const SizedBox(height: 26),
                       if (item.kind == 'place')
                         FilledButton.icon(
-                            onPressed: () => edit(
-                                trip,
-                                plan,
-                                PlanItem.create('activity').copy({
-                                  'placeId': item.id,
-                                  'date': dayFor(trip)
-                                })),
-                            icon: const Icon(Icons.playlist_add),
-                            label: const Text('Add to itinerary')),
+                          onPressed: () => addSavedPlace(trip, item,
+                              detailsContext: sheetContext),
+                          icon: const Icon(Icons.playlist_add),
+                          label: Text(
+                            dayFor(trip).isEmpty
+                                ? 'Add as unassigned'
+                                : 'Add to ${travelDate(dayFor(trip))}',
+                          ),
+                        ),
                       TextButton.icon(
                           onPressed: () => edit(trip, plan, item),
                           icon: const Icon(Icons.edit_outlined, size: 18),
@@ -380,14 +397,18 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
   }
 
   void openPanel(Trip trip, String panel) {
+    if (panel == 'expenses') {
+      tabs.animateTo(2);
+      return;
+    }
     var checklist = 'All';
     showTravelSheet(context,
         title: switch (panel) {
-          'bookings' => 'Your bookings',
-          'preparation' => 'Before you go',
+          'bookings' =>
+            'Bookings · ${destinationFilter(ref.read(tripPlanProvider(trip.id)).valueOrNull ?? TripPlan()).isEmpty ? 'whole trip' : 'selected destination'}',
+          'preparation' => 'Checklist · whole trip',
           _ => 'Trip spending'
         }, builder: (sheetContext) {
-      if (panel == 'expenses') return TripExpensesScreen(tripId: trip.id);
       return StatefulBuilder(
           builder: (context, update) => Consumer(builder: (context, ref, _) {
                 final plan = ref.watch(tripPlanProvider(trip.id)).valueOrNull ??
@@ -408,9 +429,17 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                                     .colorScheme
                                     .onSurfaceVariant)),
                         const SizedBox(height: 16),
-                        ...records.map((i) => Padding(
+                        ...records.map(
+                          (i) => Padding(
                             padding: const EdgeInsets.only(bottom: 12),
-                            child: tile(trip, plan, i))),
+                            child: tile(
+                              trip,
+                              plan,
+                              i,
+                              onTap: () => edit(trip, plan, i),
+                            ),
+                          ),
+                        ),
                         if (records.isEmpty)
                           hint('A place for every booking',
                               'Keep tickets, confirmation numbers and accommodation together.'),
@@ -562,42 +591,111 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
     }
   }
 
+  Future<void> addSavedPlace(
+    Trip trip,
+    PlanItem place, {
+    BuildContext? detailsContext,
+  }) async {
+    final day = dayFor(trip);
+    await action(() async {
+      await ref.read(tripPlanRepositoryProvider).save(
+            trip.id,
+            PlanItem.create(
+              'activity',
+            ).copy({'placeId': place.id, 'date': day}),
+          );
+      if (!mounted) return;
+      if (detailsContext?.mounted == true) Navigator.pop(detailsContext!);
+      tabs.animateTo(0);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${place.title} added to ${day.isEmpty ? 'Unassigned' : travelDate(day)}',
+          ),
+        ),
+      );
+    });
+  }
+
   Future<void> addToDay(Trip trip, TripPlan plan) async {
-    final choice = await showModalBottomSheet<String>(
-        context: context,
-        useSafeArea: true,
-        constraints: const BoxConstraints(maxWidth: 560),
-        builder: (context) => SafeArea(
-            child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
+    var query = '';
+    final choice = await showTravelSheet<String>(
+      context,
+      title: dayFor(trip).isEmpty
+          ? 'Add an arrangement'
+          : 'Add to ${travelDate(dayFor(trip))}',
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, update) {
+          final saved = plan
+              .ofKind('place')
+              .where(
+                (p) =>
+                    plan.matchesDestination(p, destinationFilter(plan)) &&
+                    ('${p.title} ${p['address']}').toLowerCase().contains(
+                          query.toLowerCase(),
+                        ),
+              )
+              .toList();
+          return ListView(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+              children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final entry in {
+                      'activity': 'Activity or visit',
+                      'Flight': 'Transport',
+                      'Accommodation': 'Stay',
+                      'Reservation': 'Reservation',
+                    }.entries)
+                      ActionChip(
+                        label: Text(entry.value),
+                        onPressed: () => Navigator.pop(sheetContext, entry.key),
+                      ),
+                  ],
+                ),
+                section('Or choose a saved place'),
+                TextField(
+                  decoration: const InputDecoration(
+                    labelText: 'Search saved places',
+                    prefixIcon: Icon(Icons.search),
+                  ),
+                  onChanged: (v) => update(() => query = v),
+                ),
+                const SizedBox(height: 12),
+                if (saved.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Text(
+                      'No saved places match. Add an activity or visit above.',
+                    ),
+                  ),
+                for (final place in saved)
                   ListTile(
-                      leading: const Icon(Icons.bookmarks_outlined),
-                      title: const Text('Choose a saved place'),
-                      subtitle:
-                          const Text('Restaurants, shops and places you love'),
-                      onTap: () => Navigator.pop(context, 'place')),
-                  ListTile(
-                      leading: const Icon(Icons.add_location_alt_outlined),
-                      title: const Text('Add an activity'),
-                      subtitle:
-                          const Text('A walk, free time or something new'),
-                      onTap: () => Navigator.pop(context, 'activity')),
-                  ListTile(
-                      leading: const Icon(Icons.confirmation_number_outlined),
-                      title: const Text('Add transport or a stay'),
-                      onTap: () => Navigator.pop(context, 'booking')),
-                ]))));
+                    title: Text(place.title),
+                    subtitle: Text(plan.destinationLabel(place)),
+                    trailing: const Icon(Icons.add),
+                    onTap: () => Navigator.pop(sheetContext, place.id),
+                  ),
+              ]);
+        },
+      ),
+    );
     if (!mounted || choice == null) return;
-    if (choice == 'place') {
-      tabs.animateTo(1);
+    final place = plan.find(choice);
+    if (place?.kind == 'place') {
+      await addSavedPlace(trip, place!);
       return;
     }
     await edit(
         trip,
         plan,
-        PlanItem.create(choice).copy({
-          'date': dayFor(trip),
+        PlanItem.create(choice == 'activity' ? 'activity' : 'booking').copy({
+          if (choice != 'activity') 'category': choice,
+          'date': choice != 'activity' && dayFor(trip).isEmpty
+              ? planDate(trip.startDate)
+              : dayFor(trip),
           'destinationId': suggestedDestination(trip, plan)
         }));
   }
@@ -606,9 +704,9 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
     final day = dayFor(trip);
     final days = {
       ...tripDays(trip.startDate, trip.endDate).map(planDate),
-      ...plan
-          .ofKind('activity')
-          .map((i) => i['date'])
+      ...plan.items
+          .where((i) => i.kind == 'activity' || i.kind == 'booking')
+          .expand((i) => [i['date'], i['endDate']])
           .where((d) => d.isNotEmpty)
     }.toList()
       ..sort();
@@ -616,29 +714,13 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
         .ofKind('activity')
         .where((i) =>
             i['date'] == day &&
-            plan.matchesDestination(i, destinationFilter(plan)))
+            plan.matchesDestination(i, destinationFilter(plan)) &&
+            plan.matchesPerson(i, personFilter(plan)))
         .toList();
-    final bookings = day.isEmpty
-        ? <PlanItem>[]
-        : plan
-            .bookingsOn(day)
-            .where((i) =>
-                plan.matchesDestination(i, destinationFilter(plan)) &&
-                i['category'] != 'No accommodation needed' &&
-                (i['category'] != 'Accommodation' || i['endDate'] == day))
-            .toList();
-    String time(PlanItem i) =>
-        i.kind == 'booking' && i['endDate'] == day && i['date'] != day
-            ? i['endTime']
-            : i['time'];
-    bookings.sort((a, b) => time(a).compareTo(time(b)));
-    final entries = [...activities];
-    for (final booking in bookings) {
-      final index = entries.indexWhere((i) =>
-          time(i).isEmpty ||
-          (time(booking).isNotEmpty && time(i).compareTo(time(booking)) > 0));
-      entries.insert(index < 0 ? entries.length : index, booking);
-    }
+    final entries = plan.timelineOn(day,
+        destination: destinationFilter(plan), person: personFilter(plan));
+    final flexible = activities.where((i) => i['time'].isEmpty).toList();
+    String time(PlanItem i) => plan.timelineTime(i, day);
     Widget row(PlanItem item, {Widget? handle}) => Padding(
         padding: const EdgeInsets.only(bottom: 14),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -657,7 +739,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
               child: tile(trip, plan, item,
                   trailing: handle,
                   subtitle: item.isStay && item['endDate'] == day
-                      ? 'Check-out · ${item.stayDuration}'
+                      ? 'Check-out · ${item.stayDuration} · ${plan.participantsLabel(item)}'
                       : null)),
         ]));
     final stays = day.isEmpty
@@ -667,6 +749,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
             .where((i) =>
                 !i.cancelled &&
                 plan.matchesDestination(i, destinationFilter(plan)) &&
+                plan.matchesPerson(i, personFilter(plan)) &&
                 (i['category'] == 'Accommodation' &&
                         i['date'].compareTo(day) <= 0 &&
                         i['endDate'].compareTo(day) > 0 ||
@@ -684,8 +767,15 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
       TripDayStrip(
           days: days,
           selected: day,
-          unassigned:
-              plan.ofKind('activity').where((i) => i['date'].isEmpty).length,
+          unassigned: plan
+              .ofKind('activity')
+              .where(
+                (i) =>
+                    i['date'].isEmpty &&
+                    plan.matchesDestination(i, destinationFilter(plan)) &&
+                    plan.matchesPerson(i, personFilter(plan)),
+              )
+              .length,
           onSelected: (v) => setState(() {
                 selectedDay = v;
                 reordering = false;
@@ -695,10 +785,11 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
               ? 'Waiting for a day'
               : DateFormat('EEEE, d MMM').format(DateTime.parse(day)),
           action: Row(mainAxisSize: MainAxisSize.min, children: [
-            if (activities.length > 1)
+            if (flexible.length > 1)
               IconButton(
-                  tooltip:
-                      reordering ? 'Finish reordering' : 'Reorder activities',
+                  tooltip: reordering
+                      ? 'Finish reordering'
+                      : 'Reorder flexible activities',
                   onPressed: () => setState(() => reordering = !reordering),
                   icon: Icon(reordering ? Icons.check : Icons.swap_vert,
                       size: 21)),
@@ -723,54 +814,59 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                 }),
           ])),
       if (reordering) ...[
+        ...entries.where((i) => time(i).isNotEmpty).map((i) => row(i)),
         const Padding(
             padding: EdgeInsets.only(bottom: 16),
             child: Text(
-                'Drag to arrange activities. Bookings keep their recorded times.',
+                'Drag to arrange activities without a time. Timed arrangements stay in time order.',
                 style: TextStyle(fontSize: 12))),
         ReorderableListView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             buildDefaultDragHandles: false,
-            itemCount: activities.length,
+            itemCount: flexible.length,
             // Keep compatibility with the Flutter 3.41 CI toolchain.
             // ignore: deprecated_member_use
             onReorder: (oldIndex, newIndex) {
-              final ids = activities.map((i) => i.id).toList();
+              final ids = flexible.map((i) => i.id).toList();
               if (newIndex > oldIndex) newIndex--;
               ids.insert(newIndex, ids.removeAt(oldIndex));
               action(() =>
                   ref.read(tripPlanRepositoryProvider).reorder(trip.id, ids));
             },
             itemBuilder: (context, index) => KeyedSubtree(
-                key: ValueKey(activities[index].id),
-                child: row(activities[index],
+                key: ValueKey(flexible[index].id),
+                child: row(flexible[index],
                     handle: ReorderableDragStartListener(
                         index: index,
                         child: Container(
                             color: Colors.transparent,
                             padding: const EdgeInsets.all(10),
                             child: const Icon(Icons.drag_handle, size: 20))))))
-      ] else
-        ...entries.map((i) => row(i)),
+      ] else ...[
+        ...entries.where((i) => time(i).isNotEmpty).map((i) => row(i)),
+        if (entries.any((i) => time(i).isEmpty)) section('Flexible time'),
+        ...entries.where((i) => time(i).isEmpty).map((i) => row(i)),
+      ],
       if (entries.isEmpty)
         hint(
-            day.isEmpty
-                ? 'Room for a little spontaneity'
-                : 'Make this day yours',
-            'Choose a saved place or add a flexible activity to get started.'),
+          day.isEmpty
+              ? 'No unassigned arrangements'
+              : 'No arrangements for this day',
+          'Add an activity, transport, a stay or a saved place.',
+        ),
       if (!reordering)
         ...stays.map((i) => Padding(
             padding: const EdgeInsets.only(top: 6, bottom: 10),
             child: tile(trip, plan, i,
                 tinted: true,
                 subtitle: i['category'] == 'No accommodation needed'
-                    ? 'Overnight travel · no stay needed'
-                    : '${i['date'] == day ? 'Check-in' : 'Your stay'} · ${travelDate(i['date'])}–${travelDate(i['endDate'])} · ${i.stayDuration}'))),
+                    ? 'Overnight travel · no stay needed · ${plan.participantsLabel(i)}'
+                    : '${i['date'] == day ? 'Check-in' : 'Your stay'} · ${travelDate(i['date'])}–${travelDate(i['endDate'])} · ${i.stayDuration} · ${plan.participantsLabel(i)}'))),
       if (day.isNotEmpty &&
           day.compareTo(planDate(trip.endDate)) < 0 &&
           destinationFilter(plan).isEmpty &&
-          !plan.hasStay(day))
+          !plan.hasStay(day, person: personFilter(plan)))
         Padding(
             padding: const EdgeInsets.only(top: 6),
             child: ListTile(
@@ -847,8 +943,10 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                   child: const Text('Clear')),
             ])),
       if (records.isEmpty)
-        hint('Somewhere you want to go',
-            'Save restaurants, coffee shops and places worth a detour. Add them to a day when you are ready.'),
+        hint(
+          'No saved places here',
+          'Add a place, or change the destination and filters to find your saved places.',
+        ),
       LayoutBuilder(
           builder: (context, constraints) => Wrap(
               spacing: 14,
@@ -867,11 +965,12 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
     final yes = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-                title: Text(
-                    keepLocal ? 'Replace server plan?' : 'Use server plan?'),
+                title: Text(keepLocal
+                    ? 'Keep my conflicting edits?'
+                    : 'Use latest conflicting edits?'),
                 content: Text(keepLocal
-                    ? 'Replace the complete server plan with this device’s version?'
-                    : 'Replace this device’s plan with the server version? Unsynced changes will be discarded.'),
+                    ? 'Use this device’s values for conflicting fields? Other people’s separate changes are kept.'
+                    : 'Use the server’s values for conflicting fields? Your separate changes are kept.'),
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(ctx, false),
@@ -891,17 +990,19 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
   Widget syncNotice(TripPlan plan) {
     if (plan.error.isEmpty) return const SizedBox.shrink();
     return Container(
-        margin: const EdgeInsets.only(bottom: 20),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-            color: Theme.of(context)
-                .colorScheme
-                .errorContainer
-                .withValues(alpha: .5),
-            borderRadius: BorderRadius.circular(16)),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+          color: Theme.of(context)
+              .colorScheme
+              .errorContainer
+              .withValues(alpha: .5),
+          borderRadius: BorderRadius.circular(16)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           Text(plan.error == 'conflict'
-              ? 'This plan changed on another device. Choose which version to keep.'
+              ? 'Some fields changed on another device. Choose which conflicting values to keep. Separate changes are preserved.'
               : plan.error),
           Wrap(
               spacing: 8,
@@ -909,26 +1010,44 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                   ? [
                       TextButton(
                           onPressed: resolving ? null : () => resolve(true),
-                          child: const Text('Keep this device')),
+                          child: const Text('Keep my conflicting edits')),
                       TextButton(
                           onPressed: resolving ? null : () => resolve(false),
-                          child: const Text('Use server version')),
+                          child: const Text('Use latest conflicting edits')),
                     ]
                   : [
                       TextButton(
-                          onPressed: () => action(() => ref
-                              .read(tripPlanRepositoryProvider)
-                              .sync(widget.tripId)),
-                          child: const Text('Retry sync'))
+                        onPressed: () => action(() => ref
+                            .read(tripPlanRepositoryProvider)
+                            .sync(widget.tripId)),
+                        child: const Text('Retry sync'),
+                      ),
                     ]),
-        ]));
+        ],
+      ),
+    );
   }
 
   Widget header(Trip trip, TripPlan plan) {
     final colors = Theme.of(context).colorScheme;
     final currency = ref.watch(displayCurrencyProvider);
+    final filter = destinationFilter(plan);
+    final expenseFilter = filter == '__unassigned__' ? '' : filter;
     final total = trip.expenses
+        .where(
+          (e) =>
+              filter.isEmpty ||
+              plan.expenseDestination(
+                    e.planItemId,
+                    destinationId: e.destinationId,
+                  ) ==
+                  expenseFilter,
+        )
         .fold<double>(0, (sum, e) => sum + e.displayAmount(currency));
+    final bookingCount = plan
+        .ofKind('booking')
+        .where((i) => plan.matchesDestination(i, filter))
+        .length;
     final tasks = plan.ofKind('task');
     Widget shortcut(String tooltip, IconData icon, String text, String panel) =>
         Tooltip(
@@ -986,16 +1105,37 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
               : plan.destinations.map((d) => d.title).join(' → ')),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => showTripDestinations(context, trip)),
+      ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.people_outline),
+          title: const Text('People'),
+          subtitle: Text(plan.activePeople.isEmpty
+              ? 'Add travellers'
+              : plan.activePeople.map((p) => p.title).join(', ')),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => showTripPeople(context, trip)),
+      if (trip.remoteId != null && ref.read(apiClientProvider) != null)
+        TextButton.icon(
+            onPressed: () => openPlanLink(
+                context,
+                Uri.parse(ref.read(apiClientProvider)!.baseUrl)
+                    .replace(
+                        path: '/expenses/travel/trips/${trip.remoteId}/plan/',
+                        query: '',
+                        fragment: '')
+                    .toString()),
+            icon: const Icon(Icons.group_add_outlined),
+            label: const Text('Invite & collaborate on web')),
       Wrap(spacing: 12, runSpacing: 0, children: [
         shortcut('View bookings', Icons.confirmation_number_outlined,
-            '${plan.ofKind('booking').length} bookings', 'bookings'),
+            'Bookings · $bookingCount', 'bookings'),
         shortcut(
             'View preparation',
             Icons.task_alt,
-            '${tasks.where((i) => i['status'] == 'completed').length}/${tasks.length} ready',
+            'Trip checklist · ${tasks.where((i) => i['status'] == 'completed').length}/${tasks.length}',
             'preparation'),
         shortcut('View expenses', Icons.account_balance_wallet_outlined,
-            CurrencyUtils.format(total, currency), 'expenses'),
+            'Spent · ${CurrencyUtils.format(total, currency)}', 'expenses'),
       ]),
       if (deadlines.isNotEmpty &&
           deadlines.first['cancelBy'].compareTo(
@@ -1091,9 +1231,18 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                                               labelText: 'Show destination'),
                                           items: [
                                             const DropdownMenuItem(
-                                                value: '',
-                                                child:
-                                                    Text('All destinations')),
+                                              value: '',
+                                              child: Text('All destinations'),
+                                            ),
+                                            const DropdownMenuItem(
+                                              value: '__unassigned__',
+                                              child: Text('Unassigned'),
+                                            ),
+                                            const DropdownMenuItem(
+                                              value: '__transfers__',
+                                              child:
+                                                  Text('Between destinations'),
+                                            ),
                                             ...plan.destinations.map((d) =>
                                                 DropdownMenuItem(
                                                     value: d.id,
@@ -1118,6 +1267,33 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                                             }
                                           }),
                                         )),
+                                  if (plan.people.isNotEmpty && tabs.index == 0)
+                                    Padding(
+                                        padding:
+                                            const EdgeInsets.only(bottom: 12),
+                                        child: DropdownButtonFormField<String>(
+                                          key: ValueKey(
+                                              'person-filter-${personFilter(plan)}'),
+                                          initialValue: personFilter(plan),
+                                          isExpanded: true,
+                                          decoration: const InputDecoration(
+                                              labelText: 'Show people'),
+                                          items: [
+                                            const DropdownMenuItem(
+                                                value: '',
+                                                child: Text(
+                                                    'Everyone’s itinerary')),
+                                            ...plan.people.map((p) =>
+                                                DropdownMenuItem(
+                                                    value: p.id,
+                                                    child: Text(
+                                                        '${p.title}${p.cancelled ? ' (archived)' : ''}')))
+                                          ],
+                                          onChanged: (v) => setState(() {
+                                            selectedPerson = v!;
+                                            reordering = false;
+                                          }),
+                                        )),
                                   TabBar(
                                       controller: tabs,
                                       isScrollable: true,
@@ -1130,12 +1306,20 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                                           .withValues(alpha: .5),
                                       tabs: const [
                                         Tab(text: 'Itinerary'),
-                                        Tab(text: 'Saved places')
+                                        Tab(text: 'Saved places'),
+                                        Tab(text: 'Spending'),
                                       ]),
                                   if (tabs.index == 0)
                                     timeline(trip, plan)
+                                  else if (tabs.index == 1)
+                                    places(trip, plan)
                                   else
-                                    places(trip, plan),
+                                    TripExpensesScreen(
+                                      tripId: trip.id,
+                                      onDestinationChanged: (v) => setState(
+                                          () => selectedDestination = v),
+                                      destination: destinationFilter(plan),
+                                    ),
                                 ]))),
                   ),
               loading: () => const Scaffold(

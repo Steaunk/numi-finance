@@ -1,6 +1,7 @@
 import json
 from django.test import TestCase
-from .models import Trip, TripPlan
+from .models import Trip, TripPlan, TravelExpense
+from unittest.mock import patch
 
 
 class TripPlanTests(TestCase):
@@ -14,6 +15,33 @@ class TripPlanTests(TestCase):
         return self.client.put(url or self.url, data=json.dumps({'content': self.content if content is None else content,
             'revision': revision, 'mutation_id': mutation}), content_type='application/json')
 
+    @patch('expenses.views.get_rates', return_value={'sgd': 1.3, 'cny': 7, 'hkd': 7.8})
+    def test_standalone_expense_city_roundtrip_and_destination_removal(self, _rates):
+        city = {'id': 'kyoto', 'kind': 'destination', 'title': 'Kyoto',
+                'date': '2026-10-01', 'endDate': '2026-10-03'}
+        self.assertEqual(self.put({'items': [city]}).status_code, 200)
+        body = {'client_id': 'water', 'amount': 5, 'currency': 'SGD', 'date': '2026-09-21',
+                'category': 'Other', 'name': 'Water', 'destination_id': 'kyoto'}
+        base = f'/expenses/api/travel/trips/{self.trip.id}/expenses/'
+        response = self.client.post(base + 'add/', data=json.dumps(body), content_type='application/json')
+        self.assertEqual(response.status_code, 201, response.content)
+        expense = TravelExpense.objects.get(pk=response.json()['id'])
+        self.assertIsNone(expense.plan_item_id)
+        self.assertEqual(self.client.get(base).json()['expenses'][0]['destination_id'], 'kyoto')
+        # Older clients omit the field: ordinary edits must preserve it.
+        update = {k: v for k, v in body.items() if k != 'destination_id'}
+        update['amount'] = 7
+        self.assertEqual(self.client.put(base + f'{expense.id}/', data=json.dumps(update), content_type='application/json').status_code, 200)
+        expense.refresh_from_db()
+        self.assertEqual(expense.destination_id, 'kyoto')
+        self.assertEqual(self.put({'items': []}, revision=1, mutation='remove-city').status_code, 200)
+        expense.refresh_from_db()
+        self.assertEqual(expense.destination_id, '')
+        self.assertEqual(expense.amount, 7)
+        self.assertIsNone(expense.plan_item_id)
+        body['client_id'] = 'invalid'
+        self.assertEqual(self.client.post(base + 'add/', data=json.dumps(body), content_type='application/json').status_code, 400)
+
     def test_multi_destination_route_and_overlapping_transfer_day(self):
         tokyo = {'id': 'tokyo', 'kind': 'destination', 'title': 'Tokyo', 'date': '2026-10-01', 'endDate': '2026-10-02'}
         kyoto = {'id': 'kyoto', 'kind': 'destination', 'title': 'Kyoto', 'date': '2026-10-02', 'endDate': '2026-10-03'}
@@ -26,7 +54,8 @@ class TripPlanTests(TestCase):
         self.assertEqual(self.put(reordered, revision=1, mutation='reorder').status_code, 200)
         self.assertEqual(self.client.get(self.url).json()['content']['items'][0]['id'], 'kyoto')
         self.assertEqual(self.put(reordered, revision=1, mutation='reorder').status_code, 200)
-        self.assertEqual(self.put(content, revision=1, mutation='stale').status_code, 409)
+        self.assertEqual(self.put(content, revision=1, mutation='stale').status_code, 200)
+        self.assertEqual(self.client.get(self.url).json()['content']['items'][0]['id'], 'kyoto')
 
     def test_destination_validation_and_trip_isolation(self):
         destination = {'id': 'tokyo', 'kind': 'destination', 'title': 'Tokyo', 'date': '2026-10-01', 'endDate': '2026-10-02'}
@@ -63,7 +92,7 @@ class TripPlanTests(TestCase):
     def test_stale_writer_cannot_overwrite(self):
         self.put()
         response = self.put({'items': []}, 0, 'other-device')
-        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['content'], self.content)
         self.assertEqual(self.put({'items': []}, 0, 'first').status_code, 409)
 
@@ -147,7 +176,7 @@ class BookingPaymentTests(TestCase):
         self.assertEqual(TravelExpense.objects.count(), 1)
         self.assertEqual(self.put([{**self.booking,'title':'New name','amount':'240'}], 1, 'edit').status_code, 200)
         expense.refresh_from_db()
-        self.assertEqual((expense.name, expense.amount), ('New name', 240))
+        self.assertEqual((expense.name, expense.amount), ('Riverside hotel', 240))
         self.assertEqual(TravelExpense.objects.count(), 1)
 
     def test_unpaid_to_paid_and_payment_removal(self):
@@ -221,7 +250,7 @@ class BookingPaymentTests(TestCase):
         self.assertEqual(TravelExpense.objects.get(client_id='flight-pay').category,'Transportation')
         self.assertEqual(self.put([flight,{**place,'title':'Art Museum'},activity],1,'rename').status_code,200)
         ticket.refresh_from_db()
-        self.assertEqual(ticket.name,'Art Museum')
+        self.assertEqual(ticket.name,'Museum')
 
     def test_older_app_remote_id_alias_adopts_new_server_identity_without_copy(self):
         from .models import TravelExpense
@@ -233,3 +262,52 @@ class BookingPaymentTests(TestCase):
         self.assertEqual(TravelExpense.objects.count(),1)
         expense.refresh_from_db()
         self.assertEqual(expense.client_id,'server-stable-identity')
+
+
+class TravelDestinationMigrationTests(TestCase):
+    def backfill(self):
+        from django.apps import apps
+        from importlib import import_module
+        migration = import_module('expenses.migrations.0009_backfill_travel_destinations')
+        migration.backfill_destinations(apps, None)
+
+    def test_legacy_trip_becomes_one_destination_without_changing_ledger(self):
+        trip = Trip.objects.create(destination='Europe', start_date='2026-04-02', end_date='2026-04-10')
+        expense = TravelExpense.objects.create(trip=trip, name='Rail ticket', amount=81.2,
+            currency='USD', date='2026-03-01', category='Transportation', notes='Original notes')
+        before = {key: value for key, value in TravelExpense.objects.values().get().items()
+                  if key != 'destination_id'}
+        self.backfill()
+        plan = TripPlan.objects.get(trip=trip)
+        visit = plan.content['items'][0]
+        self.assertEqual((visit['title'], visit['date'], visit['endDate']), ('Europe', '2026-04-02', '2026-04-10'))
+        self.assertEqual(plan.revision, 1)
+        expense.refresh_from_db()
+        self.assertEqual(expense.destination_id, visit['id'])
+        after = {key: value for key, value in TravelExpense.objects.values().get().items()
+                 if key != 'destination_id'}
+        self.assertEqual(before, after)
+        self.backfill()
+        self.assertEqual(TripPlan.objects.count(), 1)
+        self.assertEqual(TravelExpense.objects.count(), 1)
+        self.assertEqual(TripPlan.objects.get().revision, 1)
+
+    def test_existing_plan_backfills_linked_city_without_guessing_standalone_city(self):
+        trip = Trip.objects.create(destination='Japan', start_date='2026-10-01', end_date='2026-10-03')
+        items = [
+            {'id': 'kyoto', 'kind': 'destination', 'title': 'Kyoto'},
+            {'id': 'cafe', 'kind': 'place', 'title': 'Cafe', 'destinationId': 'kyoto'},
+            {'id': 'breakfast', 'kind': 'activity', 'title': 'Breakfast', 'placeId': 'cafe'},
+        ]
+        TripPlan.objects.create(trip=trip, content={'items': items}, revision=7)
+        linked = TravelExpense.objects.create(trip=trip, plan_item_id='breakfast', name='Breakfast',
+            amount=8, currency='USD', date='2026-10-01', category='Food & Drinks')
+        standalone = TravelExpense.objects.create(trip=trip, name='Water', amount=2,
+            currency='USD', date='2026-10-01', category='Other')
+        self.backfill()
+        linked.refresh_from_db()
+        standalone.refresh_from_db()
+        self.assertEqual(linked.destination_id, 'kyoto')
+        self.assertEqual(standalone.destination_id, '')
+        self.assertEqual(TripPlan.objects.get().content, {'items': items})
+        self.assertEqual(TripPlan.objects.get().revision, 7)

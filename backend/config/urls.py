@@ -19,6 +19,7 @@ from django.shortcuts import redirect
 from django.urls import include, path
 
 urlpatterns = [
+    path('travel/shared/', include('expenses.shared_urls')),
     path('admin/', admin.site.urls),
     path('', lambda request: redirect('expenses/', permanent=False)),
     path('expenses/', include('expenses.urls')),

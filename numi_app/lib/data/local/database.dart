@@ -46,6 +46,7 @@ class TravelExpenses extends Table {
   IntColumn get tripRemoteId => integer().nullable()();
   TextColumn get clientId => text().nullable()();
   TextColumn get planItemId => text().nullable()();
+  TextColumn get destinationId => text().withDefault(const Constant(''))();
   RealColumn get amount => real()();
   TextColumn get currency => text()();
   DateTimeColumn get date => dateTime()();
@@ -383,24 +384,21 @@ class ExchangeRateDao extends DatabaseAccessor<AppDatabase>
     SyncQueue,
     TripPlans,
   ],
-  daos: [
-    SyncQueueDao,
-    ExpenseDao,
-    TripDao,
-    AccountDao,
-    ExchangeRateDao,
-  ],
+  daos: [SyncQueueDao, ExpenseDao, TripDao, AccountDao, ExchangeRateDao],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) => m.createAll(),
         onUpgrade: (m, from, to) async {
+          if (from < 5) {
+            await m.addColumn(travelExpenses, travelExpenses.destinationId);
+          }
           if (from < 4) {
             await m.addColumn(travelExpenses, travelExpenses.clientId);
             await m.addColumn(travelExpenses, travelExpenses.planItemId);

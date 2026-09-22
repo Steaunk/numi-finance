@@ -83,6 +83,8 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': os.environ.get('DATABASE_PATH', BASE_DIR / 'db.sqlite3'),
+        # Serialize writers before reading a base revision; concurrent planners wait.
+        'OPTIONS': {'transaction_mode': 'IMMEDIATE', 'timeout': 20},
     }
 }
 
@@ -161,3 +163,9 @@ LOGGING = {
 
 # Internal portfolio data service (Docker network only)
 PORTFOLIO_SERVICE_URL = os.environ.get('PORTFOLIO_SERVICE_URL', 'http://stock:8051')
+
+# Shared travel invitations use Django sessions; production cookies require HTTPS.
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_HTTPONLY = True

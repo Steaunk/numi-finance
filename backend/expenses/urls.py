@@ -1,8 +1,12 @@
 from django.urls import path
 
-from . import views, planning
+from . import views, planning, collaboration
 
 urlpatterns = [
+    path('travel/trips/<int:trip_id>/plan/', collaboration.workspace, name='travel_collaboration'),
+    path('api/travel/trips/<int:trip_id>/collaboration/data/', collaboration.data),
+    path('api/travel/trips/<int:trip_id>/collaboration/history/', collaboration.history),
+    path('api/travel/trips/<int:trip_id>/collaboration/invites/', collaboration.invites),
     path('api/travel/trips/by-client/<str:client_id>/', planning.delete_trip_by_client, name='delete_trip_by_client'),
     path('api/travel/trips/<int:trip_id>/plan/', planning.trip_plan, name='trip_plan'),
     path('', views.index, name='expenses_index'),

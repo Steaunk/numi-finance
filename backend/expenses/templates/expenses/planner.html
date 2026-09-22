@@ -69,7 +69,7 @@ window.TravelPlanner = (() => {
     const destinationOptions = (s,value,empty) => `<option value="">${empty}</option>`+destinations(s).map(d=>`<option value="${escape(d.id)}" ${d.id===value?'selected':''}>${escape(d.title)}</option>`).join('');
     function expenseGroup(s,e) {
         const i=items(s).find(i=>i.id===e.plan_item_id || i.expenseClientId && [e.client_id,'remote-'+e.id].includes(i.expenseClientId));
-        if(!i) return '';
+        if(!i) return destinations(s).some(d=>d.id===e.destination_id) ? e.destination_id : '';
         const from=destinationId(s,i); return i.endDestinationId && i.endDestinationId!==from ? '__transfers__' : from;
     }
     function renderExpenseGroups(s) {
@@ -116,7 +116,7 @@ window.TravelPlanner = (() => {
         renderExpenseGroups(s);
         const root = document.getElementById(`planner_${s.trip.id}`); if(!root) return;
         const row = read(s.trip.id), list = row.content.items, tasks = list.filter(i=>i.kind === 'task');
-        root.querySelector('.plan-status').innerHTML = `${escape(row.error === 'conflict' ? 'This plan changed on another device. Choose which complete version to keep.' : row.error || (row.dirty ? 'Saved in this browser · pending sync' : 'Plan synced'))}<div class="plan-actions">${action('Sync now','sync')}${row.error === 'conflict' ? action('Keep this browser','local')+action('Use server version','server') : ''}</div>`;
+        root.querySelector('.plan-status').innerHTML = `${escape(row.error === 'conflict' ? 'Some fields changed on another device. Resolve overlapping edits; separate changes are preserved.' : row.error || (row.dirty ? 'Saved in this browser · pending sync' : 'Plan synced'))}<div class="plan-actions">${action('Sync now','sync')}${row.error === 'conflict' ? action('Keep this browser','local')+action('Use server version','server') : ''}</div>`;
         root.querySelector('.plan-tabs').innerHTML = tabs.map(t=>`<button class="btn ${s.tab===t?'active':'btn-secondary'}" data-tab="${t}" role="tab" aria-selected="${s.tab===t}">${t}</button>`).join('');
         const panel = root.querySelector('.plan-panel');
         root.querySelector('.plan-expenses').hidden = s.tab !== 'Expenses'; panel.hidden = s.tab === 'Expenses';
@@ -170,7 +170,7 @@ window.TravelPlanner = (() => {
                         const result = await request(tripId,{method:'PUT',body:JSON.stringify({content:row.content,revision:row.revision,mutation_id:row.mutation})});
                         if(!states.has(tripId)) return;
                         pushed = true;
-                        const latest = read(tripId); latest.revision = result.revision; latest.dirty = latest.mutation !== row.mutation; latest.error = ''; write(tripId,latest);
+                        const latest = read(tripId); latest.dirty = latest.mutation !== row.mutation; if(!latest.dirty){latest.revision = result.revision; latest.content = result.content;} latest.error = ''; write(tripId,latest);
                         continue;
                     }
                     const result = await request(tripId);
@@ -185,11 +185,14 @@ window.TravelPlanner = (() => {
         running.set(tripId,work); return work;
     }
     async function resolve(s,local) {
-        if(!confirm(local ? 'Replace the complete server plan with this browser’s version?' : 'Replace the complete browser plan with the server version? Unsynced edits will be discarded.')) return;
+        if(!confirm(local ? 'Keep this browser’s conflicting fields? Separate changes are preserved.' : 'Use the latest conflicting fields? Your separate changes are preserved.')) return;
         await running.get(s.trip.id);
         const before = read(s.trip.id), result = await request(s.trip.id), latest = read(s.trip.id);
         if(latest.mutation !== before.mutation) throw new Error('Plan changed while resolving. Review it and try again.');
-        write(s.trip.id,{...latest,content:local ? latest.content : result.content,revision:result.revision,dirty:local,mutation:id(),error:''}); render(s); await sync(s.trip.id);
+        const resolved=await request(s.trip.id,{method:'PUT',body:JSON.stringify({content:latest.content,revision:latest.revision,mutation_id:id(),conflict_choice:local?'local':'server',expected_revision:result.revision})});
+        const current=read(s.trip.id);
+        if(current.mutation!==latest.mutation) throw new Error('Local edits were kept. Sync again to merge them.');
+        write(s.trip.id,{...latest,content:resolved.content,revision:resolved.revision,dirty:false,mutation:id(),error:''}); render(s); await sync(s.trip.id);
     }
     async function copy(value) { try { await navigator.clipboard.writeText(value); showMessage('Link copied','success'); } catch { prompt('Copy this link:',value); } }
     function reorder(s,source,target) {
@@ -324,7 +327,7 @@ window.TravelPlanner = (() => {
         if(!s) {s={trip,tab:'Overview',day:trip.start_date,category:'All',priority:'All',scheduled:'All',checklist:'All',destination:'',expenseFilter:'__all__',routeOpen:false};states.set(trip.id,s);}
         s.trip=trip; s.expenses=expenses; s.expenseCurrency=expenseCurrency;
         if(!el.querySelector(`#planner_${trip.id}`)) {
-            el.innerHTML=`<div id="planner_${trip.id}"><div class="plan-status" role="status"></div><div class="plan-route"></div><nav class="plan-tabs" role="tablist" aria-label="Trip sections"></nav><div class="plan-panel"></div><div class="plan-expenses" id="tripExpenses_${trip.id}" hidden></div></div>`;
+            el.innerHTML=`<div id="planner_${trip.id}"><p><a class="btn" href="/expenses/travel/trips/${trip.id}/plan/">Open shared itinerary · People & invitations ↗</a></p><div class="plan-status" role="status"></div><div class="plan-route"></div><nav class="plan-tabs" role="tablist" aria-label="Trip sections"></nav><div class="plan-panel"></div><div class="plan-expenses" id="tripExpenses_${trip.id}" hidden></div></div>`;
             const root=el.firstElementChild;s.root=root;
             root.addEventListener('click',e=>{if(!e.target.closest('.plan-expenses'))void handle(s,e);});
             root.addEventListener('change',e=>{if(e.target.matches('[data-expense-filter]')){s.expenseFilter=e.target.value;renderExpenseGroups(s);}if(e.target.dataset.filter){s[e.target.dataset.filter]=e.target.value;if(e.target.dataset.filter==='destination'){const d=destinations(s).find(d=>d.id===s.destination);if(d&&(s.day<d.date||s.day>d.endDate))s.day=d.date;}render(s);}});
@@ -349,7 +352,7 @@ window.TravelPlanner = (() => {
             } else if(attach) {
                 const stay=expense.category==='Accommodation';
                 const next=new Date(s.trip.start_date+'T12:00:00Z'); next.setUTCDate(next.getUTCDate()+1);
-                editor(s,create(targetKind,{title:expense.name,notes:expense.notes,category:targetKind==='activity'?'Activity':stay?'Accommodation':'Reservation',
+                editor(s,create(targetKind,{title:expense.name,notes:expense.notes,destinationId:expense.destination_id || '',category:targetKind==='activity'?'Activity':stay?'Accommodation':'Reservation',
                     date:s.trip.start_date, endDate:stay&&targetKind==='booking'?(s.trip.end_date>s.trip.start_date?s.trip.end_date:next.toISOString().slice(0,10)):'',
                     status:'confirmed',amount:String(expense.amount),currency:expense.currency,paymentStatus:'paid',paidDate:expense.date,
                     expenseCategory:expense.category,expenseClientId:expense.client_id || 'remote-'+expense.id}));

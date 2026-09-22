@@ -16,6 +16,14 @@ Future<void> reconcileBookingPayments(
   final trip = await db.tripDao.getById(tripId);
   if (trip == null) return;
   final rates = await RateRepository(db, null).getCachedRates();
+  final destinationIds =
+      items.where((i) => i.kind == 'destination').map((i) => i.id).toList();
+  await (db.update(db.travelExpenses)
+        ..where(
+          (e) =>
+              e.tripId.equals(tripId) & e.destinationId.isNotIn(destinationIds),
+        ))
+      .write(const TravelExpensesCompanion(destinationId: Value('')));
   final rows = await db.tripDao.getExpensesForTrip(tripId);
   for (final row in rows.where((e) => e.planItemId != null)) {
     final booking = bookings[row.planItemId];
@@ -82,7 +90,8 @@ Future<void> reconcileBookingPayments(
         (existing.tripId != tripId ||
             (existing.planItemId != null &&
                 existing.planItemId != booking.id))) {
-      throw StateError('This expense is already linked to another itinerary item.');
+      throw StateError(
+          'This expense is already linked to another itinerary item.');
     }
     final changed = existing == null ||
         existing.amount != amount ||
@@ -94,12 +103,14 @@ Future<void> reconcileBookingPayments(
         tripRemoteId: Value(trip.remoteId),
         clientId: Value(clientId),
         planItemId: Value(booking.id),
+        destinationId: Value(TripPlan(items: items).destinationIdFor(booking)),
         remoteId: Value(serverIds?[clientId] as int? ?? existing?.remoteId),
         amount: Value(amount),
         currency: Value(booking['currency']),
         date: Value(date),
-        name: Value(TripPlan(items: items).itemTitle(booking)),
-        notes: Value(booking['notes']),
+        name:
+            Value(existing?.name ?? TripPlan(items: items).itemTitle(booking)),
+        notes: Value(existing?.notes ?? booking['notes']),
         category: Value(booking['expenseCategory']),
         amountUsd:
             Value(changed ? converted['amount_usd']! : existing.amountUsd),

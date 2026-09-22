@@ -3,6 +3,7 @@ class TravelExpense {
   final int? remoteId;
   final String? clientId;
   final String? planItemId;
+  final String destinationId;
   final int tripId;
   final int? tripRemoteId;
   final double amount;
@@ -24,6 +25,7 @@ class TravelExpense {
     required this.tripId,
     this.clientId,
     this.planItemId,
+    this.destinationId = '',
     this.tripRemoteId,
     required this.amount,
     required this.currency,

@@ -9,7 +9,7 @@ from django.views.decorators.http import require_GET, require_POST, require_http
 
 from core.services import compute_snapshot_amounts, get_rates
 
-from .models import Expense, EXPENSE_CATEGORIES, TRAVEL_CATEGORIES, Trip, TravelExpense
+from .models import Expense, EXPENSE_CATEGORIES, TRAVEL_CATEGORIES, Trip, TravelExpense, TripPlan
 
 DISPLAY_CURRENCIES = {'CNY', 'HKD', 'USD', 'SGD'}
 
@@ -423,6 +423,7 @@ def list_trip_expenses(request, trip_id):
             'id': exp.id,
             'client_id': exp.client_id,
             'plan_item_id': exp.plan_item_id,
+            'destination_id': exp.destination_id,
             'amount': exp.amount,
             'currency': exp.currency,
             'date': exp.date.isoformat(),
@@ -451,6 +452,16 @@ def list_trip_expenses(request, trip_id):
     })
 
 
+def valid_expense_destination(trip_id, destination_id):
+    if not isinstance(destination_id, str) or len(destination_id) > 64:
+        return False
+    if not destination_id:
+        return True
+    plan = TripPlan.objects.filter(trip_id=trip_id).first()
+    return bool(plan and any(i.get('kind') == 'destination' and i.get('id') == destination_id
+                             for i in plan.content.get('items', [])))
+
+
 @require_POST
 def add_trip_expense(request, trip_id):
     try:
@@ -472,6 +483,9 @@ def add_trip_expense(request, trip_id):
             if existing.trip_id != trip_id:
                 return JsonResponse({'error': 'Expense belongs to another trip'}, status=400)
             return JsonResponse({'id': existing.id, 'name': existing.name})
+    destination_id = data.get('destination_id', '')
+    if not valid_expense_destination(trip_id, destination_id):
+        return JsonResponse({'error': 'Choose a destination in this trip'}, status=400)
     errors = []
     amount = data.get('amount')
     try:
@@ -512,6 +526,7 @@ def add_trip_expense(request, trip_id):
     amounts = compute_snapshot_amounts(amount, currency, rates)
     values = dict(
         trip=trip,
+        destination_id=destination_id,
         amount=amount,
         currency=currency,
         date=exp_date,
@@ -544,6 +559,9 @@ def update_trip_expense(request, trip_id, expense_id):
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
+    destination_id = data.get('destination_id', exp.destination_id)
+    if not valid_expense_destination(trip_id, destination_id):
+        return JsonResponse({'error': 'Choose a destination in this trip'}, status=400)
     errors = []
     amount = data.get('amount')
     try:
@@ -582,6 +600,7 @@ def update_trip_expense(request, trip_id, expense_id):
         return JsonResponse({'errors': errors}, status=400)
 
     amounts = compute_snapshot_amounts(amount, currency, rates)
+    exp.destination_id = destination_id
     exp.amount = amount
     exp.currency = currency
     exp.date = exp_date

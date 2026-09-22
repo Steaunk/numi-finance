@@ -122,6 +122,7 @@ void main() {
           scrollable: find.byType(Scrollable).last);
     }
     await tester.ensureVisible(target);
+    await tester.pumpAndSettle();
     await tester.tap(target);
     await tester.pumpAndSettle();
   }
@@ -140,66 +141,202 @@ void main() {
   }
 
   Future<void> tapVisible(WidgetTester tester, Finder target) async {
+    await tester.pumpAndSettle();
     if (target.evaluate().isEmpty) {
       await tester.scrollUntilVisible(target, 200,
           scrollable: find.byType(Scrollable).last);
     }
     await tester.ensureVisible(target);
+    await tester.pumpAndSettle();
     await tester.tap(target);
     await tester.pumpAndSettle();
   }
 
   testWidgets(
-      'two views and sheets preserve the selected day and existing features',
+      'participants editor saves a specific traveller and filter keeps everyone arrangements',
       (tester) async {
+    final me = PlanItem.create('person').copy({'title': 'Me'});
+    final nyt = PlanItem.create('person').copy({'title': 'NYT'});
+    await repo.save(trip.id, me);
+    await repo.save(trip.id, nyt);
+    await repo.save(
+        trip.id,
+        PlanItem.create('activity').copy(
+            {'title': 'Solo museum', 'date': '2026-10-01'},
+            participantIds: [nyt.id]));
+    await show(tester, const Size(1100, 1200));
+    final filter = find.byKey(const ValueKey('person-filter-'));
+    await tapVisible(tester, filter);
+    await tester.tap(find.text('Me').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Solo museum'), findsNothing);
+    expect(find.textContaining('A very long cafe name'), findsWidgets);
+    await tapVisible(tester, find.byKey(ValueKey('person-filter-${me.id}')));
+    await tester.tap(find.text('NYT').last);
+    await tester.pumpAndSettle();
+    await tapVisible(tester, find.text('Solo museum'));
+    await tapVisible(tester, find.text('Edit activity'));
+    expect(find.widgetWithText(CheckboxListTile, 'NYT'), findsOneWidget);
+    await tapVisible(tester, find.widgetWithText(SwitchListTile, 'Everyone'));
+    await tapVisible(tester, find.text('Save item'));
+    final plan = (await tester.runAsync(() => repo.watch(trip.id).first))!;
+    expect(
+        plan.items.firstWhere((i) => i.title == 'Solo museum').participantIds,
+        isEmpty);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets(
+    'three views and sheets preserve the selected day and existing features',
+    (tester) async {
+      await show(tester, const Size(390, 844));
+      expect(find.byType(Tab), findsNWidgets(3));
+      await capture(tester, 'phone-itinerary');
+      await tapVisible(tester, find.byKey(const ValueKey('day-2026-10-02')));
+      expect(find.text('Friday, 2 Oct'), findsOneWidget);
+      await tab(tester, 'Saved places');
+      await capture(tester, 'phone-places');
+      await tapVisible(tester, find.byTooltip('Add place'));
+      await tester.enterText(
+          find.widgetWithText(TextFormField, 'Name'), 'Nishiki Market');
+      tester.testTextInput.hide();
+      await tester.pumpAndSettle();
+      await tapVisible(tester, find.text('More details'));
+      await capture(tester, 'phone-form');
+      expect(find.text('Add links'), findsOneWidget);
+      await tapVisible(tester, find.text('Save item'));
+      expect(
+          (await tester.runAsync(() => repo.watch(trip.id).first))!
+              .ofKind('place')
+              .length,
+          2);
+      await tab(tester, 'Itinerary');
+      expect(find.text('Friday, 2 Oct'), findsOneWidget);
+      await tapVisible(tester, find.byTooltip('View bookings'));
+      expect(find.text('Kyoto riverside hotel'), findsWidgets);
+      await tapVisible(tester, find.text('Kyoto riverside hotel').last);
+      expect(find.text('Edit booking'), findsOneWidget);
+      await tapVisible(tester, find.byTooltip('Close editor'));
+      await tapVisible(tester, find.byTooltip('Close panel'));
+      await tapVisible(tester, find.byTooltip('View preparation'));
+      await tester.tap(find.byType(Checkbox).first);
+      await tester.pumpAndSettle();
+      expect(
+          (await tester.runAsync(() => repo.watch(trip.id).first))!
+              .ofKind('task')
+              .single['status'],
+          'completed');
+      await capture(tester, 'phone-preparation');
+      await tapVisible(tester, find.byTooltip('Close panel'));
+      await tapVisible(tester, find.byTooltip('View expenses'));
+      expect(find.text('No expenses yet'), findsOneWidget);
+      expect(find.text('Add expense'), findsOneWidget);
+      await tab(tester, 'Itinerary');
+      expect(find.text('Friday, 2 Oct'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets('saved-place picker adds directly to the selected day', (
+    tester,
+  ) async {
     await show(tester, const Size(390, 844));
-    expect(find.byType(Tab), findsNWidgets(2));
-    await capture(tester, 'phone-itinerary');
     await tapVisible(tester, find.byKey(const ValueKey('day-2026-10-02')));
-    expect(find.text('Friday, 2 Oct'), findsOneWidget);
-    await tab(tester, 'Saved places');
-    await capture(tester, 'phone-places');
-    await tapVisible(tester, find.byTooltip('Add place'));
+    await tapVisible(tester, find.text('Add to this day'));
     await tester.enterText(
-        find.widgetWithText(TextFormField, 'Name'), 'Nishiki Market');
+      find.widgetWithText(TextField, 'Search saved places'),
+      'coffee',
+    );
     tester.testTextInput.hide();
     await tester.pumpAndSettle();
-    await tapVisible(tester, find.text('More details'));
-    await capture(tester, 'phone-form');
-    expect(find.text('Add links'), findsOneWidget);
-    await tapVisible(tester, find.text('Save item'));
+    await capture(tester, 'saved-place-picker');
+    await tapVisible(
+      tester,
+      find
+          .text(
+            'A very long cafe name for coffee, pastries and a slow afternoon',
+          )
+          .last,
+    );
+    final plan = (await tester.runAsync(() => repo.watch(trip.id).first))!;
     expect(
-        (await tester.runAsync(() => repo.watch(trip.id).first))!
-            .ofKind('place')
-            .length,
-        2);
-    await tab(tester, 'Itinerary');
-    expect(find.text('Friday, 2 Oct'), findsOneWidget);
-    await tapVisible(tester, find.byTooltip('View bookings'));
-    expect(find.text('Kyoto riverside hotel'), findsWidgets);
-    await tapVisible(tester, find.text('Kyoto riverside hotel').last);
-    expect(find.text('KYOTO-123'), findsOneWidget);
-    await tapVisible(tester, find.byTooltip('Close panel').last);
-    await tapVisible(tester, find.byTooltip('Close panel'));
-    await tapVisible(tester, find.byTooltip('View preparation'));
-    await tester.tap(find.byType(Checkbox).first);
-    await tester.pumpAndSettle();
-    expect(
-        (await tester.runAsync(() => repo.watch(trip.id).first))!
-            .ofKind('task')
-            .single['status'],
-        'completed');
-    await capture(tester, 'phone-preparation');
-    await tapVisible(tester, find.byTooltip('Close panel'));
-    await tapVisible(tester, find.byTooltip('View expenses'));
-    expect(find.text('No expenses yet'), findsOneWidget);
-    expect(find.byTooltip('Add expense'), findsOneWidget);
-    await tapVisible(tester, find.byTooltip('Close panel'));
+      plan.ofKind('activity').where((i) => i['date'] == '2026-10-02').length,
+      1,
+    );
+    expect(find.byType(TextFormField), findsNothing);
     expect(find.text('Friday, 2 Oct'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
   });
+
+  testWidgets(
+    'spending retains city scope and a new expense needs no arrangement',
+    (tester) async {
+      final kyoto = PlanItem.create(
+        'destination',
+      ).copy({'title': 'Kyoto', 'date': '2026-10-01', 'endDate': '2026-10-03'});
+      await repo.save(trip.id, kyoto);
+      await show(tester, const Size(390, 844));
+      await tapVisible(
+        tester,
+        find.widgetWithText(
+          DropdownButtonFormField<String>,
+          'Show destination',
+        ),
+      );
+      await tester.tap(find.text('Kyoto').last);
+      await tester.pumpAndSettle();
+      await tab(tester, 'Spending');
+      await tapVisible(tester, find.text('Add expense'));
+      expect(
+          tester
+              .widget<DropdownButtonFormField<String>>(
+                  find.byKey(ValueKey('expense-city-${kyoto.id}')))
+              .initialValue,
+          kyoto.id);
+      await tester.enterText(find.widgetWithText(TextFormField, 'Amount'), '5');
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Name'),
+        'Water',
+      );
+      tester.testTextInput.hide();
+      await tapVisible(tester, find.text('Add Expense'));
+      final row = (await tester.runAsync(
+        () => db.tripDao.getExpensesForTrip(trip.id),
+      ))!
+          .single;
+      expect(row.destinationId, kyoto.id);
+      expect(row.planItemId, isNull);
+      expect(find.text('Water'), findsOneWidget);
+      await capture(tester, 'standalone-city-spending');
+      await tab(tester, 'Itinerary');
+      expect(
+        find.widgetWithText(DropdownButtonFormField<String>, 'Kyoto'),
+        findsOneWidget,
+      );
+      await tab(tester, 'Spending');
+      await tapVisible(tester, find.text('Water'));
+      await tapVisible(tester,
+          find.widgetWithText(DropdownButtonFormField<String>, 'Destination'));
+      await tester.tap(find.text('Unassigned').last);
+      await tester.pumpAndSettle();
+      await tapVisible(tester, find.text('Save Changes'));
+      expect(find.text('Water'), findsOneWidget);
+      expect(
+          tester
+              .widget<DropdownButtonFormField<String>>(find
+                  .byKey(const ValueKey('destination-filter-__unassigned__')))
+              .initialValue,
+          '__unassigned__');
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    },
+  );
 
   testWidgets('activity edits, moves and reordering remain persistent',
       (tester) async {
@@ -207,7 +344,14 @@ void main() {
         .copy({'title': 'Evening walk', 'date': '2026-10-01'});
     await repo.save(trip.id, extra);
     await show(tester, const Size(390, 1000));
-    await tapVisible(tester, find.byTooltip('Reorder activities'));
+    final cafeActivity =
+        (await tester.runAsync(() => repo.watch(trip.id).first))!
+            .ofKind('activity')
+            .first;
+    await tester
+        .runAsync(() => repo.save(trip.id, cafeActivity.copy({'time': ''})));
+    await tester.pumpAndSettle();
+    await tapVisible(tester, find.byTooltip('Reorder flexible activities'));
     final handles = find.byType(ReorderableDragStartListener);
     final start = tester.getCenter(handles.last);
     final end = tester.getTopLeft(handles.first) - const Offset(0, 40);
@@ -291,7 +435,7 @@ void main() {
             DropdownButtonFormField<String>, 'Show destination'));
     await tester.tap(find.text('Tokyo').last);
     await tester.pumpAndSettle();
-    expect(find.byType(Tab), findsNWidgets(2));
+    expect(find.byType(Tab), findsNWidgets(3));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
@@ -336,8 +480,8 @@ void main() {
     await tapVisible(
         tester,
         find.widgetWithText(
-            DropdownButtonFormField<String>, 'Spending by destination'));
-    await tester.tap(find.textContaining('Kyoto ·').last);
+            DropdownButtonFormField<String>, 'Show destination'));
+    await tester.tap(find.text('Kyoto').last);
     await tester.pumpAndSettle();
     expect(find.text('Kyoto paid hotel'), findsOneWidget);
     expect(find.text('Intercity train'), findsNothing);
@@ -345,8 +489,8 @@ void main() {
     await tapVisible(
         tester,
         find.widgetWithText(
-            DropdownButtonFormField<String>, 'Spending by destination'));
-    await tester.tap(find.textContaining('Between destinations ·').last);
+            DropdownButtonFormField<String>, 'Show destination'));
+    await tester.tap(find.text('Between destinations').last);
     await tester.pumpAndSettle();
     expect(find.text('Intercity train'), findsOneWidget);
     expect(find.text('Kyoto paid hotel'), findsNothing);
@@ -378,13 +522,14 @@ void main() {
         findsOneWidget);
     expect(find.textContaining('2 nights'), findsWidgets);
     await capture(tester, 'stay-duration');
+    await tapVisible(tester, find.text('Payment (optional)'));
     await tapVisible(tester,
         find.widgetWithText(TextFormField, 'Amount (optional until paid)'));
     await tester.enterText(
         find.widgetWithText(TextFormField, 'Amount (optional until paid)'),
         '420');
     tester.testTextInput.hide();
-    await tapVisible(tester, find.byType(SwitchListTile));
+    await tapVisible(tester, find.widgetWithText(SwitchListTile, 'Paid'));
     await capture(tester, 'payment-form');
     await tapVisible(tester, find.text('Save item'));
     var rows =
@@ -406,7 +551,7 @@ void main() {
     rows =
         (await tester.runAsync(() => db.tripDao.getExpensesForTrip(trip.id)))!;
     expect(rows.single.id, expenseId);
-    expect(rows.single.name, 'Updated once');
+    expect(rows.single.name, 'One-entry hotel');
     expect(
         (await tester.runAsync(() => repo.watch(trip.id).first))!
             .find(rows.single.planItemId!)!

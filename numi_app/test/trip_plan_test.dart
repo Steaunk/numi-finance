@@ -42,9 +42,15 @@ class PlanApiFake implements TravelApi {
     if (offline) throw error(null);
     await beforePut?.call();
     if (p['mutation_id'] != mutation) {
-      if (p['revision'] != revision) throw error(409);
+      if (p['conflict_choice'] != null) {
+        if (p['expected_revision'] != revision) throw error(409);
+      } else if (p['revision'] != revision) {
+        throw error(409);
+      }
       revision++;
-      content = Map<String, dynamic>.from(p['content'] as Map);
+      if (p['conflict_choice'] != 'server') {
+        content = Map<String, dynamic>.from(p['content'] as Map);
+      }
       mutation = p['mutation_id'] as String;
     }
     if (loseResponse) {
@@ -352,7 +358,7 @@ void main() {
         id, stored.copy({'title': 'Updated hotel', 'amount': '240'}));
     final edited = (await db.tripDao.getExpensesForTrip(id)).single;
     expect(edited.id, first.id);
-    expect(edited.name, 'Updated hotel');
+    expect(edited.name, 'Hotel');
     expect(edited.amount, 240);
     await repo.save(id, stored.copy({'status': 'cancelled'}));
     expect((await db.tripDao.getExpensesForTrip(id)).length, 1);
@@ -536,13 +542,13 @@ void main() {
         'Sightseeing');
     await repo.save(id, museum.copy({'title': 'Art Museum'}));
     rows = await db.tripDao.getExpensesForTrip(id);
-    expect(rows.firstWhere((e) => e.planItemId == visit.id).name, 'Art Museum');
+    expect(rows.firstWhere((e) => e.planItemId == visit.id).name, 'Museum');
     await repo.remove(id, museum.id);
     expect(
         (await db.tripDao.getExpensesForTrip(id))
             .firstWhere((e) => e.planItemId == visit.id)
             .name,
-        'Art Museum');
+        'Museum');
   });
 
   test('map and multi-link sharing validate without platform APIs', () {
@@ -575,33 +581,165 @@ void main() {
   });
 
   test(
-      'stay coverage excludes checkout, ignores cancelled and supports overnight transit',
-      () {
-    final stay = PlanItem.create('booking').copy(
-        {'title': 'Hotel', 'date': '2026-10-01', 'endDate': '2026-10-03'});
-    final noStay = PlanItem.create('booking').copy({
-      'title': 'Night train',
-      'category': 'No accommodation needed',
-      'date': '2026-10-03'
+    'stay coverage excludes checkout, ignores cancelled and supports overnight transit',
+    () {
+      final stay = PlanItem.create('booking').copy(
+          {'title': 'Hotel', 'date': '2026-10-01', 'endDate': '2026-10-03'});
+      final noStay = PlanItem.create('booking').copy({
+        'title': 'Night train',
+        'category': 'No accommodation needed',
+        'date': '2026-10-03'
+      });
+      expect(stay.stayNights, 2);
+      expect(stay.stayDuration, '2 nights');
+      expect(stay.copy({'endDate': '2026-10-02'}).stayDuration, '1 night');
+      expect(stay.copy({'endDate': '2026-10-01'}).stayNights, isNull);
+      expect(
+          stay.copy({'date': '2026-10-31', 'endDate': '2026-11-02'}).stayNights,
+          2);
+      expect(TripPlan(items: [stay]).hasStay('2026-10-02'), true);
+      expect(TripPlan(items: [stay]).hasStay('2026-10-03'), false);
+      expect(
+          TripPlan(items: [
+            stay.copy({'status': 'cancelled'})
+          ]).hasStay('2026-10-02'),
+          false);
+      expect(TripPlan(items: [noStay]).hasStay('2026-10-03'), true);
+      expect(tripDays(start, start).length, 1);
+      expect(tripPhase(start, start, DateTime(2026, 10, 1, 23)), 'Travelling');
+    },
+  );
+
+  test('timeline sorts every timed arrangement and keeps flexible order', () {
+    PlanItem activity(String name, String time) => PlanItem.create(
+          'activity',
+        ).copy({'title': name, 'date': '2026-10-01', 'time': time});
+    final dinner = activity('Dinner', '18:00');
+    final breakfast = activity('Breakfast', '09:00');
+    final walk = activity('Walk', '');
+    final shopping = activity('Shopping', '');
+    final booking = PlanItem.create('booking').copy({
+      'title': 'Lunch reservation',
+      'category': 'Reservation',
+      'date': '2026-10-01',
+      'time': '12:00',
     });
-    expect(stay.stayNights, 2);
-    expect(stay.stayDuration, '2 nights');
-    expect(stay.copy({'endDate': '2026-10-02'}).stayDuration, '1 night');
-    expect(stay.copy({'endDate': '2026-10-01'}).stayNights, isNull);
-    expect(
-        stay.copy({'date': '2026-10-31', 'endDate': '2026-11-02'}).stayNights,
-        2);
-    expect(TripPlan(items: [stay]).hasStay('2026-10-02'), true);
-    expect(TripPlan(items: [stay]).hasStay('2026-10-03'), false);
-    expect(
-        TripPlan(items: [
-          stay.copy({'status': 'cancelled'})
-        ]).hasStay('2026-10-02'),
-        false);
-    expect(TripPlan(items: [noStay]).hasStay('2026-10-03'), true);
-    expect(tripDays(start, start).length, 1);
-    expect(tripPhase(start, start, DateTime(2026, 10, 1, 23)), 'Travelling');
+    final plan = TripPlan(items: [dinner, walk, breakfast, shopping, booking]);
+    expect(plan.timelineOn('2026-10-01').map((i) => i.title), [
+      'Breakfast',
+      'Lunch reservation',
+      'Dinner',
+      'Walk',
+      'Shopping',
+    ]);
   });
+
+  test(
+    'standalone city spending persists without creating an itinerary item',
+    () async {
+      final city = PlanItem.create(
+        'destination',
+      ).copy({'title': 'Kyoto', 'date': '2026-10-01', 'endDate': '2026-10-03'});
+      final localPlanner = TripPlanRepository(db, null);
+      await localPlanner.save(id, city);
+      final travel = TravelRepository(db, null, RateRepository(db, null));
+      await travel.addTravelExpense(
+        tripId: id,
+        amount: 5,
+        currency: 'SGD',
+        date: start,
+        category: 'Other',
+        name: 'Water',
+        destinationId: city.id,
+      );
+      final expense = (await travel.getTripWithExpenses(id))!.expenses.single;
+      var plan = await localPlanner.watch(id).first;
+      expect(expense.planItemId, isNull);
+      expect(plan.items.length, 1);
+      expect(
+        plan.expenseDestination(
+          expense.planItemId,
+          destinationId: expense.destinationId,
+        ),
+        city.id,
+      );
+      final enriched = await localPlanner.itemFromExpense(
+        id,
+        expense.id,
+        kind: 'activity',
+      );
+      expect(enriched['destinationId'], city.id);
+      await localPlanner.remove(id, city.id);
+      final kept = (await travel.getTripWithExpenses(id))!.expenses.single;
+      expect(kept.id, expense.id);
+      expect(kept.amount, 5);
+      expect(kept.destinationId, '');
+      expect(kept.planItemId, isNull);
+    },
+  );
+
+  test(
+    'schema 4 upgrade preserves standalone expenses and adds destination storage',
+    () async {
+      await db.close();
+      dbClosed = true;
+      final dir = await Directory.systemTemp.createTemp('numi-city-migration');
+      final file = File('${dir.path}/test.sqlite');
+      var store = AppDatabase(NativeDatabase(file));
+      final tripId = await store.tripDao.insertTrip(
+        TripsCompanion.insert(
+          destination: 'Existing',
+          startDate: start,
+          endDate: start,
+        ),
+      );
+      final expenseId = await store.tripDao.insertTravelExpense(
+        TravelExpensesCompanion.insert(
+          tripId: tripId,
+          amount: 5,
+          currency: 'SGD',
+          date: start,
+          category: 'Other',
+          name: 'Water',
+        ),
+      );
+      await store.customStatement(
+        'ALTER TABLE travel_expenses DROP COLUMN destination_id',
+      );
+      await store.customStatement('PRAGMA user_version = 4');
+      await store.close();
+      store = AppDatabase(NativeDatabase(file));
+      final expense = (await store.tripDao.getExpensesForTrip(tripId)).single;
+      expect(expense.id, expenseId);
+      expect(expense.amount, 5);
+      expect(expense.destinationId, '');
+      final city = PlanItem.create(
+        'destination',
+      ).copy({'title': 'Kyoto', 'date': '2026-10-01', 'endDate': '2026-10-01'});
+      await TripPlanRepository(store, null).save(tripId, city);
+      await TravelRepository(
+        store,
+        null,
+        RateRepository(store, null),
+      ).updateTravelExpense(
+        expenseId,
+        amount: 5,
+        currency: 'SGD',
+        date: start,
+        category: 'Other',
+        name: 'Water',
+        destinationId: city.id,
+      );
+      await store.close();
+      store = AppDatabase(NativeDatabase(file));
+      expect(
+        (await store.tripDao.getExpensesForTrip(tripId)).single.destinationId,
+        city.id,
+      );
+      await store.close();
+      await dir.delete(recursive: true);
+    },
+  );
 
   test('schema 3 migration keeps expense identity and payment survives restart',
       () async {
@@ -624,7 +762,11 @@ void main() {
     await store
         .customStatement('ALTER TABLE travel_expenses DROP COLUMN client_id');
     await store.customStatement(
-        'ALTER TABLE travel_expenses DROP COLUMN plan_item_id');
+      'ALTER TABLE travel_expenses DROP COLUMN plan_item_id',
+    );
+    await store.customStatement(
+      'ALTER TABLE travel_expenses DROP COLUMN destination_id',
+    );
     await store.customStatement('PRAGMA user_version = 3');
     await store.close();
     store = AppDatabase(NativeDatabase(file));
@@ -657,7 +799,11 @@ void main() {
     await persistent
         .customStatement('ALTER TABLE travel_expenses DROP COLUMN client_id');
     await persistent.customStatement(
-        'ALTER TABLE travel_expenses DROP COLUMN plan_item_id');
+      'ALTER TABLE travel_expenses DROP COLUMN plan_item_id',
+    );
+    await persistent.customStatement(
+      'ALTER TABLE travel_expenses DROP COLUMN destination_id',
+    );
     await persistent.customStatement('PRAGMA user_version = 2');
     await persistent.close();
     persistent = AppDatabase(NativeDatabase(file));
@@ -670,5 +816,61 @@ void main() {
     expect(plan.pending, true);
     await persistent.close();
     await dir.delete(recursive: true);
+  });
+  test(
+      'participants default to everyone and specific people survive serialization',
+      () async {
+    final me = PlanItem.create('person').copy({'title': 'Me'});
+    final nyt = PlanItem.create('person').copy({'title': 'NYT'});
+    final together = PlanItem.create('activity')
+        .copy({'title': 'Lunch', 'date': '2026-10-01'});
+    final solo = PlanItem.create('activity').copy(
+        {'title': 'NYT flight', 'date': '2026-10-01'},
+        participantIds: [nyt.id]);
+    var plan =
+        TripPlan.decode(TripPlan(items: [me, nyt, together, solo]).encode());
+    expect(plan.timelineOn('2026-10-01', person: me.id).map((i) => i.title),
+        ['Lunch']);
+    expect(plan.timelineOn('2026-10-01', person: nyt.id).map((i) => i.title),
+        ['Lunch', 'NYT flight']);
+    expect(plan.participantsLabel(plan.find(solo.id)!), 'NYT');
+    final third = PlanItem.create('person').copy({'title': 'Third'});
+    plan = TripPlan(items: [...plan.items, third]);
+    expect(plan.matchesPerson(together, third.id), true);
+    expect(plan.matchesPerson(solo, third.id), false);
+    final repo = TripPlanRepository(db, null);
+    for (final item in plan.items) {
+      await repo.save(id, item);
+    }
+    expect(
+        (await repo.watch(id).first).find(solo.id)!.participantIds, [nyt.id]);
+  });
+
+  test(
+      'in-flight local edits retain remote additions and unrelated changed fields',
+      () {
+    final a =
+        PlanItem.create('activity').copy({'title': 'A', 'notes': 'Before'});
+    final remoteOnly = PlanItem.create('activity').copy({'title': 'B'});
+    final base = TripPlan(items: [a]);
+    final local = TripPlan(items: [
+      a.copy({'time': '09:00'})
+    ]);
+    final remote = TripPlan(items: [
+      a.copy({'notes': 'From friend'}),
+      remoteOnly
+    ]);
+    final result = mergePlanChanges(base, local, remote);
+    expect(result.find(a.id)!['time'], '09:00');
+    expect(result.find(a.id)!['notes'], 'From friend');
+    expect(result.find(remoteOnly.id), isNotNull);
+    expect(
+        () => mergePlanChanges(
+            base,
+            TripPlan(items: [
+              a.copy({'notes': 'Local'})
+            ]),
+            remote),
+        throwsStateError);
   });
 }

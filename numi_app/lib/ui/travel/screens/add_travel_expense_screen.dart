@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../config/constants.dart';
 import '../../../models/travel_expense.dart';
+import '../../../models/trip_plan.dart';
 import '../widgets/plan_item_editor.dart';
 import '../../../providers/providers.dart';
 import '../../../utils/date_utils.dart';
@@ -15,6 +16,7 @@ class AddTravelExpenseScreen extends ConsumerStatefulWidget {
 
   /// Pass an existing expense to open in edit mode.
   final TravelExpense? expense;
+  final String initialDestination;
 
   const AddTravelExpenseScreen({
     super.key,
@@ -22,6 +24,7 @@ class AddTravelExpenseScreen extends ConsumerStatefulWidget {
     required this.tripStartDate,
     required this.tripEndDate,
     this.expense,
+    this.initialDestination = '',
   });
 
   @override
@@ -39,6 +42,7 @@ class _AddTravelExpenseScreenState
   late String _category;
   late DateTime _date;
   bool _saving = false;
+  late String _destinationId;
 
   bool get _isEditing => widget.expense != null;
 
@@ -51,8 +55,9 @@ class _AddTravelExpenseScreenState
     _nameController = TextEditingController(text: e?.name ?? '');
     _notesController = TextEditingController(text: e?.notes ?? '');
     _currency = e?.currency ?? AppConstants.defaultCurrency;
-    _category = e?.category ?? AppConstants.travelCategories.first;
-    _date = e?.date ?? widget.tripStartDate;
+    _category = e?.category ?? 'Other';
+    _date = e?.date ?? DateTime.now();
+    _destinationId = e?.destinationId ?? widget.initialDestination;
   }
 
   @override
@@ -65,6 +70,11 @@ class _AddTravelExpenseScreenState
 
   @override
   Widget build(BuildContext context) {
+    final plan =
+        ref.watch(tripPlanProvider(widget.tripId)).valueOrNull ?? TripPlan();
+    final destination = plan.destinations.any((d) => d.id == _destinationId)
+        ? _destinationId
+        : '';
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -180,18 +190,37 @@ class _AddTravelExpenseScreenState
                 onChanged: (v) => setState(() => _category = v!),
               ),
               const SizedBox(height: 12),
+              if (plan.destinations.isNotEmpty) ...[
+                DropdownButtonFormField<String>(
+                  key: ValueKey('expense-city-$destination'),
+                  initialValue: destination,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Destination'),
+                  items: [
+                    const DropdownMenuItem(
+                      value: '',
+                      child: Text('Unassigned'),
+                    ),
+                    ...plan.destinations.map(
+                      (d) =>
+                          DropdownMenuItem(value: d.id, child: Text(d.title)),
+                    ),
+                  ],
+                  onChanged: (v) => setState(() => _destinationId = v!),
+                ),
+                const SizedBox(height: 12),
+              ],
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Date'),
+                title: const Text('Payment date'),
                 subtitle: Text(AppDateUtils.displayDate(_date)),
                 trailing: const Icon(Icons.calendar_today),
                 onTap: () async {
                   final picked = await showDatePicker(
                     context: context,
                     initialDate: _date,
-                    firstDate: widget.tripStartDate
-                        .subtract(const Duration(days: 365)),
-                    lastDate: widget.tripEndDate.add(const Duration(days: 100)),
+                    firstDate: DateTime(2000),
+                    lastDate: DateTime(2100),
                   );
                   if (picked != null) setState(() => _date = picked);
                 },
@@ -271,6 +300,11 @@ class _AddTravelExpenseScreenState
       final amount = double.parse(_amountController.text);
       final name = _nameController.text.trim();
       final notes = _notesController.text.trim();
+      final plan =
+          ref.read(tripPlanProvider(widget.tripId)).valueOrNull ?? TripPlan();
+      final destinationId = plan.destinations.any((d) => d.id == _destinationId)
+          ? _destinationId
+          : '';
 
       if (_isEditing) {
         await ref.read(travelRepositoryProvider).updateTravelExpense(
@@ -281,6 +315,7 @@ class _AddTravelExpenseScreenState
               category: _category,
               name: name,
               notes: notes,
+              destinationId: destinationId,
             );
       } else {
         await ref.read(travelRepositoryProvider).addTravelExpense(
@@ -291,11 +326,12 @@ class _AddTravelExpenseScreenState
               category: _category,
               name: name,
               notes: notes,
+              destinationId: destinationId,
             );
       }
 
       if (mounted && close) {
-        Navigator.pop(context);
+        Navigator.pop(context, destinationId);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text(_isEditing ? 'Expense updated' : 'Expense added')),

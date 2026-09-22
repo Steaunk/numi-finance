@@ -67,8 +67,9 @@ class SyncService {
       _assetRepo.syncFromServer(currency),
       _syncAccountIcons(),
     ]);
-    await _processSyncQueue();
+    // Standalone expense destinations must exist remotely before expense upload.
     await planRepo?.syncAll();
+    await _processSyncQueue();
   }
 
   Future<void> _syncAccountIcons() async {
@@ -226,6 +227,7 @@ class SyncService {
     if (current != null && op.operation != 'delete') {
       p.addAll({
         'client_id': current.clientId,
+        'destination_id': current.destinationId,
         'amount': current.amount,
         'currency': current.currency,
         'date': current.date.toIso8601String(),
@@ -240,6 +242,7 @@ class SyncService {
         if (tripRow?.remoteId == null) return false;
         final remote = await _travelApi.addTripExpense(tripRow!.remoteId!, {
           'client_id': p['client_id'],
+          'destination_id': p['destination_id'] ?? '',
           'amount': p['amount'],
           'currency': p['currency'],
           'date': _toDateStr(p['date']),
@@ -265,6 +268,7 @@ class SyncService {
         await _travelApi
             .updateTripExpense(localRow!.tripRemoteId!, localRow.remoteId!, {
           'client_id': p['client_id'],
+          'destination_id': p['destination_id'] ?? '',
           'amount': p['amount'],
           'currency': p['currency'],
           'date': _toDateStr(p['date']),
