@@ -5,10 +5,12 @@ import 'package:flutter/services.dart';
 class TravelShareReceiver {
   final MethodChannel channel;
   final Future<void> Function(String text) open;
+  final Future<void> Function(Map<String, dynamic> document)? openDocument;
   bool _running = false;
   bool _disposed = false;
   TravelShareReceiver(this.open,
-      {this.channel = const MethodChannel('numi/travel_share')});
+      {this.openDocument,
+      this.channel = const MethodChannel('numi/travel_share')});
 
   Future<void> start() async {
     channel.setMethodCallHandler((call) async {
@@ -24,7 +26,12 @@ class TravelShareReceiver {
       while (!_disposed) {
         final next = await channel.invokeMapMethod<String, dynamic>('peek');
         if (next == null || _disposed) return;
-        await open(next['text'] as String);
+        if (next['type'] == 'pdf') {
+          if (openDocument == null) return;
+          await openDocument!(next);
+        } else {
+          await open(next['text'] as String);
+        }
         await channel.invokeMethod<void>('acknowledge', next['id']);
       }
     } on PlatformException {

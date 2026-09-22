@@ -9,6 +9,7 @@ import '../../../utils/currency_utils.dart';
 import '../../common/widgets/dialogs.dart';
 import '../widgets/plan_item_editor.dart';
 import '../widgets/plan_links.dart';
+import '../widgets/ticket_pdf.dart';
 import '../widgets/travel_surfaces.dart';
 import 'trip_expenses_screen.dart';
 import 'trip_map_screen.dart';
@@ -369,6 +370,9 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                       detail('Contact', item['contact']),
                       detail('Cancellation deadline', item['cancelBy']),
                       detail('Responsible person', item['assignee']),
+                      if (['booking', 'activity'].contains(item.kind) ||
+                          item['documentId'].isNotEmpty)
+                        TicketPdf(tripId: widget.tripId, item: item),
                       detail('Notes', item['notes']),
                       if (place != null) detail('Place notes', place['notes']),
                       if ([...?place?.links, ...item.links].isNotEmpty) ...[

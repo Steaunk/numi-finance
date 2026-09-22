@@ -105,7 +105,8 @@ void main() {
       expect(
           (await tester.runAsync(() => repo.watch(id).first))!.items, isEmpty);
       final review = find.text('Review details');
-      await tester.ensureVisible(review);
+      await tester.scrollUntilVisible(review, 200,
+          scrollable: find.byType(Scrollable).first);
       await tester.pumpAndSettle();
       expect(
           tester
@@ -121,7 +122,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Tokyo · 2026-10-06').last);
       await tester.pumpAndSettle();
-      await tester.ensureVisible(review);
+      await tester.scrollUntilVisible(review, 200,
+          scrollable: find.byType(Scrollable).first);
       await tester.tap(review);
       await tester.runAsync(
           () => Future<void>.delayed(const Duration(milliseconds: 50)));

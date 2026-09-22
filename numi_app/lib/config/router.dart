@@ -37,8 +37,12 @@ final router = GoRouter(
             GoRoute(
               path: 'import',
               parentNavigatorKey: _rootNavigatorKey,
-              builder: (context, state) =>
-                  ImportTravelScreen(sharedText: state.extra as String? ?? ''),
+              builder: (context, state) => ImportTravelScreen(
+                  sharedText:
+                      state.extra is String ? state.extra as String : '',
+                  sharedPdf: state.extra is Map<String, dynamic>
+                      ? state.extra as Map<String, dynamic>
+                      : null),
             ),
             GoRoute(
               path: ':tripId',

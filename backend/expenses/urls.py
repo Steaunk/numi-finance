@@ -1,8 +1,14 @@
 from django.urls import path
 
-from . import views, planning, collaboration, travel_import
+from . import views, planning, collaboration, travel_import, travel_documents
 
 urlpatterns = [
+    path('api/travel/pdf-preview/', travel_documents.preview),
+    path('api/travel/trips/<int:trip_id>/documents/', travel_documents.upload),
+    path('api/travel/trips/<int:trip_id>/documents/<uuid:document_id>/', travel_documents.download),
+    path('api/travel/trips/<int:trip_id>/collaboration/pdf-preview/', travel_documents.preview),
+    path('api/travel/trips/<int:trip_id>/collaboration/documents/', travel_documents.upload),
+    path('api/travel/trips/<int:trip_id>/collaboration/documents/<uuid:document_id>/', travel_documents.download),
     path('api/travel/trips/<int:trip_id>/collaboration/map-preview/', collaboration.map_preview),
     path('api/travel/import-preview/', travel_import.preview),
     path('travel/trips/<int:trip_id>/plan/', collaboration.workspace, name='travel_collaboration'),

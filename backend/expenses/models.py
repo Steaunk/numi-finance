@@ -1,3 +1,4 @@
+import uuid
 from django.db import models
 import uuid
 
@@ -120,3 +121,16 @@ class TripInvite(models.Model):
     expires_at = models.DateTimeField()
     revoked_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class TravelDocument(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name='documents')
+    name = models.CharField(max_length=200)
+    sha256 = models.CharField(max_length=64)
+    size = models.PositiveIntegerField()
+    data = models.BinaryField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['trip', 'sha256'], name='unique_trip_document_hash')]

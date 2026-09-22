@@ -158,6 +158,16 @@ def save_document(trip, content, revision, mutation, actor, *, shared=False, ope
             raise ValueError('Shared editors must submit item operations')
         merged = merge_content(base.content, content, plan.content, choice=choice)
         validate_content(merged)
+        from .models import TravelDocument
+        import uuid
+        for item in merged['items']:
+            if item.get('documentId'):
+                try:
+                    document_id = uuid.UUID(item['documentId'])
+                except ValueError:
+                    raise ValueError('Invalid PDF attachment')
+                if not TravelDocument.objects.filter(trip=trip, id=document_id).exists():
+                    raise ValueError('PDF attachment does not belong to this trip')
         if any(i['kind'] == 'destination' and
                (i['date'] < trip.start_date.isoformat() or i['endDate'] > trip.end_date.isoformat())
                for i in merged['items']):

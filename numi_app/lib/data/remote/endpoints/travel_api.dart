@@ -21,6 +21,19 @@ class TravelApi {
     return response.data as Map<String, dynamic>;
   }
 
+  Future<Map<String, dynamic>> previewPdf(List<int> bytes, String name) =>
+      _client.uploadPdf('/expenses/api/travel/pdf-preview/', bytes, name);
+
+  Future<Map<String, dynamic>> attachPdf(
+          int id, List<int> bytes, String name) =>
+      _client.uploadPdf(
+          '/expenses/api/travel/trips/$id/documents/', bytes, name);
+
+  Future<
+      List<
+          int>> downloadPdf(int id, String documentId) => _client.downloadPdf(
+      '/expenses/api/travel/trips/$id/documents/${Uri.encodeComponent(documentId)}/');
+
   Future<Map<String, dynamic>> previewShare(String text, String url) async {
     final response = await _client.post<Map<String, dynamic>>(
         '/expenses/api/travel/import-preview/',

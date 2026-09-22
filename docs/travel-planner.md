@@ -138,3 +138,34 @@ travel times. The basemap is OpenStreetMap with visible attribution, standard ti
 caching, no prefetch and an identified native client. Shared web tile requests send
 only the site origin as referrer, never invitation tokens or trip paths. No Google
 Maps API key is needed. An unavailable basemap does not hide place details.
+
+### PDF tickets
+
+Use **Select PDF** in the app's travel import screen, Android's **Share → Numi**,
+or **Import PDF** in the collaborative web workspace. Preview is read-only: inspect
+the extracted text, choose the trip and review each proposed activity or transport
+leg before saving. No payment is recorded. An existing activity or booking can
+also receive an original PDF attachment without creating another arrangement.
+
+Original bytes are stored once per trip and SHA-256 hash in `TravelDocument`;
+plan items reference `documentId` / `documentName`. Files stay behind the owner's
+normal login or an active invitation for the same trip. Editors can upload;
+viewers can download. Invitations also grant access to the ticket's full contents.
+Files are downloaded as attachments, never published under an unauthenticated
+media URL. Removing a plan item retains its original for history restoration;
+deleting the trip removes its documents. App tickets already opened are retained
+in private application storage for offline use.
+
+Maximum PDF size is 10 MiB, with 1–20 pages. Selectable text is extracted first;
+up to five scanned pages use local Tesseract OCR (English, simplified Chinese,
+Japanese) within a bounded worker timeout. No document is sent to an external AI
+service. Ambiguous or missing dates remain empty; OCR and incomplete extraction
+show a review warning. Password-protected or damaged files must be replaced with
+readable PDFs. The preview displays at most 15,000 characters and saved notes at
+most 10,000; the attached original is unchanged.
+
+Deployment requires migration `0011_traveldocument`, the PDFium/Pillow requirements,
+and the Tesseract packages in the Dockerfile. Set nginx `client_max_body_size 12M`
+to allow a 10 MiB file plus multipart overhead, preserving existing login rules.
+PDF bytes are included in the normal SQLite backup. Tests use generated tickets;
+OCR regression runs in the Docker image where the OCR language packs are installed.

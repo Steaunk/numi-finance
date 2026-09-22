@@ -67,6 +67,41 @@ void main() {
     expect(draft.item('place').links.single.url, url);
     expect(linkPlatform('https://g.co/kgs/xyz'), 'Google Maps');
   });
+  test('PDF shares keep the native original until review is dismissed',
+      () async {
+    const channel = MethodChannel('numi/pdf_share_test');
+    final next = <String, dynamic>{
+      'id': 'pdf-one',
+      'type': 'pdf',
+      'path': '/private/ticket.pdf',
+      'name': 'Ticket.pdf'
+    };
+    final done = Completer<void>();
+    bool acknowledged = false;
+    Map<String, dynamic>? document;
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'peek') return acknowledged ? null : next;
+      if (call.method == 'acknowledge') acknowledged = true;
+      return null;
+    });
+    final receiver = TravelShareReceiver(
+        (text) async => fail('PDF was treated as text'),
+        channel: channel, openDocument: (pdf) {
+      document = pdf;
+      return done.future;
+    });
+    final running = receiver.start();
+    await Future<void>.delayed(Duration.zero);
+    expect(document?['path'], '/private/ticket.pdf');
+    expect(acknowledged, isFalse);
+    done.complete();
+    await running;
+    expect(acknowledged, isTrue);
+    receiver.dispose();
+    messenger.setMockMethodCallHandler(channel, null);
+  });
   test('cold and warm shares serialize and are acknowledged after review',
       () async {
     const channel = MethodChannel('numi/travel_share_test');

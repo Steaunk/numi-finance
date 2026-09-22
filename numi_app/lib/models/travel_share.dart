@@ -30,6 +30,9 @@ class TravelShareDraft {
     final category = value('category');
     return PlanItem.create(kind).copy({
       for (final key in [
+        'documentId',
+        'documentName',
+        'confirmation',
         'title',
         'address',
         'notes',

@@ -16,7 +16,7 @@ KINDS = {'place', 'activity', 'booking', 'task', 'destination', 'person'}
 FIELDS = {
     'id', 'kind', 'title', 'category', 'status', 'priority', 'date', 'endDate',
     'time', 'endTime', 'timezone', 'endTimezone', 'address', 'endAddress',
-    'latitude', 'longitude', 'endLatitude', 'endLongitude',
+    'latitude', 'longitude', 'endLatitude', 'endLongitude', 'documentId', 'documentName',
     'links', 'notes', 'placeId', 'confirmation', 'contact',
     'cancelBy', 'assignee', 'amount', 'currency', 'paymentStatus', 'paidDate',
     'expenseClientId', 'expenseCategory', 'destinationId', 'endDestinationId', 'participantIds',

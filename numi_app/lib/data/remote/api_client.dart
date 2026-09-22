@@ -28,7 +28,8 @@ class ApiClient {
     _dio.interceptors.add(InterceptorsWrapper(
       onResponse: (response, handler) {
         final ct = response.headers.value('content-type') ?? 'unknown';
-        if (!ct.contains('json')) {
+        if (!ct.contains('json') &&
+            response.requestOptions.responseType != ResponseType.bytes) {
           final body = response.data?.toString() ?? '';
           final snippet = body.substring(0, body.length.clamp(0, 200));
           AppLogger.instance.log(
@@ -97,13 +98,32 @@ class ApiClient {
       if (e is DioException) {
         final body = e.response?.data?.toString() ?? 'null';
         final snippet = body.substring(0, body.length.clamp(0, 300));
-        log.log('GET $path failed: status=${e.response?.statusCode} '
-            'type=${e.type} body=$snippet', name: 'API');
+        log.log(
+            'GET $path failed: status=${e.response?.statusCode} '
+            'type=${e.type} body=$snippet',
+            name: 'API');
       } else {
         log.log('GET $path error: $e', name: 'API');
       }
       rethrow;
     }
+  }
+
+  Future<List<int>> downloadPdf(String path) async {
+    final response = await _dio.get<List<int>>(path,
+        options: Options(responseType: ResponseType.bytes));
+    return response.data!;
+  }
+
+  Future<Map<String, dynamic>> uploadPdf(
+      String path, List<int> bytes, String name) async {
+    final response = await _dio.post<Map<String, dynamic>>(path,
+        data: FormData.fromMap(
+            {'file': MultipartFile.fromBytes(bytes, filename: name)}),
+        options: Options(
+            contentType: 'multipart/form-data',
+            receiveTimeout: const Duration(seconds: 60)));
+    return response.data!;
   }
 
   Future<Response<T>> post<T>(String path, {dynamic data}) =>

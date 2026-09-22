@@ -70,6 +70,8 @@ class _NumiAppState extends ConsumerState<NumiApp> {
       if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
         _shareReceiver = TravelShareReceiver((text) async {
           await router.push<void>('/travel/import', extra: text);
+        }, openDocument: (document) async {
+          await router.push<void>('/travel/import', extra: document);
         });
         _shareReceiver!.start();
       }
