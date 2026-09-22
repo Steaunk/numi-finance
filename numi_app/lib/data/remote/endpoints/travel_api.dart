@@ -21,6 +21,13 @@ class TravelApi {
     return response.data as Map<String, dynamic>;
   }
 
+  Future<Map<String, dynamic>> previewShare(String text, String url) async {
+    final response = await _client.post<Map<String, dynamic>>(
+        '/expenses/api/travel/import-preview/',
+        data: {'text': text, 'url': url});
+    return response.data!;
+  }
+
   Future<Map<String, dynamic>> getPlan(int id) async {
     final response = await _client
         .get<Map<String, dynamic>>('/expenses/api/travel/trips/$id/plan/');

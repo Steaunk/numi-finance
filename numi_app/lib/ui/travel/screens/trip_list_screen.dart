@@ -26,9 +26,14 @@ class TripListScreen extends ConsumerWidget {
     final trips = ref.watch(tripListProvider);
     final currency = ref.watch(displayCurrencyProvider);
     return Scaffold(
-      appBar: AppBar(
-          title: const Text('Travel'),
-          actions: const [CurrencySelector(), SyncStatusIndicator()]),
+      appBar: AppBar(title: const Text('Travel'), actions: [
+        IconButton(
+            tooltip: 'Import share link',
+            icon: const Icon(Icons.add_link),
+            onPressed: () => context.push('/travel/import')),
+        const CurrencySelector(),
+        const SyncStatusIndicator()
+      ]),
       body: trips.when(
           data: (records) {
             if (records.isEmpty) {

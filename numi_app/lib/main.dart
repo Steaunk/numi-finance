@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'utils/travel_share_receiver.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -52,11 +54,25 @@ class NumiApp extends ConsumerStatefulWidget {
 }
 
 class _NumiAppState extends ConsumerState<NumiApp> {
+  TravelShareReceiver? _shareReceiver;
+
+  @override
+  void dispose() {
+    _shareReceiver?.dispose();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initSync();
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+        _shareReceiver = TravelShareReceiver((text) async {
+          await router.push<void>('/travel/import', extra: text);
+        });
+        _shareReceiver!.start();
+      }
     });
   }
 

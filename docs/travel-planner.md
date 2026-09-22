@@ -83,3 +83,36 @@ Shared pages and APIs return no-store responses and no financial fields or expen
 `/travel/shared/{id}/` is the public page shell; `session/`, `data/`, and `history/` under that prefix are the only shared endpoints. The shell contains no trip data. `data/` requires a trip grant and accepts `{revision, mutation_id, operations: [{id, changes} | {id, delete: true}]}`. `replace: true` restores one public item while retaining its private payment fields. The owner endpoints live at `/expenses/api/travel/trips/{id}/collaboration/{data,history,invites}/` behind existing Basic Auth. Do not remove Basic Auth from other paths. The shared path must remain outside `ApiCsrfExemptMiddleware`'s `/api/` exemption.
 
 Migration `0010_tripinvite_tripplanchange` adds invitation and revision history tables. Existing documents are snapshotted on their next write. History shows the 50 most recent revisions; older snapshots remain available to safely merge offline writes. Web clients poll every 12 seconds while visible, pausing refresh during editing. Unsent edits remain in an open editor after network failures; the new web workspace is online-first and does not persist form drafts across reloads. Flutter retains offline persistence. Runtime invite checks, financial field isolation, participant references, concurrent edits, history restoration and idempotent retries are covered by `expenses.test_collaboration`. Run `browser_tests/travel_collaboration.cjs` on a local isolated preview to verify two independent sessions, mobile layout, participant filters, conflicts, restore, viewer access and revocation.
+
+
+## Import shared travel links and itineraries
+
+On Android, use another app's **Share → Numi** action. Cold-start and already-open
+shares are queued locally until their review screen is dismissed. In Travel,
+**Import share link** also accepts pasted links or itinerary text on other app
+platforms. Select a trip, choose a saved place, activity, or transport/stay draft,
+then review the normal editor before saving. No import creates a payment or
+marks a reservation confirmed. A missing participant list still means Everyone.
+
+The owner-authenticated `POST /expenses/api/travel/import-preview/` accepts
+`{text, url}` and only returns draft metadata. It reads public Airbnb, Trip.com,
+and Google Maps pages, follows validated short-link redirects, and extracts
+structured place/reservation metadata, available hotel name/address elements,
+and explicit date parameters. Google Maps place/search URLs are also understood.
+Dates in hotel URLs can be search dates and must be reviewed. Login-only pages,
+CAPTCHAs, or unavailable metadata leave the original text/link available for
+manual completion; private order details are not fetched using the user's account.
+
+Flight/Train/Bus reservation metadata and labelled multi-leg text return separate
+`items` for sequential review. Text such as `Flight: SQ638`, `From: SIN`, `To: NRT`,
+`Departure: 2026-10-06 23:55`, `Arrival: 2026-10-07 07:30` is supported, as are
+`Venue: ...` / `Date/time: 10 October 2026 11:00` event shares. Missing years,
+booking numbers, prices, and timezone guesses are not inferred. This is bounded
+metadata/text extraction, not an LLM or a guarantee that every Trip.com order or
+travel-guide format can be parsed. Screenshot/PDF and iOS share extensions are not
+included in this version.
+
+Remote fetching is HTTPS-only, uses explicit provider domains, rejects private
+DNS results, pins the validated address with TLS hostname verification, and
+rechecks each redirect. It sends no Numi/nginx cookies or authorization headers.
+Responses are size/time bounded and are never persisted until reviewed by the user.
