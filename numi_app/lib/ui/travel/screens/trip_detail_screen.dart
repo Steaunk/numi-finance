@@ -728,7 +728,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
               width: 44,
               child: Padding(
                   padding: const EdgeInsets.only(top: 22),
-                  child: Text(plan.timelineTimeLabel(item, day),
+                  child: Text(time(item).isEmpty ? 'Anytime' : time(item),
                       style: TextStyle(
                           fontSize: 11,
                           color: Theme.of(context)
@@ -815,11 +815,6 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
           ])),
       if (reordering) ...[
         ...entries.where((i) => time(i).isNotEmpty).map((i) => row(i)),
-        if (entries.any((i) => i.kind == 'booking' && time(i).isEmpty))
-          section('Time to confirm'),
-        ...entries
-            .where((i) => i.kind == 'booking' && time(i).isEmpty)
-            .map((i) => row(i)),
         const Padding(
             padding: EdgeInsets.only(bottom: 16),
             child: Text(
@@ -850,16 +845,8 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                             child: const Icon(Icons.drag_handle, size: 20))))))
       ] else ...[
         ...entries.where((i) => time(i).isNotEmpty).map((i) => row(i)),
-        if (entries.any((i) => i.kind == 'booking' && time(i).isEmpty))
-          section('Time to confirm'),
-        ...entries
-            .where((i) => i.kind == 'booking' && time(i).isEmpty)
-            .map((i) => row(i)),
-        if (entries.any((i) => i.kind != 'booking' && time(i).isEmpty))
-          section('Flexible time'),
-        ...entries
-            .where((i) => i.kind != 'booking' && time(i).isEmpty)
-            .map((i) => row(i)),
+        if (entries.any((i) => time(i).isEmpty)) section('Flexible time'),
+        ...entries.where((i) => time(i).isEmpty).map((i) => row(i)),
       ],
       if (entries.isEmpty)
         hint(
@@ -875,7 +862,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                 tinted: true,
                 subtitle: i['category'] == 'No accommodation needed'
                     ? 'Overnight travel · no stay needed · ${plan.participantsLabel(i)}'
-                    : '${i['date'] == day ? 'Check-in · ${i['time'].isEmpty ? 'Time to confirm' : i['time']}' : 'Your stay'} · ${travelDate(i['date'])}–${travelDate(i['endDate'])} · ${i.stayDuration} · ${plan.participantsLabel(i)}'))),
+                    : '${i['date'] == day ? 'Check-in' : 'Your stay'} · ${travelDate(i['date'])}–${travelDate(i['endDate'])} · ${i.stayDuration} · ${plan.participantsLabel(i)}'))),
       if (day.isNotEmpty &&
           day.compareTo(planDate(trip.endDate)) < 0 &&
           destinationFilter(plan).isEmpty &&

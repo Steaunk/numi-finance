@@ -11,7 +11,6 @@ const assert=require('node:assert/strict');
  const api=base+`/expenses/api/travel/trips/${trip.id}/`, shared=base+`/travel/shared/${trip.id}/`;
  const content={items:[{id:'me',kind:'person',title:'Me'},{id:'nyt',kind:'person',title:'NYT'},
   {id:'museum',kind:'activity',title:'草间弥生',date:'2026-10-06',notes:'Shared museum visit',links:[]},
-  {id:'hotel',kind:'booking',title:'Kamakura hotel',category:'Accommodation',date:'2026-10-07',endDate:'2026-10-09',links:[]},
   {id:'flight',kind:'booking',title:'NYT · CAN → NRT',category:'Flight',date:'2026-10-06',endDate:'2026-10-06',time:'05:00',endTime:'13:40',timezone:'Asia/Shanghai',endTimezone:'Asia/Tokyo',participantIds:['nyt'],links:[]}]};
  assert.equal((await owner.request.put(api+'plan/',{data:{content,revision:0,mutation_id:'seed-collab'}})).status(),200);
  await p.goto(base+`/expenses/travel/trips/${trip.id}/plan/`);await p.getByRole('heading',{name:'Tokyo · Together'}).waitFor();
@@ -20,11 +19,6 @@ const assert=require('node:assert/strict');
  await p.locator('dialog [data-close]').click();await g.goto(inviteURL);await g.getByRole('heading',{name:'Tokyo · Together'}).waitFor();assert.equal(new URL(g.url()).hash,'');
  await g.locator('#person').selectOption('me');assert.equal(await g.locator('article').count(),1);assert.equal(await g.locator('article h3').innerText(),'草间弥生');
  await g.locator('#person').selectOption('nyt');assert.equal(await g.locator('article').count(),2);
- // A stay without reservation times remains unconfirmed on its boundary dates.
- for(const [day,label] of [['2026-10-07','Check-in · Time to confirm'],['2026-10-08','Your stay'],['2026-10-09','Check-out · Time to confirm']]){
-  await g.locator('#day').selectOption(day);assert.equal(await g.locator('article .time').innerText(),label+' · Accommodation');
- }
- await g.locator('#day').selectOption('2026-10-06');
  await g.screenshot({path:'/tmp/numi-collab-phone.png',fullPage:true});await p.screenshot({path:'/tmp/numi-collab-desktop.png',fullPage:true});
  // Independent fields on the same item merge, even with an open stale editor.
  await p.locator('[data-edit=museum]').click();await p.locator('dialog [name=notes]').fill('Meet at the entrance');

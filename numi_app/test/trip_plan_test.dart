@@ -873,16 +873,4 @@ void main() {
             remote),
         throwsStateError);
   });
-  test('missing booking times are unconfirmed while activities remain flexible',
-      () {
-    final hotel = PlanItem.create('booking').copy(
-        {'title': 'Hotel', 'date': '2026-10-07', 'endDate': '2026-10-09'});
-    final plan = TripPlan(items: [hotel]);
-    expect(plan.timelineTimeLabel(hotel, '2026-10-09'), 'Time TBD');
-    expect(
-        plan.timelineTimeLabel(hotel.copy({'endTime': '12:00'}), '2026-10-09'),
-        '12:00');
-    expect(plan.timelineTimeLabel(PlanItem.create('activity'), '2026-10-09'),
-        'Anytime');
-  });
 }
