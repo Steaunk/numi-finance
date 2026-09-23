@@ -1135,6 +1135,14 @@ class $TravelExpensesTable extends TravelExpenses
   late final GeneratedColumn<String> planItemId = GeneratedColumn<String>(
       'plan_item_id', aliasedName, true,
       type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _planItemIdsMeta =
+      const VerificationMeta('planItemIds');
+  @override
+  late final GeneratedColumn<String> planItemIds = GeneratedColumn<String>(
+      'plan_item_ids', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('[]'));
   static const VerificationMeta _destinationIdMeta =
       const VerificationMeta('destinationId');
   @override
@@ -1232,6 +1240,7 @@ class $TravelExpensesTable extends TravelExpenses
         tripRemoteId,
         clientId,
         planItemId,
+        planItemIds,
         destinationId,
         amount,
         currency,
@@ -1284,6 +1293,12 @@ class $TravelExpensesTable extends TravelExpenses
           _planItemIdMeta,
           planItemId.isAcceptableOrUnknown(
               data['plan_item_id']!, _planItemIdMeta));
+    }
+    if (data.containsKey('plan_item_ids')) {
+      context.handle(
+          _planItemIdsMeta,
+          planItemIds.isAcceptableOrUnknown(
+              data['plan_item_ids']!, _planItemIdsMeta));
     }
     if (data.containsKey('destination_id')) {
       context.handle(
@@ -1370,6 +1385,8 @@ class $TravelExpensesTable extends TravelExpenses
           .read(DriftSqlType.string, data['${effectivePrefix}client_id']),
       planItemId: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}plan_item_id']),
+      planItemIds: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}plan_item_ids'])!,
       destinationId: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}destination_id'])!,
       amount: attachedDatabase.typeMapping
@@ -1412,6 +1429,7 @@ class DbTravelExpense extends DataClass implements Insertable<DbTravelExpense> {
   final int? tripRemoteId;
   final String? clientId;
   final String? planItemId;
+  final String planItemIds;
   final String destinationId;
   final double amount;
   final String currency;
@@ -1432,6 +1450,7 @@ class DbTravelExpense extends DataClass implements Insertable<DbTravelExpense> {
       this.tripRemoteId,
       this.clientId,
       this.planItemId,
+      required this.planItemIds,
       required this.destinationId,
       required this.amount,
       required this.currency,
@@ -1462,6 +1481,7 @@ class DbTravelExpense extends DataClass implements Insertable<DbTravelExpense> {
     if (!nullToAbsent || planItemId != null) {
       map['plan_item_id'] = Variable<String>(planItemId);
     }
+    map['plan_item_ids'] = Variable<String>(planItemIds);
     map['destination_id'] = Variable<String>(destinationId);
     map['amount'] = Variable<double>(amount);
     map['currency'] = Variable<String>(currency);
@@ -1496,6 +1516,7 @@ class DbTravelExpense extends DataClass implements Insertable<DbTravelExpense> {
       planItemId: planItemId == null && nullToAbsent
           ? const Value.absent()
           : Value(planItemId),
+      planItemIds: Value(planItemIds),
       destinationId: Value(destinationId),
       amount: Value(amount),
       currency: Value(currency),
@@ -1524,6 +1545,7 @@ class DbTravelExpense extends DataClass implements Insertable<DbTravelExpense> {
       tripRemoteId: serializer.fromJson<int?>(json['tripRemoteId']),
       clientId: serializer.fromJson<String?>(json['clientId']),
       planItemId: serializer.fromJson<String?>(json['planItemId']),
+      planItemIds: serializer.fromJson<String>(json['planItemIds']),
       destinationId: serializer.fromJson<String>(json['destinationId']),
       amount: serializer.fromJson<double>(json['amount']),
       currency: serializer.fromJson<String>(json['currency']),
@@ -1549,6 +1571,7 @@ class DbTravelExpense extends DataClass implements Insertable<DbTravelExpense> {
       'tripRemoteId': serializer.toJson<int?>(tripRemoteId),
       'clientId': serializer.toJson<String?>(clientId),
       'planItemId': serializer.toJson<String?>(planItemId),
+      'planItemIds': serializer.toJson<String>(planItemIds),
       'destinationId': serializer.toJson<String>(destinationId),
       'amount': serializer.toJson<double>(amount),
       'currency': serializer.toJson<String>(currency),
@@ -1572,6 +1595,7 @@ class DbTravelExpense extends DataClass implements Insertable<DbTravelExpense> {
           Value<int?> tripRemoteId = const Value.absent(),
           Value<String?> clientId = const Value.absent(),
           Value<String?> planItemId = const Value.absent(),
+          String? planItemIds,
           String? destinationId,
           double? amount,
           String? currency,
@@ -1593,6 +1617,7 @@ class DbTravelExpense extends DataClass implements Insertable<DbTravelExpense> {
             tripRemoteId.present ? tripRemoteId.value : this.tripRemoteId,
         clientId: clientId.present ? clientId.value : this.clientId,
         planItemId: planItemId.present ? planItemId.value : this.planItemId,
+        planItemIds: planItemIds ?? this.planItemIds,
         destinationId: destinationId ?? this.destinationId,
         amount: amount ?? this.amount,
         currency: currency ?? this.currency,
@@ -1618,6 +1643,8 @@ class DbTravelExpense extends DataClass implements Insertable<DbTravelExpense> {
       clientId: data.clientId.present ? data.clientId.value : this.clientId,
       planItemId:
           data.planItemId.present ? data.planItemId.value : this.planItemId,
+      planItemIds:
+          data.planItemIds.present ? data.planItemIds.value : this.planItemIds,
       destinationId: data.destinationId.present
           ? data.destinationId.value
           : this.destinationId,
@@ -1645,6 +1672,7 @@ class DbTravelExpense extends DataClass implements Insertable<DbTravelExpense> {
           ..write('tripRemoteId: $tripRemoteId, ')
           ..write('clientId: $clientId, ')
           ..write('planItemId: $planItemId, ')
+          ..write('planItemIds: $planItemIds, ')
           ..write('destinationId: $destinationId, ')
           ..write('amount: $amount, ')
           ..write('currency: $currency, ')
@@ -1670,6 +1698,7 @@ class DbTravelExpense extends DataClass implements Insertable<DbTravelExpense> {
       tripRemoteId,
       clientId,
       planItemId,
+      planItemIds,
       destinationId,
       amount,
       currency,
@@ -1693,6 +1722,7 @@ class DbTravelExpense extends DataClass implements Insertable<DbTravelExpense> {
           other.tripRemoteId == this.tripRemoteId &&
           other.clientId == this.clientId &&
           other.planItemId == this.planItemId &&
+          other.planItemIds == this.planItemIds &&
           other.destinationId == this.destinationId &&
           other.amount == this.amount &&
           other.currency == this.currency &&
@@ -1715,6 +1745,7 @@ class TravelExpensesCompanion extends UpdateCompanion<DbTravelExpense> {
   final Value<int?> tripRemoteId;
   final Value<String?> clientId;
   final Value<String?> planItemId;
+  final Value<String> planItemIds;
   final Value<String> destinationId;
   final Value<double> amount;
   final Value<String> currency;
@@ -1735,6 +1766,7 @@ class TravelExpensesCompanion extends UpdateCompanion<DbTravelExpense> {
     this.tripRemoteId = const Value.absent(),
     this.clientId = const Value.absent(),
     this.planItemId = const Value.absent(),
+    this.planItemIds = const Value.absent(),
     this.destinationId = const Value.absent(),
     this.amount = const Value.absent(),
     this.currency = const Value.absent(),
@@ -1756,6 +1788,7 @@ class TravelExpensesCompanion extends UpdateCompanion<DbTravelExpense> {
     this.tripRemoteId = const Value.absent(),
     this.clientId = const Value.absent(),
     this.planItemId = const Value.absent(),
+    this.planItemIds = const Value.absent(),
     this.destinationId = const Value.absent(),
     required double amount,
     required String currency,
@@ -1782,6 +1815,7 @@ class TravelExpensesCompanion extends UpdateCompanion<DbTravelExpense> {
     Expression<int>? tripRemoteId,
     Expression<String>? clientId,
     Expression<String>? planItemId,
+    Expression<String>? planItemIds,
     Expression<String>? destinationId,
     Expression<double>? amount,
     Expression<String>? currency,
@@ -1803,6 +1837,7 @@ class TravelExpensesCompanion extends UpdateCompanion<DbTravelExpense> {
       if (tripRemoteId != null) 'trip_remote_id': tripRemoteId,
       if (clientId != null) 'client_id': clientId,
       if (planItemId != null) 'plan_item_id': planItemId,
+      if (planItemIds != null) 'plan_item_ids': planItemIds,
       if (destinationId != null) 'destination_id': destinationId,
       if (amount != null) 'amount': amount,
       if (currency != null) 'currency': currency,
@@ -1826,6 +1861,7 @@ class TravelExpensesCompanion extends UpdateCompanion<DbTravelExpense> {
       Value<int?>? tripRemoteId,
       Value<String?>? clientId,
       Value<String?>? planItemId,
+      Value<String>? planItemIds,
       Value<String>? destinationId,
       Value<double>? amount,
       Value<String>? currency,
@@ -1846,6 +1882,7 @@ class TravelExpensesCompanion extends UpdateCompanion<DbTravelExpense> {
       tripRemoteId: tripRemoteId ?? this.tripRemoteId,
       clientId: clientId ?? this.clientId,
       planItemId: planItemId ?? this.planItemId,
+      planItemIds: planItemIds ?? this.planItemIds,
       destinationId: destinationId ?? this.destinationId,
       amount: amount ?? this.amount,
       currency: currency ?? this.currency,
@@ -1882,6 +1919,9 @@ class TravelExpensesCompanion extends UpdateCompanion<DbTravelExpense> {
     }
     if (planItemId.present) {
       map['plan_item_id'] = Variable<String>(planItemId.value);
+    }
+    if (planItemIds.present) {
+      map['plan_item_ids'] = Variable<String>(planItemIds.value);
     }
     if (destinationId.present) {
       map['destination_id'] = Variable<String>(destinationId.value);
@@ -1934,6 +1974,7 @@ class TravelExpensesCompanion extends UpdateCompanion<DbTravelExpense> {
           ..write('tripRemoteId: $tripRemoteId, ')
           ..write('clientId: $clientId, ')
           ..write('planItemId: $planItemId, ')
+          ..write('planItemIds: $planItemIds, ')
           ..write('destinationId: $destinationId, ')
           ..write('amount: $amount, ')
           ..write('currency: $currency, ')
@@ -4718,6 +4759,7 @@ typedef $$TravelExpensesTableCreateCompanionBuilder = TravelExpensesCompanion
   Value<int?> tripRemoteId,
   Value<String?> clientId,
   Value<String?> planItemId,
+  Value<String> planItemIds,
   Value<String> destinationId,
   required double amount,
   required String currency,
@@ -4740,6 +4782,7 @@ typedef $$TravelExpensesTableUpdateCompanionBuilder = TravelExpensesCompanion
   Value<int?> tripRemoteId,
   Value<String?> clientId,
   Value<String?> planItemId,
+  Value<String> planItemIds,
   Value<String> destinationId,
   Value<double> amount,
   Value<String> currency,
@@ -4798,6 +4841,9 @@ class $$TravelExpensesTableFilterComposer
 
   ColumnFilters<String> get planItemId => $composableBuilder(
       column: $table.planItemId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get planItemIds => $composableBuilder(
+      column: $table.planItemIds, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get destinationId => $composableBuilder(
       column: $table.destinationId, builder: (column) => ColumnFilters(column));
@@ -4884,6 +4930,9 @@ class $$TravelExpensesTableOrderingComposer
   ColumnOrderings<String> get planItemId => $composableBuilder(
       column: $table.planItemId, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get planItemIds => $composableBuilder(
+      column: $table.planItemIds, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<String> get destinationId => $composableBuilder(
       column: $table.destinationId,
       builder: (column) => ColumnOrderings(column));
@@ -4968,6 +5017,9 @@ class $$TravelExpensesTableAnnotationComposer
 
   GeneratedColumn<String> get planItemId => $composableBuilder(
       column: $table.planItemId, builder: (column) => column);
+
+  GeneratedColumn<String> get planItemIds => $composableBuilder(
+      column: $table.planItemIds, builder: (column) => column);
 
   GeneratedColumn<String> get destinationId => $composableBuilder(
       column: $table.destinationId, builder: (column) => column);
@@ -5059,6 +5111,7 @@ class $$TravelExpensesTableTableManager extends RootTableManager<
             Value<int?> tripRemoteId = const Value.absent(),
             Value<String?> clientId = const Value.absent(),
             Value<String?> planItemId = const Value.absent(),
+            Value<String> planItemIds = const Value.absent(),
             Value<String> destinationId = const Value.absent(),
             Value<double> amount = const Value.absent(),
             Value<String> currency = const Value.absent(),
@@ -5080,6 +5133,7 @@ class $$TravelExpensesTableTableManager extends RootTableManager<
             tripRemoteId: tripRemoteId,
             clientId: clientId,
             planItemId: planItemId,
+            planItemIds: planItemIds,
             destinationId: destinationId,
             amount: amount,
             currency: currency,
@@ -5101,6 +5155,7 @@ class $$TravelExpensesTableTableManager extends RootTableManager<
             Value<int?> tripRemoteId = const Value.absent(),
             Value<String?> clientId = const Value.absent(),
             Value<String?> planItemId = const Value.absent(),
+            Value<String> planItemIds = const Value.absent(),
             Value<String> destinationId = const Value.absent(),
             required double amount,
             required String currency,
@@ -5122,6 +5177,7 @@ class $$TravelExpensesTableTableManager extends RootTableManager<
             tripRemoteId: tripRemoteId,
             clientId: clientId,
             planItemId: planItemId,
+            planItemIds: planItemIds,
             destinationId: destinationId,
             amount: amount,
             currency: currency,

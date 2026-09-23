@@ -19,6 +19,14 @@ function reviewPdf(file,items,warning){
  d.querySelectorAll('[data-pdf-review]').forEach(b=>b.onclick=()=>{
   const n=Number(b.dataset.pdfReview),item=items[n];d.close();
   const fields={};for(const key of ['title','category','date','endDate','time','endTime','timezone','endTimezone','address','endAddress','notes','confirmation'])if(item[key])fields[key]=item[key];
-  editor(newItem(item.kind||'activity',fields),{file,onSaved:()=>reviewPdf(file,items.filter((_,i)=>i!==n),warning)});
+  const incoming=newItem(item.kind||'activity',fields), normalize=s=>String(s||'').toLowerCase().replace(/[^a-z0-9\u3400-\u9fff]/g,'');
+  const existing=list().find(i=>{const a=normalize(i.title),b=normalize(incoming.title);return i.kind==='activity'&&incoming.kind==='activity'&&i.date&&i.date===incoming.date&&(i.time||'')===(incoming.time||'')&&a&&b&&(a===b||(a.length>=8&&b.includes(a))||(b.length>=8&&a.includes(b)))});
+  const open=value=>editor(value,{file,onSaved:()=>reviewPdf(file,items.filter((_,i)=>i!==n),warning)});
+  if(existing){
+    const match=modal('Already in your trip?',`<p>${esc(existing.title)} is already saved for the same date and time.</p><div class="row"><button data-update>Update existing</button><button data-separate>Add separately</button><button data-cancel>Cancel</button></div>`);
+    match.querySelector('[data-update]').onclick=()=>{match.close();open({...existing,...fields,id:existing.id,kind:existing.kind,status:existing.status})};
+    match.querySelector('[data-separate]').onclick=()=>{match.close();open(incoming)};
+    match.querySelector('[data-cancel]').onclick=()=>{match.close();reviewPdf(file,items,warning)};
+  }else open(incoming);
  });
 }

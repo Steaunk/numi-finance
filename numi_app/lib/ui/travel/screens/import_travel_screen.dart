@@ -188,29 +188,50 @@ class _ImportTravelScreenState extends ConsumerState<ImportTravelScreen> {
     try {
       final plan = await ref.read(tripPlanProvider(trip.id).future);
       if (!mounted) return;
-      final item = reviewed ?? draft!.item(kind);
-      final duplicates = plan.items.where((existing) =>
-          existing.title == item.title &&
-          existing['date'] == item['date'] &&
-          existing['time'] == item['time'] &&
-          existing.links.any((l) => item.links.any((n) => n.url == l.url)));
-      if (duplicates.isNotEmpty) {
-        final proceed = await showDialog<bool>(
-            context: context,
-            builder: (ctx) => AlertDialog(
-                  title: const Text('Link already saved'),
-                  content: Text(
-                      'This link is already on “${duplicates.first.title}”. Add another item?'),
-                  actions: [
-                    TextButton(
-                        onPressed: () => Navigator.pop(ctx, false),
-                        child: const Text('Cancel')),
-                    FilledButton(
-                        onPressed: () => Navigator.pop(ctx, true),
-                        child: const Text('Add another'))
-                  ],
-                ));
-        if (proceed != true || !mounted) return;
+      var item = reviewed ?? draft!.item(kind);
+      if (reviewed == null) {
+        final matches = plan.items.where((existing) =>
+            sameScheduledActivity(existing, item) ||
+            (existing.kind == item.kind &&
+                existing.title == item.title &&
+                existing['date'] == item['date'] &&
+                existing['time'] == item['time'] &&
+                existing.links
+                    .any((l) => item.links.any((n) => n.url == l.url))));
+        if (matches.isNotEmpty) {
+          final existing = matches.first;
+          final decision = await showDialog<String>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                    title: const Text('Already in your trip?'),
+                    content: Text(
+                        '“${existing.title}” is already saved for the same date and time. Review it with the imported details?'),
+                    actions: [
+                      TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text('Cancel')),
+                      TextButton(
+                          onPressed: () => Navigator.pop(ctx, 'new'),
+                          child: const Text('Add separately')),
+                      FilledButton(
+                          onPressed: () => Navigator.pop(ctx, 'update'),
+                          child: const Text('Update existing')),
+                    ],
+                  ));
+          if (decision == null || !mounted) return;
+          if (decision == 'update') {
+            final links = [...existing.links];
+            for (final link in item.links) {
+              if (!links.any((l) => l.url == link.url)) links.add(link);
+            }
+            item = existing.copy({
+              for (final entry in item.fields.entries)
+                if (entry.value.isNotEmpty &&
+                    !['id', 'kind', 'status', 'priority'].contains(entry.key))
+                  entry.key: entry.value
+            }, links: links);
+          }
+        }
       }
       var edited = await editPlanItem(context, trip, plan, item);
       if (edited == null || !mounted) return;

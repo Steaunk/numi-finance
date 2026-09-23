@@ -113,7 +113,7 @@ class PlanItem {
           'booking' => 'Accommodation',
           'task' => 'Preparation',
           'destination' => 'Destination',
-          _ => 'Activity'
+          _ => 'Other'
         },
         'priority': 'Nice to have',
       });
@@ -190,14 +190,16 @@ class TripPlan {
               ? item['endDestinationId'].isNotEmpty &&
                   item['endDestinationId'] != destinationIdFor(item)
               : destinationIdFor(item) == id || item['endDestinationId'] == id);
-  String expenseDestination(String? itemId, {String destinationId = ''}) {
-    final item = find(itemId ?? '');
-    if (item == null) {
-      return find(destinationId)?.kind == 'destination' ? destinationId : '';
+  String expenseDestination(List<String> itemIds, {String destinationId = ''}) {
+    if (find(destinationId)?.kind == 'destination') return destinationId;
+    final groups = <String>{};
+    for (final id in itemIds) {
+      final item = find(id);
+      if (item == null) continue;
+      final from = destinationIdFor(item), to = item['endDestinationId'];
+      groups.add(to.isNotEmpty && to != from ? '__transfers__' : from);
     }
-    final from = destinationIdFor(item), to = item['endDestinationId'];
-    if (to.isNotEmpty && to != from) return '__transfers__';
-    return from;
+    return groups.length > 1 ? '__transfers__' : groups.firstOrNull ?? '';
   }
 
   String expenseDestinationLabel(String id) => id == '__transfers__'
@@ -432,4 +434,23 @@ TripPlan mergePlanChanges(TripPlan base, TripPlan local, TripPlan remote) {
           .where(r.containsKey)
           .map((id) => PlanItem.fromJson(r[id]!))
           .toList());
+}
+
+/// Suggest a match for review; never merge similarly named visits automatically.
+bool sameScheduledActivity(PlanItem existing, PlanItem incoming) {
+  if (existing.kind != 'activity' ||
+      incoming.kind != 'activity' ||
+      existing['date'].isEmpty ||
+      existing['date'] != incoming['date'] ||
+      existing['time'] != incoming['time']) {
+    return false;
+  }
+  String normalized(String value) =>
+      value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9\u3400-\u9fff]'), '');
+  final a = normalized(existing.title), b = normalized(incoming.title);
+  return a.isNotEmpty &&
+      b.isNotEmpty &&
+      (a == b ||
+          (a.length >= 8 && b.contains(a)) ||
+          (b.length >= 8 && a.contains(b)));
 }

@@ -31,9 +31,9 @@
 // Shared document format with Flutter. No external SDK or webpage fetching.
 window.TravelPlanner = (() => {
     const tabs = ['Overview','Itinerary','Places','Bookings','Preparation','Expenses'];
-    const categories = {place:['Sightseeing','Restaurant','Cafe','Shopping','Park','Practical','Other'], booking:['Accommodation','Flight','Train','Bus','Car rental','Reservation','No accommodation needed'], task:['Preparation','Packing','Shopping']};
-    const expenseCategories = ['Transportation','Accommodation','Sightseeing','Food & Drinks','Shopping','Other'];
-    const expenseCategory = category => category === 'Accommodation' ? 'Accommodation' : ['Flight','Train','Bus','Car rental'].includes(category) ? 'Transportation' : ['Sightseeing','Shopping'].includes(category) ? category : ['Restaurant','Cafe'].includes(category) ? 'Food & Drinks' : 'Other';
+    const categories = {activity:['Sightseeing','Restaurant','Cafe','Shopping','Park','Practical','Accommodation','Other'],place:['Sightseeing','Restaurant','Cafe','Shopping','Park','Practical','Other'], booking:['Accommodation','Flight','Train','Bus','Car rental','Reservation','No accommodation needed'], task:['Preparation','Packing','Shopping']};
+
+
     const priorities = ['Must go','If nearby','Nice to have'];
     const statuses = ['planned','confirmed','completed','skipped','cancelled'];
     const purposes = ['Map','Website','Booking','Guide','Other'];
@@ -43,7 +43,14 @@ window.TravelPlanner = (() => {
     const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
     const key = tripId => `numi.travel.plan.v1.${tripId}`;
     const empty = () => ({content:{items:[]},revision:0,mutation:'',dirty:false,error:''});
-    const read = tripId => JSON.parse(localStorage.getItem(key(tripId)) || 'null') || empty();
+    const read = tripId => {
+        const row=JSON.parse(localStorage.getItem(key(tripId)) || 'null') || empty();
+        for(const i of row.content.items) {
+            if(i.kind==='activity'&&i.category==='Activity')i.category=i.expenseCategory==='Sightseeing'?'Sightseeing':'Other';
+            for(const k of ['amount','currency','paymentStatus','paidDate','expenseClientId','expenseCategory'])delete i[k];
+        }
+        return row;
+    };
     const write = (tripId, row) => localStorage.setItem(key(tripId), JSON.stringify(row));
     const items = s => read(s.trip.id).content.items;
     const kind = (s,k) => items(s).filter(i => i.kind === k);
@@ -68,9 +75,9 @@ window.TravelPlanner = (() => {
     const destinationsOn = (s,day) => destinations(s).filter(d=>!cancelled(d)&&d.date<=day&&d.endDate>=day);
     const destinationOptions = (s,value,empty) => `<option value="">${empty}</option>`+destinations(s).map(d=>`<option value="${escape(d.id)}" ${d.id===value?'selected':''}>${escape(d.title)}</option>`).join('');
     function expenseGroup(s,e) {
-        const i=items(s).find(i=>i.id===e.plan_item_id || i.expenseClientId && [e.client_id,'remote-'+e.id].includes(i.expenseClientId));
-        if(!i) return destinations(s).some(d=>d.id===e.destination_id) ? e.destination_id : '';
-        const from=destinationId(s,i); return i.endDestinationId && i.endDestinationId!==from ? '__transfers__' : from;
+        if(destinations(s).some(d=>d.id===e.destination_id))return e.destination_id;
+        const groups=new Set((e.plan_item_ids||[]).map(id=>items(s).find(i=>i.id===id)).filter(Boolean).map(i=>i.endDestinationId&&i.endDestinationId!==destinationId(s,i)?'__transfers__':destinationId(s,i)));
+        return groups.size>1?'__transfers__':[...groups][0]||'';
     }
     function renderExpenseGroups(s) {
         const host=s.root?.querySelector('[data-expense-destinations]'); if(!host)return;
@@ -105,7 +112,7 @@ window.TravelPlanner = (() => {
         const mapLinks = [];
         if(address || i.kind === 'place') for(const provider of ['google','baidu']) mapLinks.push({url:mapURL(provider,p?.title || title(s,i),address,destinations(s).find(d=>d.id===destinationId(s,i))?.title || s.trip.destination),label:provider === 'google' ? 'Google Maps' : 'Baidu Maps',purpose:'Map'});
         if(i.endAddress) for(const provider of ['google','baidu']) mapLinks.push({url:mapURL(provider,'',i.endAddress,destinations(s).find(d=>d.id===i.endDestinationId)?.title || s.trip.destination),label:'Arrival · '+(provider === 'google' ? 'Google Maps' : 'Baidu Maps'),purpose:'Map'});
-        return `<details class="plan-card" data-item="${escape(i.id)}" ${reorder ? 'draggable="true"' : ''}><summary>${escape(title(s,i))}<span class="plan-muted" style="display:block;font-weight:normal;">${escape(subtitle)}</span></summary>${[address,i.endAddress && 'Arrival: '+i.endAddress,i.confirmation && 'Confirmation: '+i.confirmation,i.contact && 'Contact: '+i.contact,i.cancelBy && 'Cancellation deadline: '+i.cancelBy,i.assignee && 'Responsible: '+i.assignee,i.amount && `${i.currency} ${i.amount} · ${i.paymentStatus === 'paid' ? 'Paid on '+i.paidDate : 'Unpaid'}`,i.notes,p?.notes].filter(Boolean).map(v=>`<p>${escape(v)}</p>`).join('')}${linksHTML([...(p?.links || []),...(i.links || []),...mapLinks])}<div class="plan-actions">${action('Edit','edit',i.id)}${i.kind === 'place' ? action('Add to itinerary','schedule',i.id) : ''}${i.kind === 'task' ? action(i.status === 'completed' ? 'Reopen' : 'Complete','complete',i.id) : ''}${reorder ? action('↑ Move up','up',i.id)+action('↓ Move down','down',i.id) : ''}${i.kind==='destination'?action('↑ Move up','destination-up',i.id)+action('↓ Move down','destination-down',i.id):''}${action('Delete','delete',i.id)}</div></details>`;
+        return `<details class="plan-card" data-item="${escape(i.id)}" ${reorder ? 'draggable="true"' : ''}><summary>${escape(title(s,i))}<span class="plan-muted" style="display:block;font-weight:normal;">${escape(subtitle)}</span></summary>${[address,i.endAddress && 'Arrival: '+i.endAddress,i.confirmation && 'Confirmation: '+i.confirmation,i.contact && 'Contact: '+i.contact,i.cancelBy && 'Cancellation deadline: '+i.cancelBy,i.assignee && 'Responsible: '+i.assignee,i.notes,p?.notes].filter(Boolean).map(v=>`<p>${escape(v)}</p>`).join('')}${linksHTML([...(p?.links || []),...(i.links || []),...mapLinks])}<div class="plan-actions">${action('Edit','edit',i.id)}${i.kind === 'place' ? action('Add to itinerary','schedule',i.id) : ''}${i.kind === 'task' ? action(i.status === 'completed' ? 'Reopen' : 'Complete','complete',i.id) : ''}${reorder ? action('↑ Move up','up',i.id)+action('↓ Move down','down',i.id) : ''}${i.kind==='destination'?action('↑ Move up','destination-up',i.id)+action('↓ Move down','destination-down',i.id):''}${action('Delete','delete',i.id)}</div></details>`;
     }
     function select(name,values,value,label) { return `<label>${escape(label)}<select data-filter="${name}">${values.map(v=>`<option value="${escape(v)}" ${v === value ? 'selected' : ''}>${escape(v || 'Unassigned')}</option>`).join('')}</select></label>`; }
     function render(s) {
@@ -201,11 +208,11 @@ window.TravelPlanner = (() => {
     function editor(s,initial) {
         const item = structuredClone(initial), dialog = document.createElement('dialog'); dialog.className='plan-dialog';
         let links = item.links || [];
-        if(['booking','activity'].includes(item.kind)) { item.paymentStatus ||= 'unpaid'; item.currency ||= 'SGD'; item.paidDate ||= today(); item.expenseCategory ||= expenseCategory(items(s).find(p=>p.id===item.placeId)?.category || item.category); }
+
         const input = (name,label,type='text',required=false) => `<label>${escape(label)}<input name="${name}" type="${type}" value="${escape(item[name]||'')}" ${required?'required':''} maxlength="${name==='notes'?10000:500}"></label>`;
         const choice = (name,label,values) => `<label>${escape(label)}<select name="${name}">${values.map(v=>`<option ${v===item[name]?'selected':''} value="${escape(v)}">${escape(v)}</option>`).join('')}</select></label>`;
         let fields = input('title','Name (optional for a linked activity)','text',item.kind!=='activity');
-        if(categories[item.kind]) fields += choice('category',item.kind==='task'?'Checklist':'Category',categories[item.kind]);
+        if(categories[item.kind]) fields += choice('category',item.kind==='task'?'Checklist':item.kind==='activity'?'Activity type':'Category',categories[item.kind]);
         if(item.kind==='place') fields += choice('priority','Priority',priorities);
         if(['place','activity','booking'].includes(item.kind)&&destinations(s).length) fields += `<label data-destination-field>Destination<select name="destinationId">${destinationOptions(s,item.destinationId,'Unassigned')}</select></label>`;
         if(item.kind==='booking'&&destinations(s).length) fields += `<label data-arrival-destination-field>To destination<select name="endDestinationId">${destinationOptions(s,item.endDestinationId,'Unassigned')}</select></label>`;
@@ -220,12 +227,7 @@ window.TravelPlanner = (() => {
         if(item.kind==='booking') fields += input('timezone','Start time zone')+input('endTimezone','Arrival time zone');
         if(item.kind!=='task') fields += input('address','Address / departure');
         if(item.kind==='booking') fields += input('endAddress','Arrival address')+input('confirmation','Confirmation / flight / train number')+input('contact','Contact')+input('cancelBy','Cancellation deadline','date');
-        if(['booking','activity'].includes(item.kind) && item.category!=='No accommodation needed') {
-            fields += '<h3 class="wide">Payment</h3>'+input('amount','Amount (optional until paid)')+input('currency','Currency')+
-                choice('paymentStatus','Payment status',['unpaid','paid'])+input('paidDate','Payment date','date')+
-                choice('expenseCategory','Expense category',expenseCategories)+
-                '<p class="plan-muted wide">Paid itinerary items appear in expenses automatically. Enter the payment once here.</p>';
-        }
+
         if(item.kind==='task') fields += input('assignee','Responsible person');
         fields += `<label class="wide">Notes<textarea name="notes" maxlength="10000">${escape(item.notes||'')}</textarea></label>`;
         dialog.innerHTML = `<form><h2>${initial.title ? 'Edit' : 'Add'} ${item.kind==='task'?'checklist item':item.kind}</h2><div class="form-grid">${fields}</div><p class="plan-muted">All times are local; there is no automatic time-zone conversion.</p>${item.kind!=='task'?'<h3>External links</h3><div class="link-rows"></div><label>URL or share text<textarea class="share-text" placeholder="Paste links or a shared post"></textarea></label><div class="link-preview plan-muted"></div><button class="btn btn-secondary" type="button" data-import>Add detected links</button>':''}<p class="plan-notice" role="alert"></p><div class="plan-actions"><button class="btn btn-primary" type="submit">Save item</button><button class="btn btn-secondary" type="button" data-close>Cancel</button></div></form>`;
@@ -251,9 +253,8 @@ window.TravelPlanner = (() => {
             form.elements.endDate.required=stay;
             form.elements.time.parentElement.firstChild.textContent=stay?'Check-in time (optional)':'Start time (empty = flexible)';
             form.elements.endTime.parentElement.firstChild.textContent=stay?'Check-out time (optional)':'End time';
-            if(form.elements.amount) form.elements.amount.parentElement.firstChild.textContent=stay?'Total stay amount (optional until paid)':'Amount (optional until paid)';
             const duration=stayDuration({category:'Accommodation',date:form.elements.date.value,endDate:form.elements.endDate.value});
-            summary.textContent=duration ? `${duration} · Check-out day is not an overnight stay. Payment is the total for the entire stay, recorded once.` : 'Choose check-in and check-out dates.';
+            summary.textContent=duration ? `${duration} · Check-out day is not an overnight stay. ` : 'Choose check-in and check-out dates.';
         }
         updateStayDuration();
         form.addEventListener('input',updateStayDuration);
@@ -271,8 +272,6 @@ window.TravelPlanner = (() => {
             if(e.target.dataset.removeLink!==undefined) {links.splice(Number(e.target.dataset.removeLink),1);renderLinks();}
             if(e.target.matches('[data-import]')) { const field=dialog.querySelector('.share-text'); const found=extract(field.value); if(links.length+found.length>50){error.textContent='Keep at most 50 links.';return;} links.push(...found.map(url=>({url,purpose:'Other',label:''}))); field.value='';dialog.querySelector('.link-preview').textContent='';renderLinks(); }
         });
-        form.querySelector('[name=category]')?.addEventListener('change', e => { if(['booking','activity'].includes(item.kind) && form.elements.expenseCategory) form.elements.expenseCategory.value=expenseCategory(e.target.value); });
-        form.querySelector('[name=placeId]')?.addEventListener('change', e => {form.elements.expenseCategory.value=expenseCategory(items(s).find(p=>p.id===e.target.value)?.category);});
         form.onsubmit=e=>{
             e.preventDefault();
             try {
@@ -282,17 +281,6 @@ window.TravelPlanner = (() => {
                 if(links.some(l=>!safeURL(l.url))) throw new Error('Links must be valid HTTP or HTTPS URLs.');
                 if(value.kind==='booking' && value.category==='Accommodation' && (!value.endDate || value.endDate<=value.date)) throw new Error('Checkout must be after check-in.');
                 if(value.kind==='activity' && value.date && (value.date<s.trip.start_date || value.date>s.trip.end_date)) throw new Error('Choose a day within this trip or leave it unassigned.');
-                if(['booking','activity'].includes(value.kind)) {
-                    value.currency = (value.currency || '').toUpperCase();
-                    if(value.category==='No accommodation needed') value.paymentStatus='unpaid';
-                    if(value.amount && (!Number.isFinite(Number(value.amount)) || Number(value.amount)<=0)) throw new Error('Enter a positive amount.');
-                    if(value.amount && !/^[A-Z]{3}$/.test(value.currency)) throw new Error('Enter a three-letter currency.');
-                    if(value.paymentStatus==='paid') {
-                        if(!value.amount || !value.paidDate) throw new Error('Paid items need an amount and payment date.');
-                        value.expenseClientId ||= id();
-                    }
-                    if(item.paymentStatus==='paid' && value.paymentStatus!=='paid' && !confirm('Remove the linked expense and keep this itinerary item unpaid?')) return;
-                }
                 if(value.kind==='destination'&&(!value.date||!value.endDate||value.endDate<value.date))throw new Error('Choose arrival and departure dates in order.');
                 if(value.kind==='destination'&&(value.date<s.trip.start_date||value.endDate>s.trip.end_date))throw new Error('Destination dates must be within the trip dates.');
                 if(value.kind!=='booking'||!['Flight','Train','Bus','Car rental'].includes(value.category))value.endDestinationId='';
@@ -339,42 +327,27 @@ window.TravelPlanner = (() => {
         render(s); void sync(trip.id);
         return document.getElementById(`tripExpenses_${trip.id}`);
     }
-    async function editExpense(tripId, expenseId, attach=false, targetKind='booking') {
+    async function linkExpense(tripId, expenseId) {
         const s=states.get(tripId), expense=s?.expenses.find(e=>e.id===expenseId);
-        if(!s || !expense) return;
-        try {
-            const linkedId=linkedExpense(tripId,expenseId);
-            if(linkedId) {
-                if(!items(s).some(i=>i.id===linkedId)) await sync(tripId);
-                const booking=items(s).find(i=>i.id===linkedId);
-                if(!booking) throw new Error('Sync this trip to load its itinerary item.');
-                editor(s,booking);
-            } else if(attach) {
-                const stay=expense.category==='Accommodation';
-                const next=new Date(s.trip.start_date+'T12:00:00Z'); next.setUTCDate(next.getUTCDate()+1);
-                editor(s,create(targetKind,{title:expense.name,notes:expense.notes,destinationId:expense.destination_id || '',category:targetKind==='activity'?'Activity':stay?'Accommodation':'Reservation',
-                    date:s.trip.start_date, endDate:stay&&targetKind==='booking'?(s.trip.end_date>s.trip.start_date?s.trip.end_date:next.toISOString().slice(0,10)):'',
-                    status:'confirmed',amount:String(expense.amount),currency:expense.currency,paymentStatus:'paid',paidDate:expense.date,
-                    expenseCategory:expense.category,expenseClientId:expense.client_id || 'remote-'+expense.id}));
-            }
-        } catch(e) {showMessage(e.message,'error');}
-    }
-    function linkedExpense(tripId, expenseId) {
-        const s=states.get(tripId), expense=s?.expenses.find(e=>e.id===expenseId);
-        if(!expense) return null;
-        return items(s).find(i=>i.expenseClientId && [expense.client_id,'remote-'+expense.id].includes(i.expenseClientId))?.id || expense.plan_item_id;
-    }
-    async function removePayment(tripId, expenseId) {
-        const s=states.get(tripId), planItemId=linkedExpense(tripId,expenseId);
-        if(!s || !planItemId) return;
-        if(!confirm('Remove this payment and keep the itinerary item unpaid?')) return;
-        if(!items(s).some(i=>i.id===planItemId)) await sync(tripId);
-        if(!items(s).some(i=>i.id===planItemId)) {showMessage('Sync this trip to load its itinerary item.','error');return;}
-        change(s,list=>list.map(i=>i.id===planItemId?{...i,paymentStatus:'unpaid'}:i));
+        if(!s || !expense)return;
+        await sync(tripId);
+        const choices=items(s).filter(i=>['activity','booking'].includes(i.kind)&&i.category!=='No accommodation needed');
+        const dialog=document.createElement('dialog');dialog.className='plan-dialog';
+        dialog.innerHTML=`<h2>Linked itinerary</h2><p>${escape(expense.name)}</p><p class="plan-muted">Choose any number of arrangements. The expense is counted once.</p><form>${choices.map(i=>`<label style="display:flex;flex-direction:row;align-items:center"><input style="width:auto" type="checkbox" name="item" value="${escape(i.id)}" ${(expense.plan_item_ids||[]).includes(i.id)?'checked':''}><span>${escape(title(s,i))}<small style="display:block">${escape([i.date||'Anytime',i.time,i.category].filter(Boolean).join(' · '))}</small></span></label>`).join('')||'<p>Add activities or bookings in your itinerary first.</p>'}<p class="plan-notice" role="alert"></p><div class="plan-actions"><button type="submit" class="btn btn-primary">Save links</button><button type="button" data-close class="btn btn-secondary">Cancel</button></div></form>`;
+        document.body.append(dialog);dialog.showModal();dialog.addEventListener('close',()=>dialog.remove());dialog.querySelector('[data-close]').onclick=()=>dialog.close();
+        dialog.querySelector('form').onsubmit=async event=>{
+            event.preventDefault();const button=dialog.querySelector('[type=submit]');button.disabled=true;
+            try {
+                const plan_item_ids=[...new FormData(event.target).getAll('item')];
+                const response=await fetch(`/expenses/api/travel/trips/${tripId}/expenses/${expenseId}/links/`,{method:'PUT',headers:{'Content-Type':'application/json','X-CSRFToken':getCsrf()},body:JSON.stringify({plan_item_ids})});
+                const result=await response.json();if(!response.ok)throw Error(result.error||'Could not save links.');
+                expense.plan_item_ids=plan_item_ids;dialog.close();loadTripDetail(tripId);
+            } catch(error){dialog.querySelector('[role=alert]').textContent=error.message;}finally{button.disabled=false;}
+        };
     }
     function forget(tripId) { states.delete(tripId); localStorage.removeItem(key(tripId)); }
     window.addEventListener('online',()=>states.forEach(s=>void sync(s.trip.id)));
     window.addEventListener('storage',e=>states.forEach(s=>{if(e.key===key(s.trip.id))render(s);}));
-    return {mount,refreshExpenses:tripId=>{const s=states.get(tripId);if(s)renderExpenseGroups(s);},forget,phase,safeURL,extract,platform,mapURL,editExpense,linkedExpense,removePayment};
+    return {mount,refreshExpenses:tripId=>{const s=states.get(tripId);if(s)renderExpenseGroups(s);},forget,phase,safeURL,extract,platform,mapURL,linkExpense};
 })();
 </script>

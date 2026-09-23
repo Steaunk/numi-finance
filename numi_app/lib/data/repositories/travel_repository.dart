@@ -17,7 +17,8 @@ class TravelRepository {
   final TravelApi? _api;
   final RateRepository _rateRepo;
 
-  TravelRepository(this._db, this._api, this._rateRepo);
+  final Future<void> Function(int)? preparePlan;
+  TravelRepository(this._db, this._api, this._rateRepo, {this.preparePlan});
 
   Future<void> _tripWork = Future.value();
   Future<T> _serializeTrips<T>(Future<T> Function() action) {
@@ -223,6 +224,22 @@ class TravelRepository {
     }
   }
 
+  Future<void> _validateLinks(int tripId, List<String> ids) async {
+    final row = await (_db.select(_db.tripPlans)
+          ..where((p) => p.tripId.equals(tripId)))
+        .getSingleOrNull();
+    final plan = row == null ? TripPlan() : TripPlan.decode(row.content);
+    if (ids.toSet().length != ids.length ||
+        ids.any((id) {
+          final item = plan.find(id);
+          return item == null ||
+              !['activity', 'booking'].contains(item.kind) ||
+              item['category'] == 'No accommodation needed';
+        })) {
+      throw StateError('Choose itinerary items in this trip.');
+    }
+  }
+
   Future<void> addTravelExpense({
     required int tripId,
     required double amount,
@@ -232,81 +249,37 @@ class TravelRepository {
     required String name,
     String notes = '',
     String destinationId = '',
+    List<String> planItemIds = const [],
   }) async {
-    await _validateDestination(tripId, destinationId);
-    final clientId = newPlanId();
     final rates = await _rateRepo.getCachedRates();
     final computed = CurrencyUtils.computeAmounts(amount, currency, rates);
-
-    final tripRow = await _db.tripDao.getById(tripId);
-    final companion = TravelExpensesCompanion.insert(
-      tripId: tripId,
-      clientId: Value(clientId),
-      destinationId: Value(destinationId),
-      tripRemoteId: Value(tripRow?.remoteId),
-      amount: amount,
-      currency: currency,
-      date: date,
-      category: category,
-      name: name,
-      notes: Value(notes),
-      amountUsd: Value(computed['amount_usd']!),
-      amountCny: Value(computed['amount_cny']!),
-      amountHkd: Value(computed['amount_hkd']!),
-      amountSgd: Value(computed['amount_sgd']!),
-      createdAt: Value(DateTime.now()),
-    );
-    final localId = await _db.tripDao.insertTravelExpense(companion);
-    if (_api == null || tripRow?.remoteId == null) {
-      await _enqueue('travel_expense', 'create', localId, {
-        'trip_id': tripId,
-        'client_id': clientId,
-        'amount': amount,
-        'currency': currency,
-        'date': AppDateUtils.formatDate(date),
-        'category': category,
-        'name': name,
-        'notes': notes,
-        'destination_id': destinationId,
-      });
-      return;
-    }
-
-    final api = _api;
-    if (tripRow?.remoteId != null) {
-      try {
-        final remote = await api.addTripExpense(tripRow!.remoteId!, {
-          'client_id': clientId,
-          'amount': amount,
-          'currency': currency,
-          'date': AppDateUtils.formatDate(date),
-          'category': category,
-          'name': name,
-          'notes': notes,
-          'destination_id': destinationId,
-        });
-        await (_db.update(_db.travelExpenses)
-              ..where((e) => e.id.equals(localId)))
-            .write(TravelExpensesCompanion(
-          remoteId: Value(remote['id'] as int),
-          synced: const Value(true),
-        ));
-      } catch (e, st) {
-        AppLogger.instance.log('addTravelExpense push failed: $e',
-            name: 'TravelRepo', error: e, stackTrace: st);
-        await _enqueue('travel_expense', 'create', localId, {
-          'trip_id': tripId,
-          'client_id': clientId,
-          'amount': amount,
-          'currency': currency,
-          'date': date.toIso8601String(),
-          'category': category,
-          'name': name,
-          'notes': notes,
-          'destination_id': destinationId,
-        });
-      }
-    }
+    await _db.transaction(() async {
+      await _validateDestination(tripId, destinationId);
+      await _validateLinks(tripId, planItemIds);
+      final trip = await _db.tripDao.getById(tripId);
+      if (trip == null) throw StateError('Trip no longer exists.');
+      final id =
+          await _db.tripDao.insertTravelExpense(TravelExpensesCompanion.insert(
+        tripId: tripId,
+        clientId: Value(newPlanId()),
+        tripRemoteId: Value(trip.remoteId),
+        planItemIds: Value(jsonEncode(planItemIds)),
+        destinationId: Value(destinationId),
+        amount: amount,
+        currency: currency,
+        date: date,
+        category: category,
+        name: name,
+        notes: Value(notes),
+        createdAt: Value(DateTime.now()),
+        amountUsd: Value(computed['amount_usd']!),
+        amountCny: Value(computed['amount_cny']!),
+        amountHkd: Value(computed['amount_hkd']!),
+        amountSgd: Value(computed['amount_sgd']!),
+      ));
+      await _queueExpense(id, tripId);
+    });
+    unawaited(flushExpenses());
   }
 
   Future<void> updateTravelExpense(
@@ -318,128 +291,178 @@ class TravelRepository {
     required String name,
     String notes = '',
     String destinationId = '',
+    List<String>? planItemIds,
   }) async {
-    final linked = await (_db.select(_db.travelExpenses)
-          ..where((e) => e.id.equals(localId)))
-        .getSingleOrNull();
-    if (linked?.planItemId != null) {
-      throw StateError(
-          'Edit the linked itinerary item to change this payment.');
-    }
-    if (linked == null) throw StateError('Expense no longer exists.');
-    await _validateDestination(linked.tripId, destinationId);
     final rates = await _rateRepo.getCachedRates();
     final computed = CurrencyUtils.computeAmounts(amount, currency, rates);
-
-    await _db.tripDao.updateTravelExpenseRow(
-      localId,
-      TravelExpensesCompanion(
-        amount: Value(amount),
-        currency: Value(currency),
-        date: Value(date),
-        category: Value(category),
-        name: Value(name),
-        notes: Value(notes),
-        destinationId: Value(destinationId),
-        amountUsd: Value(computed['amount_usd']!),
-        amountCny: Value(computed['amount_cny']!),
-        amountHkd: Value(computed['amount_hkd']!),
-        amountSgd: Value(computed['amount_sgd']!),
-        synced: const Value(false),
-      ),
-    );
-
-    final pushed = await _pushTravelExpense(
-      localId,
-      amount,
-      currency,
-      date,
-      category,
-      name,
-      notes,
-      destinationId,
-    );
-    if (!pushed) {
+    await _db.transaction(() async {
       final row = await (_db.select(_db.travelExpenses)
             ..where((e) => e.id.equals(localId)))
           .getSingleOrNull();
-      await _enqueue('travel_expense', 'update', localId, {
-        'trip_id': row?.tripId,
-        'amount': amount,
-        'currency': currency,
-        'date': date.toIso8601String(),
-        'category': category,
-        'name': name,
-        'notes': notes,
-        'destination_id': destinationId,
-      });
-    }
+      if (row == null) throw StateError('Expense no longer exists.');
+      final ids =
+          planItemIds ?? (jsonDecode(row.planItemIds) as List).cast<String>();
+      await _validateLinks(row.tripId, ids);
+      await _validateDestination(row.tripId, destinationId);
+      await _db.tripDao.updateTravelExpenseRow(
+          localId,
+          TravelExpensesCompanion(
+            planItemIds: Value(jsonEncode(ids)),
+            destinationId: Value(destinationId),
+            amount: Value(amount),
+            currency: Value(currency),
+            date: Value(date),
+            category: Value(category),
+            name: Value(name),
+            notes: Value(notes),
+            synced: const Value(false),
+            amountUsd: Value(computed['amount_usd']!),
+            amountCny: Value(computed['amount_cny']!),
+            amountHkd: Value(computed['amount_hkd']!),
+            amountSgd: Value(computed['amount_sgd']!),
+          ));
+      await _queueExpense(localId, row.tripId);
+    });
+    unawaited(flushExpenses());
   }
 
-  Future<bool> _pushTravelExpense(
-    int localId,
-    double amount,
-    String currency,
-    DateTime date,
-    String category,
-    String name,
-    String notes,
-    String destinationId,
-  ) async {
-    final api = _api;
-    final row = await (_db.select(_db.travelExpenses)
-          ..where((e) => e.id.equals(localId)))
-        .getSingleOrNull();
-    if (api == null ||
-        row == null ||
-        row.remoteId == null ||
-        row.tripRemoteId == null) {
-      return false;
-    }
-    try {
-      await api.updateTripExpense(row.tripRemoteId!, row.remoteId!, {
-        'amount': amount,
-        'currency': currency,
-        'date': AppDateUtils.formatDate(date),
-        'category': category,
-        'name': name,
-        'notes': notes,
-        'destination_id': destinationId,
-      });
-      await (_db.update(_db.travelExpenses)..where((e) => e.id.equals(localId)))
-          .write(const TravelExpensesCompanion(synced: Value(true)));
-      return true;
-    } catch (e, st) {
-      AppLogger.instance.log('updateTravelExpense push failed: $e',
-          name: 'TravelRepo', error: e, stackTrace: st);
-      return false;
-    }
+  Future<void> _queueExpense(int id, int tripId) async {
+    await (_db.delete(_db.syncQueue)
+          ..where((q) =>
+              q.entityType.equals('travel_expense') &
+              q.localId.equals(id) &
+              q.operation.isNotValue('delete')))
+        .go();
+    await _enqueue('travel_expense', 'update', id, {'trip_id': tripId});
   }
 
   Future<void> deleteTravelExpense(int localId, int tripId) async {
-    final row = await (_db.select(_db.travelExpenses)
-          ..where((e) => e.id.equals(localId)))
-        .getSingleOrNull();
-    if (row?.planItemId != null) {
-      throw StateError(
-          'Edit the linked itinerary item to change this payment.');
-    }
-    await _db.tripDao.removeTravelExpenseById(localId);
-
-    final tripRow = await _db.tripDao.getById(tripId);
-    final api = _api;
-    if (api != null && row?.remoteId != null && tripRow?.remoteId != null) {
-      try {
-        await api.deleteTripExpense(tripRow!.remoteId!, row!.remoteId!);
-      } catch (e, st) {
-        AppLogger.instance.log('deleteTravelExpense push failed: $e',
-            name: 'TravelRepo', error: e, stackTrace: st);
-        await _enqueue('travel_expense', 'delete', localId, {
-          'remote_id': row!.remoteId,
-          'trip_remote_id': tripRow!.remoteId,
-        });
+    await _db.transaction(() async {
+      final row = await (_db.select(_db.travelExpenses)
+            ..where((e) => e.id.equals(localId) & e.tripId.equals(tripId)))
+          .getSingleOrNull();
+      if (row == null) return;
+      final trip = await _db.tripDao.getById(tripId);
+      await (_db.delete(_db.syncQueue)
+            ..where((q) =>
+                q.entityType.equals('travel_expense') &
+                q.localId.equals(localId)))
+          .go();
+      await _db.tripDao.removeTravelExpenseById(localId);
+      if (row.remoteId != null && trip?.remoteId != null) {
+        await _enqueue('travel_expense', 'delete', localId,
+            {'remote_id': row.remoteId, 'trip_remote_id': trip!.remoteId});
       }
-    }
+    });
+    unawaited(flushExpenses());
+  }
+
+  Future<void>? _expensesRunning;
+  bool _expensesAgain = false;
+  Future<void> flushExpenses() {
+    _expensesAgain = true;
+    return _expensesRunning ??=
+        _drainExpenses().whenComplete(() => _expensesRunning = null);
+  }
+
+  Future<void> _drainExpenses() async {
+    if (_api == null) return;
+    do {
+      _expensesAgain = false;
+      await flushTrips();
+      final pending = (await _db.syncQueueDao.getPending())
+          .where((q) => q.entityType == 'travel_expense');
+      for (final op in pending) {
+        try {
+          final payload = jsonDecode(op.payload) as Map<String, dynamic>;
+          if (op.operation == 'delete') {
+            try {
+              await _api.deleteTripExpense(payload['trip_remote_id'] as int,
+                  payload['remote_id'] as int);
+            } on DioException catch (e) {
+              if (e.response?.statusCode != 404) rethrow;
+            }
+            await _db.syncQueueDao.removeById(op.id);
+            continue;
+          }
+          final row = await (_db.select(_db.travelExpenses)
+                ..where((e) => e.id.equals(op.localId)))
+              .getSingleOrNull();
+          if (row == null) {
+            await _db.syncQueueDao.removeById(op.id);
+            continue;
+          }
+          final trip = await _db.tripDao.getById(row.tripId);
+          if (trip?.remoteId == null) continue;
+          await preparePlan?.call(row.tripId);
+          final plan = await (_db.select(_db.tripPlans)
+                ..where((p) => p.tripId.equals(row.tripId)))
+              .getSingleOrNull();
+          if (plan?.dirty == true &&
+              (row.planItemIds != '[]' || row.destinationId.isNotEmpty)) {
+            continue;
+          }
+          final data = {
+            'client_id': row.clientId,
+            'plan_item_ids': jsonDecode(row.planItemIds),
+            'destination_id': row.destinationId,
+            'amount': row.amount,
+            'currency': row.currency,
+            'date': AppDateUtils.formatDate(row.date),
+            'category': row.category,
+            'name': row.name,
+            'notes': row.notes,
+          };
+          final remoteId = row.remoteId ??
+              (await _api.addTripExpense(trip!.remoteId!, data))['id'] as int;
+          final exists = await _db.transaction(() async {
+            final current = await (_db.select(_db.travelExpenses)
+                  ..where((e) => e.id.equals(row.id)))
+                .getSingleOrNull();
+            if (current == null) {
+              await _enqueue('travel_expense', 'delete', row.id,
+                  {'trip_remote_id': trip!.remoteId, 'remote_id': remoteId});
+              await _db.syncQueueDao.removeById(op.id);
+              _expensesAgain = true;
+              return false;
+            }
+            await _db.tripDao.updateTravelExpenseRow(
+                row.id,
+                TravelExpensesCompanion(
+                    remoteId: Value(remoteId),
+                    tripRemoteId: Value(trip!.remoteId)));
+            return true;
+          });
+          if (!exists) continue;
+          // PUT also covers a retried create whose original response was lost.
+          await _api.updateTripExpense(trip!.remoteId!, remoteId, data);
+          await _db.transaction(() async {
+            final current = await (_db.select(_db.travelExpenses)
+                  ..where((e) => e.id.equals(row.id)))
+                .getSingleOrNull();
+            if (current == null) {
+              await _enqueue('travel_expense', 'delete', row.id,
+                  {'trip_remote_id': trip.remoteId, 'remote_id': remoteId});
+              _expensesAgain = true;
+            } else {
+              final stillPending = await (_db.select(_db.syncQueue)
+                    ..where((q) => q.id.equals(op.id)))
+                  .getSingleOrNull();
+              await _db.tripDao.updateTravelExpenseRow(
+                  row.id,
+                  TravelExpensesCompanion(
+                      remoteId: Value(remoteId),
+                      tripRemoteId: Value(trip.remoteId),
+                      synced: Value(stillPending != null)));
+            }
+            await _db.syncQueueDao.removeById(op.id);
+          });
+        } catch (e, st) {
+          AppLogger.instance.log('Travel expense sync failed: $e',
+              name: 'TravelRepo', error: e, stackTrace: st);
+        }
+      }
+    } while (_expensesAgain);
   }
 
   Future<void> syncFromServer(String currency) =>
@@ -507,10 +530,22 @@ class TravelRepository {
 
         final expenses =
             await api.getTripExpenses(remoteId, currency: currency);
-        final planRow = await (_db.select(_db.tripPlans)
-              ..where((p) => p.tripId.equals(localTrip.id)))
-            .getSingleOrNull();
+        final deletedExpenses = (await _db.syncQueueDao.getPending())
+            .where((q) =>
+                q.entityType == 'travel_expense' && q.operation == 'delete')
+            .map((q) => jsonDecode(q.payload)['remote_id'])
+            .toSet();
+        final serverExpenseIds = expenses.map((e) => e['id']).toSet();
+        for (final local
+            in await _db.tripDao.getExpensesForTrip(localTrip.id)) {
+          if (local.synced &&
+              local.remoteId != null &&
+              !serverExpenseIds.contains(local.remoteId)) {
+            await _db.tripDao.removeTravelExpenseById(local.id);
+          }
+        }
         for (final e in expenses) {
+          if (deletedExpenses.contains(e['id'])) continue;
           final existingExp = await (_db.select(_db.travelExpenses)
                 ..where((row) =>
                     row.remoteId.equals(e['id'] as int) |
@@ -518,16 +553,12 @@ class TravelRepository {
                         e['client_id'] as String? ?? 'remote-${e['id']}')))
               .getSingleOrNull();
           if (existingExp != null && !existingExp.synced) continue;
-          if (planRow?.dirty == true &&
-              (e['plan_item_id'] != null || existingExp?.planItemId != null)) {
-            continue;
-          }
 
           await _db.tripDao.upsertTravelExpenseByRemoteId(
             TravelExpensesCompanion(
               remoteId: Value(e['id'] as int),
               clientId: Value(e['client_id'] as String? ?? 'remote-${e['id']}'),
-              planItemId: Value(e['plan_item_id'] as String?),
+              planItemIds: Value(jsonEncode(e['plan_item_ids'] ?? [])),
               destinationId: Value(e['destination_id'] as String? ?? ''),
               tripId: Value(localTrip.id),
               tripRemoteId: Value(remoteId),
@@ -572,7 +603,7 @@ class TravelRepository {
         tripId: row.tripId,
         tripRemoteId: row.tripRemoteId,
         clientId: row.clientId,
-        planItemId: row.planItemId,
+        planItemIds: (jsonDecode(row.planItemIds) as List).cast<String>(),
         destinationId: row.destinationId,
         amount: row.amount,
         currency: row.currency,

@@ -170,8 +170,6 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
             subtitle ?? itemSubtitle(plan, item),
             if (plan.destinationLabel(item).isNotEmpty)
               plan.destinationLabel(item),
-            if (item['amount'].isNotEmpty)
-              '${item['currency']} ${item['amount']} · ${item['paymentStatus'] == 'paid' ? 'Paid' : 'Unpaid'}',
           ].join(' · '),
           icon: planIcon(plan.find(item['placeId']) ?? item),
           tinted: tinted,
@@ -349,24 +347,6 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
                       detail('Arrival address', item['endAddress']),
                       if (item['endAddress'].isNotEmpty)
                         maps('', item['endAddress'], arrival: true),
-                      if (['booking', 'activity'].contains(item.kind) &&
-                          item['amount'].isNotEmpty) ...[
-                        detail('Payment',
-                            '${item['currency']} ${item['amount']} · ${item['paymentStatus'] == 'paid' ? 'Paid' : 'Unpaid'}'),
-                        if (item['paymentStatus'] == 'paid')
-                          detail('Payment date', item['paidDate'])
-                        else
-                          TextButton.icon(
-                              icon: const Icon(Icons.payments_outlined),
-                              label: const Text('Record payment'),
-                              onPressed: () => edit(
-                                  trip,
-                                  plan,
-                                  item.copy({
-                                    'paymentStatus': 'paid',
-                                    'paidDate': planDate(DateTime.now()),
-                                  }))),
-                      ],
                       detail('Confirmation', item['confirmation']),
                       detail('Contact', item['contact']),
                       detail('Cancellation deadline', item['cancelBy']),
@@ -608,7 +588,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
             trip.id,
             PlanItem.create(
               'activity',
-            ).copy({'placeId': place.id, 'date': day}),
+            ).copy({'placeId': place.id, 'date': day, 'category': place['category']}),
           );
       if (!mounted) return;
       if (detailsContext?.mounted == true) Navigator.pop(detailsContext!);
@@ -1065,7 +1045,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen>
           (e) =>
               filter.isEmpty ||
               plan.expenseDestination(
-                    e.planItemId,
+                    e.planItemIds,
                     destinationId: e.destinationId,
                   ) ==
                   expenseFilter,

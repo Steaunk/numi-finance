@@ -1,6 +1,5 @@
 """Offline planner document API with optimistic concurrency and retry safety."""
 import json
-import math
 from datetime import date, time
 from urllib.parse import urlsplit
 
@@ -10,7 +9,6 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from .models import Trip, TripPlan, TravelExpense, TRAVEL_CATEGORIES
-from core.services import compute_snapshot_amounts, get_rates
 
 KINDS = {'place', 'activity', 'booking', 'task', 'destination', 'person'}
 FIELDS = {
@@ -18,8 +16,7 @@ FIELDS = {
     'time', 'endTime', 'timezone', 'endTimezone', 'address', 'endAddress',
     'latitude', 'longitude', 'endLatitude', 'endLongitude', 'documentId', 'documentName',
     'links', 'notes', 'placeId', 'confirmation', 'contact',
-    'cancelBy', 'assignee', 'amount', 'currency', 'paymentStatus', 'paidDate',
-    'expenseClientId', 'expenseCategory', 'destinationId', 'endDestinationId', 'participantIds',
+    'cancelBy', 'assignee', 'destinationId', 'endDestinationId', 'participantIds',
 }
 
 
@@ -41,7 +38,7 @@ def validate_content(content):
         ids.add(item_id)
         if item.get('kind') not in KINDS or not (item.get('title', '').strip() or (item.get('kind') == 'activity' and item.get('placeId'))):
             raise ValueError('Each item needs a valid kind and title')
-        for field in ('date', 'endDate', 'cancelBy', 'paidDate'):
+        for field in ('date', 'endDate', 'cancelBy'):
             if item.get(field):
                 parsed = date.fromisoformat(item[field])
                 if parsed.isoformat() != item[field]:
@@ -67,24 +64,6 @@ def validate_content(content):
                 raise ValueError('Destinations need arrival and departure dates in order')
             if item.get('destinationId') or item.get('endDestinationId') or item.get('placeId'):
                 raise ValueError('A destination cannot link to another destination or place')
-        if item.get('paymentStatus'):
-            if item['kind'] not in ('booking', 'activity') or item['paymentStatus'] not in ('unpaid', 'paid'):
-                raise ValueError('Invalid payment status')
-            if item.get('category') == 'No accommodation needed' and item['paymentStatus'] == 'paid':
-                raise ValueError('A no-stay marker cannot have a payment')
-            if item.get('amount'):
-                amount = float(item['amount'])
-                if not math.isfinite(amount) or amount <= 0:
-                    raise ValueError('Amount must be positive and finite')
-                if not item.get('currency') or len(item['currency']) != 3:
-                    raise ValueError('Choose a currency')
-            if item['paymentStatus'] == 'paid':
-                if not item.get('amount') or not item.get('paidDate') or not item.get('expenseClientId'):
-                    raise ValueError('Paid items need amount, payment date and expense identity')
-                if len(item['expenseClientId']) > 64 or len(item.get('title', '')) > 500:
-                    raise ValueError('Payment identity or name is too long')
-                if item.get('expenseCategory') not in TRAVEL_CATEGORIES:
-                    raise ValueError('Choose an expense category')
         participants = item.get('participantIds', [])
         if (not isinstance(participants, list) or len(participants) > 100 or
                 any(not isinstance(p, str) or not p or len(p) > 64 for p in participants) or
@@ -116,9 +95,6 @@ def validate_content(content):
     people = {i['id'] for i in items if i['kind'] == 'person'}
     if any(p not in people for i in items for p in i.get('participantIds', [])):
         raise ValueError('Participant no longer exists; archive people instead of deleting them')
-    payment_ids = [i['expenseClientId'] for i in items if i.get('paymentStatus') == 'paid']
-    if len(payment_ids) != len(set(payment_ids)):
-        raise ValueError('An expense can only belong to one itinerary item')
     places = {i['id'] for i in items if i['kind'] == 'place'}
     if any(i.get('placeId') and i['placeId'] not in places for i in items):
         raise ValueError('Linked place does not exist in this trip')
@@ -132,19 +108,8 @@ def validate_content(content):
     return content
 
 
-def payment_ids(trip_id):
-    expenses = list(TravelExpense.objects.filter(trip_id=trip_id))
-    result = {e.client_id: e.id for e in expenses}
-    linked = {e.plan_item_id: e.id for e in expenses if e.plan_item_id}
-    plan = TripPlan.objects.filter(trip_id=trip_id).first()
-    for item in (plan.content.get('items', []) if plan else []):
-        if item.get('expenseClientId') and item['id'] in linked:
-            result[item['expenseClientId']] = linked[item['id']]
-    return result
-
-
 def serialize(plan):
-    return {'content': plan.content, 'revision': plan.revision, 'payment_ids': payment_ids(plan.trip_id)}
+    return {'content': plan.content, 'revision': plan.revision}
 
 
 @require_http_methods(['GET', 'PUT'])
@@ -155,7 +120,7 @@ def trip_plan(request, trip_id):
     if request.method == 'GET':
         plan = TripPlan.objects.filter(trip_id=trip_id).first()
         return JsonResponse(serialize(plan) if plan else {
-            'content': {'items': []}, 'revision': 0, 'payment_ids': payment_ids(trip_id)})
+            'content': {'items': []}, 'revision': 0})
     try:
         if len(request.body) > 2_000_000:
             raise ValueError('Plan is too large')
@@ -183,53 +148,16 @@ def trip_plan(request, trip_id):
         return JsonResponse({'error': str(error)}, status=400)
 
 
-def reconcile_payments(trip_id, previous, content):
-    """Materialize paid bookings in the existing ledger in the plan transaction."""
-    bookings = {i['id']: i for i in content['items'] if i['kind'] in ('booking', 'activity')}
-    old = {i['id']: i for i in previous.get('items', []) if i['kind'] in ('booking', 'activity')}
-    for expense in TravelExpense.objects.filter(trip_id=trip_id, plan_item_id__isnull=False):
-        booking = bookings.get(expense.plan_item_id)
-        if booking is None:
-            # Deleting a booking keeps its payment history.
-            expense.plan_item_id = None
-            expense.save(update_fields=['plan_item_id'])
-        elif booking.get('paymentStatus') != 'paid':
-            if old.get(expense.plan_item_id, {}).get('paymentStatus') == 'paid':
-                expense.delete()
-            else:
-                raise ValueError('Linked payment changed; refresh the plan')
-    removed_destinations = {i['id'] for i in previous.get('items', []) if i['kind'] == 'destination'} - {i['id'] for i in content['items'] if i['kind'] == 'destination'}
-    TravelExpense.objects.filter(trip_id=trip_id, destination_id__in=removed_destinations).update(destination_id='')
-    places = {i['id']: i for i in content['items'] if i['kind'] == 'place'}
-    rates = None
-    for booking in bookings.values():
-        if booking.get('paymentStatus') != 'paid':
-            continue
-        client_id = booking['expenseClientId']
-        expense = TravelExpense.objects.filter(client_id=client_id).first()
-        # Old app databases only knew the server integer ID. Preserve the
-        # server's stable identity while accepting this migration alias.
-        if expense is None and client_id.startswith('remote-') and client_id[7:].isdigit():
-            expense = TravelExpense.objects.filter(pk=int(client_id[7:])).first()
-        if expense and (expense.trip_id != trip_id or expense.plan_item_id not in (None, booking['id'])):
-            raise ValueError('Expense belongs to another trip or itinerary item')
-        previous_id = old.get(booking['id'], {}).get('expenseClientId')
-        if previous_id and previous_id != client_id:
-            raise ValueError('A linked expense identity cannot be changed')
-        amount, currency = float(booking['amount']), booking['currency'].upper()
-        amounts = {}
-        if expense is None or expense.amount != amount or expense.currency != currency:
-            rates = rates or get_rates()
-            if currency != 'USD' and currency.lower() not in rates:
-                raise ValueError('Unknown currency')
-            amounts = compute_snapshot_amounts(amount, currency, rates)
-        TravelExpense.objects.update_or_create(client_id=expense.client_id if expense else client_id, defaults={
-            'trip_id': trip_id, 'plan_item_id': booking['id'], 'amount': amount,
-            'destination_id': places.get(booking.get('placeId'), booking).get('destinationId', ''),
-            'currency': currency, 'date': booking['paidDate'],
-            'category': booking['expenseCategory'], 'name': expense.name if expense else (booking.get('title') or next((i.get('title') for i in content['items'] if i['id'] == booking.get('placeId')), 'Activity')),
-            'notes': expense.notes if expense else booking.get('notes', ''), **amounts,
-        })
+def reconcile_expense_links(trip_id, previous, content):
+    """Removing arrangements only detaches links; money belongs to the ledger."""
+    valid = {i['id'] for i in content['items'] if i['kind'] in ('booking', 'activity')}
+    for expense in TravelExpense.objects.filter(trip_id=trip_id):
+        remaining = [key for key in expense.plan_item_ids if key in valid]
+        if remaining != expense.plan_item_ids:
+            expense.plan_item_ids = remaining
+            expense.save(update_fields=['plan_item_ids'])
+    removed = {i['id'] for i in previous.get('items', []) if i['kind'] == 'destination'} - {i['id'] for i in content['items'] if i['kind'] == 'destination'}
+    TravelExpense.objects.filter(trip_id=trip_id, destination_id__in=removed).update(destination_id='')
 
 
 @require_http_methods(['DELETE'])

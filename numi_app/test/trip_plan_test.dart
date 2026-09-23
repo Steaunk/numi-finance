@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 import 'package:dio/dio.dart';
@@ -99,6 +100,43 @@ class PlanApiFake implements TravelApi {
       [];
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class ExpenseApiFake extends PlanApiFake {
+  final ledger = <int, Map<String, dynamic>>{};
+  Future<void> Function()? beforeCreate;
+  Future<void> Function()? beforeUpdate;
+  @override
+  Future<Map<String, dynamic>> addTripExpense(
+      int tripId, Map<String, dynamic> data) async {
+    if (offline) throw StateError('offline');
+    final existing = ledger.entries
+        .where((e) => e.value['client_id'] == data['client_id'])
+        .firstOrNull;
+    final id = existing?.key ?? ledger.length + 1;
+    ledger.putIfAbsent(id, () => {...data, 'id': id});
+    await beforeCreate?.call();
+    return {'id': id};
+  }
+
+  @override
+  Future<Map<String, dynamic>> updateTripExpense(
+      int tripId, int id, Map<String, dynamic> data) async {
+    if (offline) throw StateError('offline');
+    await beforeUpdate?.call();
+    ledger[id] = {...data, 'id': id};
+    return ledger[id]!;
+  }
+
+  @override
+  Future<void> deleteTripExpense(int tripId, int id) async {
+    ledger.remove(id);
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getTripExpenses(int tripId,
+          {String currency = 'SGD'}) async =>
+      ledger.values.toList();
 }
 
 void main() {
@@ -332,111 +370,8 @@ void main() {
         isEmpty);
   });
 
-  PlanItem paidBooking({String? clientId}) => PlanItem.create('booking').copy({
-        'title': 'Hotel',
-        'date': '2026-10-01',
-        'endDate': '2026-10-03',
-        'amount': '200',
-        'currency': 'SGD',
-        'paymentStatus': 'paid',
-        'paidDate': '2026-09-21',
-        if (clientId != null) 'expenseClientId': clientId,
-      });
-
-  test(
-      'paid booking is one expense, editing updates it and cancellation keeps it',
-      () async {
-    final repo = TripPlanRepository(db, null);
-    final booking = paidBooking();
-    await repo.save(id, booking);
-    final stored = (await read(repo)).find(booking.id)!;
-    final first = (await db.tripDao.getExpensesForTrip(id)).single;
-    expect(first.planItemId, booking.id);
-    expect(first.amount, 200);
-    expect(first.date, DateTime(2026, 9, 21));
-    await repo.save(
-        id, stored.copy({'title': 'Updated hotel', 'amount': '240'}));
-    final edited = (await db.tripDao.getExpensesForTrip(id)).single;
-    expect(edited.id, first.id);
-    expect(edited.name, 'Hotel');
-    expect(edited.amount, 240);
-    await repo.save(id, stored.copy({'status': 'cancelled'}));
-    expect((await db.tripDao.getExpensesForTrip(id)).length, 1);
-    await repo.remove(id, booking.id);
-    final detached = (await db.tripDao.getExpensesForTrip(id)).single;
-    expect(detached.planItemId, isNull);
-    expect(detached.clientId, first.clientId);
-    expect((await db.syncQueueDao.getPending()).single.entityType,
-        'travel_expense');
-  });
-
-  test(
-      'unpaid booking is excluded until paid and removing payment keeps booking',
-      () async {
-    final repo = TripPlanRepository(db, null);
-    final booking = paidBooking().copy({'paymentStatus': 'unpaid'});
-    await repo.save(id, booking);
-    expect(await db.tripDao.getExpensesForTrip(id), isEmpty);
-    await repo.save(id, booking.copy({'paymentStatus': 'paid'}));
-    expect((await db.tripDao.getExpensesForTrip(id)).length, 1);
-    await repo.removePayment(id, booking.id);
-    expect(await db.tripDao.getExpensesForTrip(id), isEmpty);
-    expect((await read(repo)).find(booking.id)!['paymentStatus'], 'unpaid');
-  });
-
-  test(
-      'existing offline expense becomes booking with same row and no queued duplicate',
-      () async {
-    final travel = TravelRepository(db, null, RateRepository(db, null));
-    await travel.addTravelExpense(
-        tripId: id,
-        amount: 300,
-        currency: 'SGD',
-        date: DateTime(2026, 9, 1),
-        category: 'Accommodation',
-        name: 'Already paid');
-    final original = (await db.tripDao.getExpensesForTrip(id)).single;
-    final repo = TripPlanRepository(db, null);
-    final booking = await repo.itemFromExpense(id, original.id);
-    expect(booking['amount'], '300.0');
-    expect(booking['paidDate'], '2026-09-01');
-    await repo.save(id, booking);
-    final linked = (await db.tripDao.getExpensesForTrip(id)).single;
-    expect(linked.id, original.id);
-    expect(linked.clientId, original.clientId);
-    expect(
-        (await db.syncQueueDao.getPending())
-            .where((q) => q.entityType == 'travel_expense'),
-        isEmpty);
-    await repo.save(id, booking);
-    expect((await db.tripDao.getExpensesForTrip(id)).length, 1);
-  });
-
-  test(
-      'legacy remote identity adopts a refreshed server expense without copying',
-      () async {
-    final travel = TravelRepository(db, null, RateRepository(db, null));
-    await travel.addTravelExpense(
-        tripId: id,
-        amount: 300,
-        currency: 'SGD',
-        date: DateTime(2026, 9, 1),
-        category: 'Transportation',
-        name: 'Flight');
-    final original = (await db.tripDao.getExpensesForTrip(id)).single;
-    await db.tripDao.updateTravelExpenseRow(
-        original.id,
-        const TravelExpensesCompanion(
-            remoteId: Value(78), clientId: Value('server-uuid')));
-    final repo = TripPlanRepository(db, null);
-    await repo.save(
-        id, paidBooking(clientId: 'remote-78').copy({'category': 'Flight'}));
-    final row = (await db.tripDao.getExpensesForTrip(id)).single;
-    expect(row.id, original.id);
-    expect(row.remoteId, 78);
-    expect(row.category, 'Transportation');
-    expect(row.amount, 200);
-  });
+  PlanItem booking() => PlanItem.create('booking')
+      .copy({'title': 'Hotel', 'date': '2026-10-01', 'endDate': '2026-10-03'});
 
   test(
       'multiple destinations preserve route, inherited places, transfers and payments',
@@ -450,10 +385,10 @@ void main() {
     await repo.save(id, kyoto);
     final sight = place('Temple').copy({'destinationId': kyoto.id});
     await repo.save(id, sight);
-    final visit = paidBooking()
-        .copy({'kind': 'activity', 'title': '', 'placeId': sight.id});
+    final visit =
+        booking().copy({'kind': 'activity', 'title': '', 'placeId': sight.id});
     await repo.save(id, visit);
-    final rail = paidBooking().copy({
+    final rail = booking().copy({
       'title': 'Train',
       'category': 'Train',
       'destinationId': tokyo.id,
@@ -463,11 +398,11 @@ void main() {
     var plan = await read(repo);
     expect(plan.destinationsOn('2026-10-02').length, 2);
     expect(plan.destinationIdFor(visit), kyoto.id);
-    expect(plan.expenseDestination(visit.id), kyoto.id);
-    expect(plan.expenseDestination(rail.id), '__transfers__');
+    expect(plan.expenseDestination([visit.id]), kyoto.id);
+    expect(plan.expenseDestination([rail.id]), '__transfers__');
     expect(plan.matchesDestination(rail, tokyo.id), true);
     expect(plan.matchesDestination(rail, kyoto.id), true);
-    expect(plan.expenseDestination(null), '');
+    expect(plan.expenseDestination([]), '');
     await repo.reorder(id, [kyoto.id, tokyo.id]);
     plan = await read(TripPlanRepository(db, null));
     expect(plan.destinations.map((d) => d.id), [kyoto.id, tokyo.id]);
@@ -480,75 +415,10 @@ void main() {
     expect(plan.find(visit.id), isNotNull);
     expect(plan.destinationIdFor(plan.find(visit.id)!), '');
     expect(plan.find(rail.id)!['endDestinationId'], '');
-    expect((await db.tripDao.getExpensesForTrip(id)).length, 2);
+    expect(await db.tripDao.getExpensesForTrip(id), isEmpty);
     await expectLater(
         repo.save(id, place('Dangling').copy({'destinationId': kyoto.id})),
         throwsStateError);
-  });
-
-  test('conflict server choice removes discarded local payment', () async {
-    api.revision = 1;
-    final repo = TripPlanRepository(db, api);
-    await repo.save(id, paidBooking());
-    await repo.sync(id);
-    expect((await read(repo)).error, 'conflict');
-    expect((await db.tripDao.getExpensesForTrip(id)).length, 1);
-    await repo.resolve(id, keepLocal: false);
-    expect(await db.tripDao.getExpensesForTrip(id), isEmpty);
-  });
-
-  test('payment changes during upload retain newest amount and one ledger row',
-      () async {
-    final entered = Completer<void>(), release = Completer<void>();
-    api.beforePut = () async {
-      if (!entered.isCompleted) {
-        entered.complete();
-        await release.future;
-      }
-    };
-    final repo = TripPlanRepository(db, api);
-    final booking = paidBooking();
-    await repo.save(id, booking);
-    await entered.future;
-    final saved = (await read(repo)).find(booking.id)!;
-    await repo.save(id, saved.copy({'amount': '500'}));
-    release.complete();
-    await repo.sync(id);
-    expect((await db.tripDao.getExpensesForTrip(id)).single.amount, 500);
-    expect((api.content['items'] as List).single['amount'], '500');
-  });
-
-  test(
-      'flight and saved sight payments derive categories and keep shared titles',
-      () async {
-    final repo = TripPlanRepository(db, null);
-    final flight = paidBooking().copy({'category': 'Flight'});
-    final museum = place('Museum').copy({'category': 'Sightseeing'});
-    await repo.save(id, flight);
-    await repo.save(id, museum);
-    final visit = PlanItem.create('activity').copy({
-      'placeId': museum.id,
-      'date': '2026-10-01',
-      'paymentStatus': 'paid',
-      'amount': '30',
-      'currency': 'SGD',
-      'paidDate': '2026-09-21'
-    });
-    await repo.save(id, visit);
-    var rows = await db.tripDao.getExpensesForTrip(id);
-    expect(rows.firstWhere((e) => e.planItemId == flight.id).category,
-        'Transportation');
-    expect(rows.firstWhere((e) => e.planItemId == visit.id).category,
-        'Sightseeing');
-    await repo.save(id, museum.copy({'title': 'Art Museum'}));
-    rows = await db.tripDao.getExpensesForTrip(id);
-    expect(rows.firstWhere((e) => e.planItemId == visit.id).name, 'Museum');
-    await repo.remove(id, museum.id);
-    expect(
-        (await db.tripDao.getExpensesForTrip(id))
-            .firstWhere((e) => e.planItemId == visit.id)
-            .name,
-        'Museum');
   });
 
   test('map and multi-link sharing validate without platform APIs', () {
@@ -654,27 +524,21 @@ void main() {
       );
       final expense = (await travel.getTripWithExpenses(id))!.expenses.single;
       var plan = await localPlanner.watch(id).first;
-      expect(expense.planItemId, isNull);
+      expect(expense.planItemIds, isEmpty);
       expect(plan.items.length, 1);
       expect(
         plan.expenseDestination(
-          expense.planItemId,
+          expense.planItemIds,
           destinationId: expense.destinationId,
         ),
         city.id,
       );
-      final enriched = await localPlanner.itemFromExpense(
-        id,
-        expense.id,
-        kind: 'activity',
-      );
-      expect(enriched['destinationId'], city.id);
       await localPlanner.remove(id, city.id);
       final kept = (await travel.getTripWithExpenses(id))!.expenses.single;
       expect(kept.id, expense.id);
       expect(kept.amount, 5);
       expect(kept.destinationId, '');
-      expect(kept.planItemId, isNull);
+      expect(kept.planItemIds, isEmpty);
     },
   );
 
@@ -706,6 +570,8 @@ void main() {
       await store.customStatement(
         'ALTER TABLE travel_expenses DROP COLUMN destination_id',
       );
+      await store.customStatement(
+          'ALTER TABLE travel_expenses DROP COLUMN plan_item_ids');
       await store.customStatement('PRAGMA user_version = 4');
       await store.close();
       store = AppDatabase(NativeDatabase(file));
@@ -767,6 +633,8 @@ void main() {
     await store.customStatement(
       'ALTER TABLE travel_expenses DROP COLUMN destination_id',
     );
+    await store.customStatement(
+        'ALTER TABLE travel_expenses DROP COLUMN plan_item_ids');
     await store.customStatement('PRAGMA user_version = 3');
     await store.close();
     store = AppDatabase(NativeDatabase(file));
@@ -774,8 +642,7 @@ void main() {
     expect(row.id, expenseId);
     expect(row.clientId, 'remote-78');
     var planner = TripPlanRepository(store, null);
-    await planner.save(
-        tripId, await planner.itemFromExpense(tripId, expenseId));
+    await planner.save(tripId, booking());
     await store.close();
     store = AppDatabase(NativeDatabase(file));
     planner = TripPlanRepository(store, null);
@@ -804,6 +671,8 @@ void main() {
     await persistent.customStatement(
       'ALTER TABLE travel_expenses DROP COLUMN destination_id',
     );
+    await persistent.customStatement(
+        'ALTER TABLE travel_expenses DROP COLUMN plan_item_ids');
     await persistent.customStatement('PRAGMA user_version = 2');
     await persistent.close();
     persistent = AppDatabase(NativeDatabase(file));
@@ -872,5 +741,191 @@ void main() {
             ]),
             remote),
         throwsStateError);
+  });
+  test('expenses link many arrangements without creating or pricing plans',
+      () async {
+    final planner = TripPlanRepository(db, null);
+    final first = PlanItem.create('activity')
+        .copy({'title': 'Museum', 'category': 'Sightseeing'});
+    final second = booking();
+    await planner.save(id, first);
+    await planner.save(id, second);
+    final travel = TravelRepository(db, null, RateRepository(db, null));
+    for (final name in ['Tickets', 'Pass']) {
+      await travel.addTravelExpense(
+          tripId: id,
+          amount: 20,
+          currency: 'SGD',
+          date: start,
+          category: 'Sightseeing',
+          name: name,
+          planItemIds: [first.id, second.id]);
+    }
+    final rows = (await travel.getTripWithExpenses(id))!.expenses;
+    expect(rows.length, 2);
+    expect(rows.every((e) => e.planItemIds.length == 2), true);
+    expect(rows.fold<double>(0, (sum, e) => sum + e.amount), 40);
+    await planner.save(
+        id, first.copy({'category': 'Shopping', 'title': 'Museum shop'}));
+    expect((await travel.getTripWithExpenses(id))!.expenses.first.amount, 20);
+    await planner.remove(id, first.id);
+    expect(
+        (await travel.getTripWithExpenses(id))!
+            .expenses
+            .every((e) => e.planItemIds.single == second.id),
+        true);
+    await travel.updateTravelExpense(rows.first.id,
+        amount: 25,
+        currency: 'SGD',
+        date: start,
+        category: 'Sightseeing',
+        name: 'Tickets',
+        planItemIds: []);
+    expect((await read(planner)).items.length, 1);
+    await travel.deleteTravelExpense(rows.last.id, id);
+    expect((await read(planner)).find(second.id), isNotNull);
+    expect((await travel.getTripWithExpenses(id))!.expenses.single.planItemIds,
+        isEmpty);
+    await expectLater(
+        travel.addTravelExpense(
+            tripId: id,
+            amount: 20,
+            currency: 'SGD',
+            date: start,
+            category: 'Other',
+            name: 'Invalid',
+            planItemIds: ['foreign']),
+        throwsStateError);
+  });
+
+  test(
+      'schema 5 migration keeps links, amounts and strips plan prices after restart',
+      () async {
+    final dir = await Directory.systemTemp.createTemp('numi-link-migration');
+    final file = File('${dir.path}/db');
+    var store = AppDatabase(NativeDatabase(file));
+    final trip = await store.tripDao.insertTrip(TripsCompanion.insert(
+        destination: 'Tokyo', startDate: start, endDate: start));
+    await store.tripDao.insertTravelExpense(TravelExpensesCompanion.insert(
+        tripId: trip,
+        planItemId: const Value('museum'),
+        amount: 2200,
+        currency: 'JPY',
+        date: start,
+        category: 'Sightseeing',
+        name: 'Ticket'));
+    await store.into(store.tripPlans).insert(TripPlansCompanion(
+        tripId: Value(trip),
+        content: Value(jsonEncode({
+          'items': [
+            {
+              'id': 'museum',
+              'kind': 'activity',
+              'title': 'Museum',
+              'category': 'Activity',
+              'expenseCategory': 'Sightseeing',
+              'amount': '2200',
+              'currency': 'JPY',
+              'paymentStatus': 'paid'
+            }
+          ]
+        }))));
+    await store.customStatement(
+        'ALTER TABLE travel_expenses DROP COLUMN plan_item_ids');
+    await store.customStatement('PRAGMA user_version = 5');
+    await store.close();
+    store = AppDatabase(NativeDatabase(file));
+    final row = (await store.tripDao.getExpensesForTrip(trip)).single;
+    expect(jsonDecode(row.planItemIds), ['museum']);
+    expect(row.amount, 2200);
+    expect(row.planItemId, isNull);
+    final plan = await TripPlanRepository(store, null).watch(trip).first;
+    expect(plan.find('museum')!['amount'], '');
+    expect(plan.find('museum')!['category'], 'Sightseeing');
+    await store.close();
+    await dir.delete(recursive: true);
+  });
+  test('expense edits during upload keep newest links and amount after retry',
+      () async {
+    final remote = ExpenseApiFake();
+    final planner = TripPlanRepository(db, remote);
+    final a = PlanItem.create('activity').copy({'title': 'Museum'}),
+        b = PlanItem.create('activity').copy({'title': 'Park'});
+    await planner.save(id, a);
+    await planner.save(id, b);
+    await planner.sync(id);
+    final entered = Completer<void>(), release = Completer<void>();
+    remote.beforeUpdate = () async {
+      if (!entered.isCompleted) {
+        entered.complete();
+        await release.future;
+      }
+    };
+    final travel = TravelRepository(db, remote, RateRepository(db, null));
+    await travel.addTravelExpense(
+        tripId: id,
+        amount: 20,
+        currency: 'SGD',
+        date: start,
+        category: 'Other',
+        name: 'Pass',
+        planItemIds: [a.id]);
+    await entered.future;
+    final first = (await db.tripDao.getExpensesForTrip(id)).single;
+    await travel.updateTravelExpense(first.id,
+        amount: 40,
+        currency: 'SGD',
+        date: start,
+        category: 'Other',
+        name: 'Pass',
+        planItemIds: [a.id, b.id]);
+    release.complete();
+    await travel.flushExpenses();
+    final row = (await db.tripDao.getExpensesForTrip(id)).single;
+    expect(row.amount, 40);
+    expect(row.synced, true);
+    expect(remote.ledger.length, 1);
+    expect(remote.ledger.values.single['plan_item_ids'], [a.id, b.id]);
+    expect(remote.ledger.values.single['amount'], 40);
+    expect(await db.syncQueueDao.getPending(), isEmpty);
+  });
+
+  test('deleting an expense during creation cleans up the remote record',
+      () async {
+    final remote = ExpenseApiFake();
+    final entered = Completer<void>(), release = Completer<void>();
+    remote.beforeCreate = () async {
+      entered.complete();
+      await release.future;
+    };
+    final travel = TravelRepository(db, remote, RateRepository(db, null));
+    await travel.addTravelExpense(
+        tripId: id,
+        amount: 20,
+        currency: 'SGD',
+        date: start,
+        category: 'Other',
+        name: 'Pass');
+    await entered.future;
+    final row = (await db.tripDao.getExpensesForTrip(id)).single;
+    await travel.deleteTravelExpense(row.id, id);
+    release.complete();
+    await travel.flushExpenses();
+    expect(remote.ledger, isEmpty);
+    expect(await db.tripDao.getExpensesForTrip(id), isEmpty);
+    expect(await db.syncQueueDao.getPending(), isEmpty);
+  });
+
+  test('museum aliases suggest review only for the same visit', () {
+    final a = PlanItem.create('activity').copy({
+      'title': 'YAYOI KUSAMA MUSEUM',
+      'date': '2026-10-10',
+      'time': '11:00'
+    });
+    final b = a.copy({'title': '草間彌生美術館 - YAYOI KUSAMA MUSEUM'});
+    expect(sameScheduledActivity(a, b), true);
+    expect(sameScheduledActivity(a, b.copy({'time': '12:00'})), false);
+    expect(sameScheduledActivity(a, b.copy({'date': '2026-10-11'})), false);
+    expect(sameScheduledActivity(a, b.copy({'title': 'Other Museum'})), false);
   });
 }

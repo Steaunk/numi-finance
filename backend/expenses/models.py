@@ -67,7 +67,8 @@ class Trip(models.Model):
 
 class TravelExpense(models.Model):
     client_id = models.CharField(max_length=64, unique=True, default=expense_client_id)
-    plan_item_id = models.CharField(max_length=64, null=True, blank=True)
+    plan_item_id = models.CharField(max_length=64, null=True, blank=True)  # migration source only
+    plan_item_ids = models.JSONField(default=list, blank=True)
     destination_id = models.CharField(max_length=64, blank=True, default='')
     trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name='expenses')
     amount = models.FloatField()

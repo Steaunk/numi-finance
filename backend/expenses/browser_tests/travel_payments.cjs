@@ -1,100 +1,44 @@
-const {chromium} = require('playwright');
-const assert = require('node:assert/strict');
+const {chromium}=require('playwright');
+const assert=require('node:assert/strict');
 (async()=>{
- const base=process.env.NUMI_TEST_URL || 'http://127.0.0.1:8765';
- assert.ok(['127.0.0.1','localhost'].includes(new URL(base).hostname));
- const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH || undefined});
- try {
-  const context=await browser.newContext({viewport:{width:390,height:844}});
-  const page=await context.newPage(),errors=[];
-  page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
-  await page.route('**/api/geo/currency/',r=>r.fulfill({json:{currency:'SGD'}}));
-  await page.route('**/api/rates/',r=>r.fulfill({json:{rates:{usd:1,sgd:1.34,jpy:150}}}));
-  await page.route('https://cdn.jsdelivr.net/**',r=>r.abort());
-  await page.goto(base+'/expenses/travel/');
-  const api=async(path,method='GET',body)=>page.evaluate(async({path,method,body})=>{
-   const response=await fetch(path,{method,headers:{'Content-Type':'application/json','X-CSRFToken':getCsrf()},...(body?{body:JSON.stringify(body)}:{})});
-   if(!response.ok)throw new Error(await response.text());return response.json();
-  },{path,method,body});
-  const waitLedger=async predicate=>{
-    const deadline=Date.now()+90000;
-    while(Date.now()<deadline){const data=await api(ledgerURL);if(predicate(data))return data;await new Promise(r=>setTimeout(r,200));}
-    throw new Error('Timed out waiting for ledger update');
-  };
-  const trip=await api('/expenses/api/travel/trips/add/','POST',{destination:'One-entry payments QA',start_date:'2026-10-01',end_date:'2026-10-03'});
-  await page.reload();await page.locator(`.trip-header[onclick="toggleTrip(${trip.id})"]`).click();
-  await page.getByRole('tab',{name:'Bookings',exact:true}).click();
-  await page.getByRole('button',{name:'+ Add booking'}).click();
-  const dialog=page.locator('dialog');
-  await dialog.locator('[name=title]').fill('Tokyo flight');
-  await dialog.locator('[name=category]').selectOption('Flight');
-  await dialog.locator('[name=date]').fill('2026-10-01');
-  await dialog.locator('[name=amount]').fill('250');
-  await dialog.locator('[name=currency]').fill('SGD');
-  await dialog.locator('[name=paymentStatus]').selectOption('paid');
-  await dialog.locator('[name=paidDate]').fill('2026-09-21');
-  await page.getByRole('button',{name:'Save item',exact:true}).click();
-  const ledgerURL=`/expenses/api/travel/trips/${trip.id}/expenses/`;
-  await waitLedger(data=>data.expenses.length===1);
-  let ledger=await api(ledgerURL),expense=ledger.expenses[0];
-  assert.equal(expense.category,'Transportation');assert.equal(expense.amount,250);
-  await page.getByRole('tab',{name:'Expenses',exact:true}).click();
-  const row=page.locator('tr.exp-row-clickable').filter({hasText:'Tokyo flight'});
-  await row.click();
-  await dialog.locator('[name=amount]').fill('275');
-  await page.getByRole('button',{name:'Save item',exact:true}).click();
-  await waitLedger(data=>data.expenses[0]?.amount===275);
-  ledger=await api(ledgerURL);assert.equal(ledger.expenses.length,1);assert.equal(ledger.expenses[0].id,expense.id);
-  // Existing independently recorded ticket gains an activity without another payment.
-  const ticket=await api(ledgerURL+'add/','POST',{client_id:'ticket-'+trip.id,amount:30,currency:'SGD',date:'2026-09-21',category:'Sightseeing',name:'Museum ticket'});
-  await page.evaluate(id=>loadTripDetail(id),trip.id);
-  await page.locator('tr.exp-row-clickable').filter({hasText:'Museum ticket'}).getByRole('button',{name:'Add to itinerary',exact:true}).click();
-  assert.equal(await dialog.locator('[name=amount]').inputValue(),'30');
-  assert.equal(await dialog.locator('[name=title]').inputValue(),'Museum ticket');
-  await page.getByRole('button',{name:'Save item',exact:true}).click();
-  await waitLedger(data=>data.expenses.find(e=>e.id===ticket.id)?.plan_item_id);
-  ledger=await api(ledgerURL);assert.equal(ledger.expenses.length,2);
-  const plan=await api(`/expenses/api/travel/trips/${trip.id}/plan/`);
-  assert.equal(plan.content.items.find(i=>i.expenseClientId==='ticket-'+trip.id).kind,'activity');
-  // An unassigned paid activity can be saved offline and synchronizes once.
-  await page.getByRole('tab',{name:'Itinerary',exact:true}).click();
-  await context.setOffline(true);
-  await page.getByRole('button',{name:'+ Add activity'}).click();
-  await dialog.locator('[name=title]').fill('Offline walking tour');
-  await dialog.locator('[name=amount]').fill('20');
-  await dialog.locator('[name=currency]').fill('SGD');
-  await dialog.locator('[name=paymentStatus]').selectOption('paid');
-  await dialog.locator('[name=expenseCategory]').selectOption('Sightseeing');
-  await page.getByRole('button',{name:'Save item',exact:true}).click();
-  await page.getByText('Saved browser changes are retained.',{exact:false}).waitFor();
-  await context.setOffline(false);await page.getByRole('button',{name:'Sync now'}).click();
-  await waitLedger(data=>data.expenses.length===3);
-  await page.getByRole('button',{name:'Sync now'}).click();
-  ledger=await api(ledgerURL);assert.equal(ledger.expenses.length,3);
-  await page.getByRole('tab',{name:'Expenses',exact:true}).click();
-  await page.screenshot({path:'/tmp/numi-itinerary-payments-web.png',fullPage:true});
-  // Accommodation is one multi-night duration and one total payment.
-  await page.getByRole('tab',{name:'Bookings',exact:true}).click();
-  await page.getByRole('button',{name:'+ Add booking'}).click();
-  await dialog.locator('[name=title]').fill('Two-night hotel');
-  await dialog.getByLabel('Check-in date',{exact:true}).fill('2026-10-01');
-  await dialog.getByLabel('Check-out date',{exact:true}).fill('2026-10-03');
-  assert.match(await dialog.locator('[data-stay-duration]').textContent(),/2 nights/);
-  await dialog.locator('[name=amount]').fill('400');
-  await dialog.locator('[name=paymentStatus]').selectOption('paid');
-  await page.getByRole('button',{name:'Save item',exact:true}).click();
-  await waitLedger(data=>data.expenses.length===4);
-  ledger=await api(ledgerURL);
-  assert.equal(ledger.expenses.find(e=>e.name==='Two-night hotel').amount,400);
-  await page.getByRole('tab',{name:'Itinerary',exact:true}).click();
-  for(const [day,label] of [['2026-10-01','Check-in'],['2026-10-02','Your stay'],['2026-10-03','Check-out']]) {
-    await page.locator('[data-filter=day]').selectOption(day);
-    const hotel=page.locator('.plan-card').filter({hasText:'Two-night hotel'});
-    assert.match(await hotel.locator('summary').textContent(),new RegExp(label));
-    assert.match(await hotel.locator('summary').textContent(),/2 nights/);
-  }
-  await page.screenshot({path:'/tmp/numi-stay-duration-web.png',fullPage:true});
-  assert.deepEqual(errors,[]);
-  console.log('Web paid flight, shared edits, existing-ticket activity and offline payment passed');
- } finally {await browser.close();}
+ const base=process.env.NUMI_TEST_URL||'http://127.0.0.1:8773';
+ assert.ok(['localhost','127.0.0.1'].includes(new URL(base).hostname));
+ const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||undefined});
+ try{
+ const context=await browser.newContext({viewport:{width:390,height:844}}), page=await context.newPage(), errors=[];
+ page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
+ await page.route('https://cdn.jsdelivr.net/**',r=>r.abort());
+ const request=async(path,method='GET',data)=>{const r=await context.request.fetch(base+path,{method,data});assert.ok(r.ok(),await r.text());return r.json()};
+ const trip=await request('/expenses/api/travel/trips/add/','POST',{destination:'Expense links QA',start_date:'2026-10-01',end_date:'2026-10-03'});
+ const api=`/expenses/api/travel/trips/${trip.id}/`;
+ const items=[{id:'museum',kind:'activity',title:'Museum',category:'Sightseeing',date:'2026-10-01',time:'11:00'}, {id:'park',kind:'activity',title:'Park',category:'Park',date:'2026-10-02'}];
+ await request(api+'plan/','PUT',{content:{items},revision:0,mutation_id:'seed'});
+ const expense=await request(api+'expenses/add/','POST',{amount:50,currency:'SGD',date:'2026-09-23',category:'Sightseeing',name:'Travel pass',client_id:'pass-'+trip.id});
+ await page.goto(base+'/expenses/travel/');await page.locator(`.trip-header[onclick="toggleTrip(${trip.id})"]`).click();
+ const root=page.locator(`#planner_${trip.id}`);
+ await root.getByRole('tab',{name:'Expenses',exact:true}).click();
+ await root.getByRole('button',{name:'Link itinerary',exact:true}).click();
+ const d=page.locator('dialog');
+ await d.locator('[name=item][value=museum]').check();await d.locator('[name=item][value=park]').check();
+ await page.screenshot({path:'/tmp/numi-expense-links-web.png',fullPage:true});
+ await d.getByRole('button',{name:'Save links',exact:true}).click();await d.waitFor({state:'detached'});
+ let data=await request(api+'expenses/');assert.deepEqual(data.expenses[0].plan_item_ids,['museum','park']);assert.equal(data.expenses.length,1);
+ assert.equal(data.expenses[0].amount,50);
+ await root.getByRole('button',{name:'2 linked · Edit links',exact:true}).click();await d.locator('[name=item][value=park]').uncheck();await d.getByRole('button',{name:'Save links',exact:true}).click();await d.waitFor({state:'detached'});
+ assert.deepEqual((await request(api+'expenses/')).expenses[0].plan_item_ids,['museum']);
+ await root.getByRole('tab',{name:'Itinerary',exact:true}).click();
+ await root.locator('[data-item=museum] summary').click();await root.locator('[data-item=museum]').getByRole('button',{name:'Edit',exact:true}).click();
+ assert.equal(await d.locator('[name=amount]').count(),0);await d.locator('[name=category]').selectOption('Restaurant');await d.getByRole('button',{name:'Save item',exact:true}).click();await d.waitFor({state:'detached'});
+ await page.waitForFunction(id=>JSON.parse(localStorage.getItem(`numi.travel.plan.v1.${id}`)).dirty===false,trip.id);
+ assert.equal((await request(api+'plan/')).content.items[0].category,'Restaurant');
+ // The shared workspace exposes the same editable category and no money fields.
+ await page.goto(base+`/expenses/travel/trips/${trip.id}/plan/`);await page.locator('[data-edit=museum]').click();
+ await d.locator('[name=category]').selectOption('Sightseeing');await page.screenshot({path:'/tmp/numi-activity-type-web.png',fullPage:true});await d.locator('[type=submit]').click();await d.waitFor({state:'detached'});
+ const plan=await request(api+'plan/');assert.equal(plan.content.items[0].category,'Sightseeing');assert.ok(plan.content.items.every(i=>!('amount' in i)));
+ await request(api+`expenses/${expense.id}/`,'PUT',{amount:60,currency:'SGD',date:'2026-09-23',category:'Sightseeing',name:'Travel pass'});
+ assert.deepEqual((await request(api+'expenses/')).expenses[0].plan_item_ids,['museum']);
+ assert.equal((await request(api+'plan/')).content.items.length,2);
+ assert.deepEqual(errors,[]);await request(api+'delete/','DELETE');
+ console.log('Expense links: many-to-many selection, unlink, totals, independent editing and activity types passed');
+ }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exit(1)});

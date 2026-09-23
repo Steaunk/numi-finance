@@ -6,7 +6,6 @@ import '../../../utils/date_utils.dart';
 import '../../common/widgets/amount_display.dart';
 import '../../common/widgets/dialogs.dart';
 import 'add_travel_expense_screen.dart';
-import '../widgets/plan_item_editor.dart';
 import '../../../models/travel_expense.dart';
 import '../../../models/trip.dart';
 import '../../../models/trip_plan.dart';
@@ -31,7 +30,7 @@ class TripExpensesScreen extends ConsumerWidget {
 
   Future<void> editExpense(BuildContext context, WidgetRef ref, Trip trip,
       TravelExpense expense) async {
-    if (expense.planItemId == null) {
+    {
       final savedDestination = await showModalBottomSheet<String>(
           context: context,
           isScrollControlled: true,
@@ -47,19 +46,6 @@ class TripExpensesScreen extends ConsumerWidget {
       }
       return;
     }
-    try {
-      final repo = ref.read(tripPlanRepositoryProvider);
-      final booking = await repo.itemFromExpense(tripId, expense.id);
-      final plan = await repo.watch(tripId).first;
-      if (!context.mounted) return;
-      final result = await editPlanItem(context, trip, plan, booking);
-      if (result != null) await repo.save(tripId, result);
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Could not open itinerary item: $e')));
-      }
-    }
   }
 
   @override
@@ -74,7 +60,7 @@ class TripExpensesScreen extends ConsumerWidget {
               .where((e) =>
                   destination.isEmpty ||
                   plan.expenseDestination(
-                        e.planItemId,
+                        e.planItemIds,
                         destinationId: e.destinationId,
                       ) ==
                       selected)
@@ -106,7 +92,7 @@ class TripExpensesScreen extends ConsumerWidget {
                     child: ListTile(
                   title: Text(expense.name),
                   subtitle: Text(
-                    '${AppDateUtils.displayDate(expense.date)} · ${expense.category}${expense.planItemId == null ? '' : ' · Itinerary'} · ${plan.expenseDestinationLabel(plan.expenseDestination(expense.planItemId, destinationId: expense.destinationId))}',
+                    '${AppDateUtils.displayDate(expense.date)} · ${expense.category}${expense.planItemIds.isEmpty ? '' : ' · ${expense.planItemIds.length} linked'} · ${plan.expenseDestinationLabel(plan.expenseDestination(expense.planItemIds, destinationId: expense.destinationId))}',
                   ),
                   onTap: () => editExpense(context, ref, trip, expense),
                   trailing: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -121,19 +107,12 @@ class TripExpensesScreen extends ConsumerWidget {
                         onPressed: () async {
                           final yes = await showDeleteConfirmDialog(context,
                               title: 'Delete expense',
-                              content: expense.planItemId == null
-                                  ? 'Delete "${expense.name}"?'
-                                  : 'Remove the recorded payment for "${expense.name}"? The itinerary item will remain unpaid.');
+                              content:
+                                  'Delete "${expense.name}"? Linked itinerary items will be kept.');
                           if (yes) {
-                            if (expense.planItemId != null) {
-                              await ref
-                                  .read(tripPlanRepositoryProvider)
-                                  .removePayment(tripId, expense.planItemId!);
-                            } else {
-                              await ref
-                                  .read(travelRepositoryProvider)
-                                  .deleteTravelExpense(expense.id, tripId);
-                            }
+                            await ref
+                                .read(travelRepositoryProvider)
+                                .deleteTravelExpense(expense.id, tripId);
                           }
                         })
                   ]),

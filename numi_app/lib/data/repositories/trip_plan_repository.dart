@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'dart:async';
-import 'booking_payment_store.dart';
+import 'expense_link_store.dart';
 import 'package:dio/dio.dart';
 import 'package:drift/drift.dart';
 import '../../models/trip_plan.dart';
@@ -37,7 +37,7 @@ class TripPlanRepository {
           ? <PlanItem>[]
           : TripPlan.decode(row.content).items.toList();
       final updated = change(items);
-      await reconcileBookingPayments(db, tripId, updated);
+      await reconcileExpenseLinks(db, tripId, updated);
       final content = TripPlan(items: updated).encode();
       await db.into(db.tripPlans).insertOnConflictUpdate(TripPlansCompanion(
             tripId: Value(tripId),
@@ -75,20 +75,6 @@ class TripPlanRepository {
           throw StateError(
               'The linked place was removed. Choose another place.');
         }
-        if ((item.kind == 'booking' || item.kind == 'activity') &&
-            item['paymentStatus'] == 'paid') {
-          item = item.copy({
-            'expenseClientId': item['expenseClientId'].isEmpty
-                ? newPlanId()
-                : item['expenseClientId'],
-            'expenseCategory': item['expenseCategory'].isEmpty
-                ? planExpenseCategory(items
-                        .where((p) => p.id == item['placeId'])
-                        .firstOrNull?['category'] ??
-                    item['category'])
-                : item['expenseCategory'],
-          });
-        }
         final index = items.indexWhere((i) => i.id == item.id);
         if (index < 0) {
           items.add(item);
@@ -97,63 +83,6 @@ class TripPlanRepository {
         }
         return items;
       });
-
-  Future<PlanItem> itemFromExpense(int tripId, int expenseId,
-      {String kind = 'booking'}) async {
-    return db.transaction(() async {
-      final expense = await (db.select(db.travelExpenses)
-            ..where((e) => e.id.equals(expenseId) & e.tripId.equals(tripId)))
-          .getSingle();
-      final trip = (await db.tripDao.getById(tripId))!;
-      final planRow = await _row(tripId);
-      final plan =
-          planRow == null ? TripPlan() : TripPlan.decode(planRow.content);
-      if (expense.planItemId != null) {
-        final booking = plan.find(expense.planItemId!);
-        if (booking == null) {
-          throw StateError('Sync this trip to load its itinerary item.');
-        }
-        return booking;
-      }
-      final clientId = expense.clientId ??
-          (expense.remoteId == null
-              ? newPlanId()
-              : 'remote-${expense.remoteId}');
-      await db.tripDao.updateTravelExpenseRow(
-          expense.id, TravelExpensesCompanion(clientId: Value(clientId)));
-      return PlanItem.create(kind).copy({
-        'title': expense.name,
-        'destinationId': expense.destinationId,
-        'notes': expense.notes,
-        'category': kind == 'activity'
-            ? 'Activity'
-            : expense.category == 'Accommodation'
-                ? 'Accommodation'
-                : 'Reservation',
-        'date': planDate(trip.startDate),
-        if (kind == 'booking' && expense.category == 'Accommodation')
-          'endDate': planDate(trip.endDate.isAfter(trip.startDate)
-              ? trip.endDate
-              : trip.startDate.add(const Duration(days: 1))),
-        'status': 'confirmed',
-        'amount': expense.amount.toString(),
-        'currency': expense.currency,
-        'paymentStatus': 'paid',
-        'paidDate': planDate(expense.date),
-        'expenseClientId': clientId,
-        'expenseCategory': expense.category,
-      });
-    });
-  }
-
-  Future<void> removePayment(int tripId, String planItemId) async {
-    final plan = await watch(tripId).first;
-    final booking = plan.find(planItemId);
-    if (booking == null) {
-      throw StateError('Load the linked itinerary item first.');
-    }
-    await save(tripId, booking.copy({'paymentStatus': 'unpaid'}));
-  }
 
   Future<void> remove(int tripId, String id) => _edit(
       tripId,
@@ -245,21 +174,7 @@ class TripPlanRepository {
                   TripPlan.decode(row.content),
                   TripPlan.decode(current.content),
                   TripPlan.decode(jsonEncode(result['content'])));
-          await reconcileBookingPayments(db, tripId, merged.items,
-              serverIds:
-                  (result['payment_ids'] as Map?)?.cast<String, dynamic>());
-          final ids = result['payment_ids'] as Map?;
-          if (ids != null) {
-            for (final entry in ids.entries) {
-              await (db.update(db.travelExpenses)
-                    ..where((e) =>
-                        e.tripId.equals(tripId) &
-                        e.clientId.equals(entry.key as String)))
-                  .write(TravelExpensesCompanion(
-                      remoteId: Value(entry.value as int),
-                      tripRemoteId: Value(trip.remoteId)));
-            }
-          }
+          await reconcileExpenseLinks(db, tripId, merged.items);
           await (db.update(db.tripPlans)..where((p) => p.tripId.equals(tripId)))
               .write(TripPlansCompanion(
                   serverRevision: Value(result['revision'] as int),
@@ -274,10 +189,8 @@ class TripPlanRepository {
         if (await db.tripDao.getById(tripId) == null) return;
         final current = await _row(tripId);
         if (current?.dirty == true) return;
-        await reconcileBookingPayments(
-            db, tripId, TripPlan.decode(jsonEncode(result['content'])).items,
-            serverIds:
-                (result['payment_ids'] as Map?)?.cast<String, dynamic>());
+        await reconcileExpenseLinks(
+            db, tripId, TripPlan.decode(jsonEncode(result['content'])).items);
         await db.into(db.tripPlans).insertOnConflictUpdate(TripPlansCompanion(
               tripId: Value(tripId),
               content: Value(jsonEncode(result['content'])),
@@ -324,9 +237,7 @@ class TripPlanRepository {
               TripPlan.decode(before.content),
               TripPlan.decode(latest.content),
               TripPlan.decode(jsonEncode(resolved['content'])));
-      await reconcileBookingPayments(db, tripId, merged.items,
-          serverIds:
-              (resolved['payment_ids'] as Map?)?.cast<String, dynamic>() ?? {});
+      await reconcileExpenseLinks(db, tripId, merged.items);
       await (db.update(db.tripPlans)..where((p) => p.tripId.equals(tripId)))
           .write(TripPlansCompanion(
               serverRevision: Value(resolved['revision'] as int),

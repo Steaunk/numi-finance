@@ -16,10 +16,10 @@ class CollaborationTests(TestCase):
             {'id': 'nyt', 'kind': 'person', 'title': 'NYT'},
             {'id': 'visit', 'kind': 'activity', 'title': 'Museum', 'notes': 'Original'},
             {'id': 'flight', 'kind': 'booking', 'title': 'Flight', 'category': 'Flight', 'date': '2026-10-06',
-             'participantIds': ['nyt'], 'amount': '100', 'currency': 'USD', 'paymentStatus': 'paid',
-             'paidDate': '2026-09-01', 'expenseClientId': 'payment', 'expenseCategory': 'Transportation',
+             'participantIds': ['nyt'],
              'notes': 'Private original ledger note'}]}
         save_document(self.trip, self.content, 0, 'seed', 'Owner')
+        TravelExpense.objects.create(trip=self.trip, plan_item_ids=['flight'], amount=100, currency='USD', date='2026-09-01', category='Transportation', name='Flight', notes='Private ledger note')
 
     def post(self, url, body, client=None, **kwargs):
         return (client or self.client).post(url, json.dumps(body), content_type='application/json', **kwargs)
@@ -118,7 +118,7 @@ class CollaborationTests(TestCase):
         self.assertEqual(TravelExpense.objects.values().get(),before)
         self.assertEqual(self.edit(guest,[{'id':'flight','delete':True}],2,'remove').status_code,200)
         after=TravelExpense.objects.values().get()
-        self.assertEqual(after,dict(before,plan_item_id=None))
+        self.assertEqual(after,dict(before,plan_item_ids=[]))
         self.assertEqual(TripPlanChange.objects.latest('revision').actor,'NYT')
 
     def test_offline_owner_document_merge_and_scoped_conflict_choice(self):
@@ -151,7 +151,7 @@ class CollaborationTests(TestCase):
             {'id':'flight','replace':True,'changes':{**old,'title':'Restored public name','notes':'Restored public notes'}}]})
         self.assertEqual(response.status_code,200)
         self.assertEqual(TravelExpense.objects.values().get(),before)
-        self.assertEqual(TripPlan.objects.get().content['items'][3]['paymentStatus'],'paid')
+        self.assertNotIn('paymentStatus', TripPlan.objects.get().content['items'][3])
 
     def test_expired_invitation_rejects_existing_session(self):
         from django.utils import timezone

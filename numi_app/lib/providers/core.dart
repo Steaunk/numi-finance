@@ -4,6 +4,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../config/constants.dart';
+import 'travel.dart';
 import '../data/cache_store.dart';
 import '../data/local/database.dart';
 import '../data/remote/api_client.dart';
@@ -131,11 +132,13 @@ final expenseRepositoryProvider = Provider<ExpenseRepository>((ref) {
   );
 });
 
-final travelRepositoryProvider = Provider<TravelRepository>((ref) {
+final Provider<TravelRepository> travelRepositoryProvider =
+    Provider<TravelRepository>((ref) {
   return TravelRepository(
     ref.watch(databaseProvider),
     ref.watch(travelApiProvider),
     ref.watch(rateRepositoryProvider),
+    preparePlan: (id) => ref.read(tripPlanRepositoryProvider).sync(id),
   );
 });
 

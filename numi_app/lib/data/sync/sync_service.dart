@@ -18,7 +18,6 @@ class SyncService {
   static const _maxRetries = 5;
   final AppDatabase _db;
   final ExpenseApi _expenseApi;
-  final TravelApi _travelApi;
   final AssetApi _assetApi;
   final ExpenseRepository _expenseRepo;
   final TravelRepository _travelRepo;
@@ -39,7 +38,6 @@ class SyncService {
     required SharedPreferences prefs,
   })  : _db = db,
         _expenseApi = expenseApi,
-        _travelApi = travelApi,
         _assetApi = assetApi,
         _expenseRepo = expenseRepo,
         _travelRepo = travelRepo,
@@ -216,80 +214,10 @@ class SyncService {
   }
 
   Future<bool> _handleTravelExpenseOp(DbSyncOperation op) async {
-    final p = jsonDecode(op.payload) as Map<String, dynamic>;
-    final current = await (_db.select(_db.travelExpenses)
-          ..where((e) => e.id.equals(op.localId)))
-        .getSingleOrNull();
-    if (op.operation != 'delete' &&
-        (current == null || current.planItemId != null)) {
-      return true;
-    }
-    if (current != null && op.operation != 'delete') {
-      p.addAll({
-        'client_id': current.clientId,
-        'destination_id': current.destinationId,
-        'amount': current.amount,
-        'currency': current.currency,
-        'date': current.date.toIso8601String(),
-        'name': current.name,
-        'category': current.category,
-        'notes': current.notes
-      });
-    }
-    switch (op.operation) {
-      case 'create':
-        final tripRow = await _db.tripDao.getById(p['trip_id'] as int);
-        if (tripRow?.remoteId == null) return false;
-        final remote = await _travelApi.addTripExpense(tripRow!.remoteId!, {
-          'client_id': p['client_id'],
-          'destination_id': p['destination_id'] ?? '',
-          'amount': p['amount'],
-          'currency': p['currency'],
-          'date': _toDateStr(p['date']),
-          'category': p['category'],
-          'name': p['name'],
-          'notes': p['notes'] ?? '',
-        });
-        await (_db.update(_db.travelExpenses)
-              ..where((e) => e.id.equals(op.localId)))
-            .write(TravelExpensesCompanion(
-          remoteId: Value(remote['id'] as int),
-          tripRemoteId: Value(tripRow.remoteId),
-          synced: const Value(true),
-        ));
-        return true;
-      case 'update':
-        final localRow = await (_db.select(_db.travelExpenses)
-              ..where((e) => e.id.equals(op.localId)))
-            .getSingleOrNull();
-        if (localRow?.remoteId == null || localRow?.tripRemoteId == null) {
-          return false;
-        }
-        await _travelApi
-            .updateTripExpense(localRow!.tripRemoteId!, localRow.remoteId!, {
-          'client_id': p['client_id'],
-          'destination_id': p['destination_id'] ?? '',
-          'amount': p['amount'],
-          'currency': p['currency'],
-          'date': _toDateStr(p['date']),
-          'category': p['category'],
-          'name': p['name'],
-          'notes': p['notes'] ?? '',
-        });
-        await (_db.update(_db.travelExpenses)
-              ..where((e) => e.id.equals(op.localId)))
-            .write(const TravelExpensesCompanion(synced: Value(true)));
-        return true;
-      case 'delete':
-        final remoteId = p['remote_id'] as int?;
-        final tripRemoteId = p['trip_remote_id'] as int?;
-        if (remoteId != null && tripRemoteId != null) {
-          await _travelApi.deleteTripExpense(tripRemoteId, remoteId);
-        }
-        return true;
-      default:
-        return false;
-    }
+    await _travelRepo.flushExpenses();
+    return (await (_db.select(_db.syncQueue)..where((q) => q.id.equals(op.id)))
+            .getSingleOrNull()) ==
+        null;
   }
 
   Future<bool> _handleAccountOp(DbSyncOperation op) async {

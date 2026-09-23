@@ -143,7 +143,7 @@ void main() {
       expect(plan.items.single.title, 'Our Kamakura hotel');
       expect(plan.items.single['date'], '2026-10-07');
       expect(plan.items.single['status'], 'planned');
-      expect(plan.items.single['paymentStatus'], 'unpaid');
+      expect(plan.items.single['paymentStatus'], '');
       expect(plan.items.single.participantIds, isEmpty);
       if (multi) {
         expect(find.text('Flight SQ637'), findsOneWidget);

@@ -38,17 +38,21 @@ const assert=require('node:assert/strict');
   await until(p=>p.content.items.some(i=>i.title==='Kyoto dinner'));
   const restaurant=root.locator('.plan-panel .plan-card').filter({hasText:'Kyoto dinner'});await restaurant.locator('summary').click();await restaurant.getByRole('button',{name:'Add to itinerary'}).click();
   assert.equal(await dialog.locator('[data-destination-field]').isVisible(),false);
-  await dialog.locator('[name=amount]').fill('20');await dialog.locator('[name=paymentStatus]').selectOption('paid');await dialog.getByRole('button',{name:'Save item',exact:true}).click();
-  await until(p=>p.expenses.length===1,ledgerURL);
+  await dialog.getByRole('button',{name:'Save item',exact:true}).click();
+  let planned=await until(p=>p.content.items.some(i=>i.kind==='activity'&&i.placeId));
+  const dinner=planned.content.items.find(i=>i.kind==='activity'&&i.placeId);
+  await api(ledgerURL+'add/','POST',{amount:20,currency:'SGD',date:'2026-10-02',category:'Food & Drinks',name:'Kyoto dinner',plan_item_ids:[dinner.id]});
   await root.getByRole('tab',{name:'Bookings',exact:true}).click();
   for(const [name,category,amount] of [['Kyoto hotel','Accommodation','200'],['Tokyo to Kyoto train','Train','50']]) {
    await root.getByRole('button',{name:'+ Add booking'}).click();await dialog.locator('[name=title]').fill(name);await dialog.locator('[name=category]').selectOption(category);
    await dialog.locator('[name=date]').fill('2026-10-02');
    if(category==='Accommodation')await dialog.locator('[name=endDate]').fill('2026-10-03');
    else {await dialog.locator('[name=destinationId]').selectOption(ds.Tokyo);await dialog.locator('[name=endDestinationId]').selectOption(ds.Kyoto);}
-   await dialog.locator('[name=amount]').fill(amount);await dialog.locator('[name=paymentStatus]').selectOption('paid');await dialog.getByRole('button',{name:'Save item',exact:true}).click();
-   await until(p=>p.expenses.some(e=>e.name===name),ledgerURL);
+   await dialog.getByRole('button',{name:'Save item',exact:true}).click();
+   const planned=await until(p=>p.content.items.some(i=>i.title===name));
+   await api(ledgerURL+'add/','POST',{amount:Number(amount),currency:'SGD',date:'2026-10-02',category:category==='Accommodation'?'Accommodation':'Transportation',name,plan_item_ids:[planned.content.items.find(i=>i.title===name).id]});
   }
+  await page.evaluate(id=>loadTripDetail(id),trip.id);
   await root.getByRole('tab',{name:'Expenses',exact:true}).click();
   await root.locator('[data-expense-filter]').selectOption(ds.Kyoto);
   assert.equal(await root.locator('tr.exp-row-clickable:visible').count(),2);

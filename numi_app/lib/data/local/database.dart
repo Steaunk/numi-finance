@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:path_provider/path_provider.dart';
@@ -46,6 +47,7 @@ class TravelExpenses extends Table {
   IntColumn get tripRemoteId => integer().nullable()();
   TextColumn get clientId => text().nullable()();
   TextColumn get planItemId => text().nullable()();
+  TextColumn get planItemIds => text().withDefault(const Constant('[]'))();
   TextColumn get destinationId => text().withDefault(const Constant(''))();
   RealColumn get amount => real()();
   TextColumn get currency => text()();
@@ -390,7 +392,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -406,6 +408,60 @@ class AppDatabase extends _$AppDatabase {
                 "UPDATE travel_expenses SET client_id = CASE WHEN remote_id IS NOT NULL THEN 'remote-' || remote_id ELSE lower(hex(randomblob(16))) END");
           }
           if (from < 3) await m.createTable(tripPlans);
+          if (from < 6) {
+            await m.addColumn(travelExpenses, travelExpenses.planItemIds);
+            for (final row in await select(travelExpenses).get()) {
+              await (update(travelExpenses)..where((e) => e.id.equals(row.id)))
+                  .write(TravelExpensesCompanion(
+                      planItemIds: Value(jsonEncode(
+                          [if (row.planItemId != null) row.planItemId!])),
+                      planItemId: const Value(null)));
+            }
+            for (final row in await select(travelExpenses).get()) {
+              if (!row.synced || row.remoteId == null) {
+                await (update(travelExpenses)
+                      ..where((e) => e.id.equals(row.id)))
+                    .write(const TravelExpensesCompanion(synced: Value(false)));
+                final queued = await (select(syncQueue)
+                      ..where((q) =>
+                          q.entityType.equals('travel_expense') &
+                          q.localId.equals(row.id)))
+                    .get();
+                if (queued.isEmpty) {
+                  await syncQueueDao.enqueue(SyncQueueCompanion.insert(
+                      entityType: 'travel_expense',
+                      operation: 'update',
+                      localId: row.id,
+                      payload: jsonEncode({'trip_id': row.tripId})));
+                }
+              }
+            }
+            for (final row in await select(tripPlans).get()) {
+              final content = jsonDecode(row.content) as Map<String, dynamic>;
+              for (final item in content['items'] as List) {
+                if (item['kind'] == 'activity' &&
+                    item['category'] == 'Activity') {
+                  item['category'] = item['expenseCategory'] == 'Sightseeing'
+                      ? 'Sightseeing'
+                      : 'Other';
+                }
+                for (final key in [
+                  'amount',
+                  'currency',
+                  'paymentStatus',
+                  'paidDate',
+                  'expenseClientId',
+                  'expenseCategory'
+                ]) {
+                  item.remove(key);
+                }
+              }
+              await (update(tripPlans)
+                    ..where((p) => p.tripId.equals(row.tripId)))
+                  .write(
+                      TripPlansCompanion(content: Value(jsonEncode(content))));
+            }
+          }
           if (from < 2) {
             await m.addColumn(accounts, accounts.apiUrl);
             await m.addColumn(accounts, accounts.apiValuePath);

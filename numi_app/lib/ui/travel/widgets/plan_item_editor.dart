@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../../config/constants.dart';
-import '../../common/widgets/dialogs.dart';
 import '../../../models/trip.dart';
 import '../../../models/trip_plan.dart';
 import 'plan_links.dart';
@@ -42,15 +40,8 @@ class _PlanItemEditorState extends State<PlanItemEditor> {
     links = widget.item.links.toList();
     participants = widget.item.participantIds.toList();
     everyone = participants.isEmpty;
-    if (payable) {
-      values.putIfAbsent('currency', () => AppConstants.defaultCurrency);
-      values.putIfAbsent('paymentStatus', () => 'unpaid');
-      values.putIfAbsent('paidDate', () => planDate(DateTime.now()));
-      values.putIfAbsent(
-          'expenseCategory',
-          () => planExpenseCategory(
-              widget.plan.find(widget.item['placeId'])?['category'] ??
-                  widget.item['category']));
+    if (kind == 'activity' && !placeCategories.contains(values['category'])) {
+      values['category'] = 'Other';
     }
     for (final key in [
       'title',
@@ -61,8 +52,7 @@ class _PlanItemEditorState extends State<PlanItemEditor> {
       'contact',
       'assignee',
       'timezone',
-      'endTimezone',
-      'amount'
+      'endTimezone'
     ]) {
       _controllers[key] = TextEditingController(text: widget.item[key]);
     }
@@ -107,9 +97,6 @@ class _PlanItemEditorState extends State<PlanItemEditor> {
               .toList(),
           onChanged: (v) => setState(() {
                 values[key] = v!;
-                if (kind == 'booking' && key == 'category') {
-                  values['expenseCategory'] = planExpenseCategory(v);
-                }
               })));
   Widget dateField(String key, String label, {bool required = false}) =>
       ListTile(
@@ -282,34 +269,10 @@ class _PlanItemEditorState extends State<PlanItemEditor> {
       problem =
           'Choose a date within this trip, or clear the date to leave it unassigned.';
     }
-    if (payable) {
-      if (noStay) updated['paymentStatus'] = 'unpaid';
-      final amount = double.tryParse(updated['amount'] ?? '');
-      if ((updated['amount'] ?? '').isNotEmpty &&
-          (amount == null || !amount.isFinite || amount <= 0)) {
-        problem = 'Enter a positive amount.';
-      }
-      if (updated['paymentStatus'] == 'paid') {
-        if (amount == null || (updated['paidDate'] ?? '').isEmpty) {
-          problem = 'Paid items need an amount and payment date.';
-        }
-        updated['expenseClientId'] = widget.item['expenseClientId'].isEmpty
-            ? newPlanId()
-            : widget.item['expenseClientId'];
-      }
-    }
     if (links.length > 50) problem = 'Keep at most 50 links per item.';
     if (problem != null) {
       setState(() => error = problem);
       return;
-    }
-    if (widget.item['paymentStatus'] == 'paid' &&
-        updated['paymentStatus'] != 'paid') {
-      final confirmed = await showDeleteConfirmDialog(context,
-          title: 'Remove recorded payment?',
-          content:
-              'This removes the linked expense and marks the item unpaid. The itinerary item will be kept.');
-      if (!confirmed || !mounted) return;
     }
     Navigator.pop(
         context,
@@ -350,8 +313,11 @@ class _PlanItemEditorState extends State<PlanItemEditor> {
                 text('title',
                     linked ? 'Activity name (optional override)' : 'Name',
                     required: !linked),
-                if (kind == 'place')
-                  choice('category', 'Category', placeCategories),
+                if (kind == 'place' || kind == 'activity')
+                  choice(
+                      'category',
+                      kind == 'activity' ? 'Activity type' : 'Category',
+                      placeCategories),
                 if (kind == 'booking')
                   choice('category', 'Booking type', bookingCategories),
                 if (kind == 'task')
@@ -439,44 +405,6 @@ class _PlanItemEditorState extends State<PlanItemEditor> {
                     onChanged: (v) => setState(() => links = v),
                   ),
                 ],
-                if (payable && !noStay)
-                  ExpansionTile(
-                    key: ValueKey('payment-${widget.item.id}'),
-                    initiallyExpanded: widget.item['amount'].isNotEmpty ||
-                        widget.item['paymentStatus'] == 'paid',
-                    tilePadding: EdgeInsets.zero,
-                    title: const Text('Payment (optional)'),
-                    subtitle: Text(
-                      values['paymentStatus'] == 'paid'
-                          ? 'Paid · included in spending'
-                          : 'Add a cost or record a payment',
-                    ),
-                    children: [
-                      TextFormField(
-                          controller: _controllers['amount'],
-                          keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true),
-                          decoration: InputDecoration(
-                              labelText: 'Amount (optional until paid)',
-                              helperText: stay
-                                  ? 'Total for the entire stay, recorded once.'
-                                  : null)),
-                      const SizedBox(height: 12),
-                      choice('currency', 'Currency',
-                          AppConstants.travelCurrencies),
-                      SwitchListTile.adaptive(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('Paid'),
-                          subtitle: const Text(
-                              'Paid items appear in Trip spending automatically.'),
-                          value: values['paymentStatus'] == 'paid',
-                          onChanged: (paid) => setState(() =>
-                              values['paymentStatus'] =
-                                  paid ? 'paid' : 'unpaid')),
-                      if (values['paymentStatus'] == 'paid')
-                        dateField('paidDate', 'Payment date', required: true),
-                    ],
-                  ),
                 if (kind == 'task') dateField('date', 'Due date'),
                 const SizedBox(height: 8),
                 Theme(
@@ -520,9 +448,10 @@ class _PlanItemEditorState extends State<PlanItemEditor> {
                             ],
                             onChanged: (v) => setState(() {
                               values['placeId'] = v!;
-                              values['expenseCategory'] = planExpenseCategory(
-                                widget.plan.find(v)?['category'] ?? 'Activity',
-                              );
+                              if (v.isNotEmpty) {
+                                values['category'] =
+                                    widget.plan.find(v)?['category'] ?? 'Other';
+                              }
                             }),
                           ),
                         choice(
@@ -535,9 +464,6 @@ class _PlanItemEditorState extends State<PlanItemEditor> {
                           choice('priority', 'Priority', planPriorities),
                         if (kind == 'activity')
                           timeField('endTime', 'End time'),
-                        if (payable && !noStay)
-                          choice('expenseCategory', 'Expense category',
-                              AppConstants.travelCategories),
                         if (kind == 'booking' && !noStay) ...[
                           text('contact', 'Contact'),
                           text('timezone', 'Start time zone (e.g. Asia/Tokyo)'),

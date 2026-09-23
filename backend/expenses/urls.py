@@ -33,6 +33,7 @@ urlpatterns = [
     path('api/travel/trips/<int:trip_id>/delete/', views.delete_trip, name='delete_trip'),
     path('api/travel/trips/<int:trip_id>/expenses/', views.list_trip_expenses, name='list_trip_expenses'),
     path('api/travel/trips/<int:trip_id>/expenses/add/', views.add_trip_expense, name='add_trip_expense'),
+    path('api/travel/trips/<int:trip_id>/expenses/<int:expense_id>/links/', views.update_expense_links, name='update_expense_links'),
     path('api/travel/trips/<int:trip_id>/expenses/<int:expense_id>/', views.update_trip_expense, name='update_trip_expense'),
     path('api/travel/trips/<int:trip_id>/expenses/<int:expense_id>/delete/', views.delete_trip_expense, name='delete_trip_expense'),
 ]

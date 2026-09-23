@@ -332,7 +332,7 @@
                     } else {
                         html += `<tr data-expense-id="${exp.id}" class="exp-row-clickable" onclick="startEditExpense(${tripId}, ${exp.id})">
                             <td>${exp.date}</td>
-                            <td>${esc(exp.name)}${exp.plan_item_id ? '<small style="display:block">Itinerary</small>' : `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); TravelPlanner.editExpense(${tripId}, ${exp.id}, true)">Add booking details</button><button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); TravelPlanner.editExpense(${tripId}, ${exp.id}, true, 'activity')">Add to itinerary</button>`}</td>
+                            <td>${esc(exp.name)}<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); TravelPlanner.linkExpense(${tripId}, ${exp.id})">${(exp.plan_item_ids||[]).length ? exp.plan_item_ids.length+' linked · Edit links' : 'Link itinerary'}</button></td>
                             <td>${esc(exp.category)}</td>
                             <td style="text-align:right;">${exp.amount.toLocaleString(undefined, {minimumFractionDigits: 2})} ${exp.currency}</td>
                             <td style="text-align:right;">${exp.converted_amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
@@ -509,7 +509,6 @@
         }
 
         function startEditExpense(tripId, expId) {
-            if (TravelPlanner.linkedExpense(tripId, expId)) { void TravelPlanner.editExpense(tripId, expId); return; }
             editingExpenseId = expId;
             editingTripId = tripId;
             loadTripDetail(tripId);
@@ -575,7 +574,6 @@
         }
 
         async function deleteExpense(tripId, expId) {
-            if (TravelPlanner.linkedExpense(tripId, expId)) { await TravelPlanner.removePayment(tripId, expId); return; }
             if (!confirm('Delete this expense?')) return;
             try {
                 await fetch(`/expenses/api/travel/trips/${tripId}/expenses/${expId}/delete/`, {

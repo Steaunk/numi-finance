@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../config/constants.dart';
 import '../../../models/travel_expense.dart';
 import '../../../models/trip_plan.dart';
-import '../widgets/plan_item_editor.dart';
 import '../../../providers/providers.dart';
 import '../../../utils/date_utils.dart';
 import '../../common/widgets/loading_button.dart';
@@ -43,6 +42,7 @@ class _AddTravelExpenseScreenState
   late DateTime _date;
   bool _saving = false;
   late String _destinationId;
+  late Set<String> _planItemIds;
 
   bool get _isEditing => widget.expense != null;
 
@@ -58,6 +58,7 @@ class _AddTravelExpenseScreenState
     _category = e?.category ?? 'Other';
     _date = e?.date ?? DateTime.now();
     _destinationId = e?.destinationId ?? widget.initialDestination;
+    _planItemIds = {...?e?.planItemIds};
   }
 
   @override
@@ -237,49 +238,42 @@ class _AddTravelExpenseScreenState
                 decoration: const InputDecoration(labelText: 'Notes'),
                 maxLines: 2,
               ),
-              if (_isEditing)
-                for (final targetKind in ['booking', 'activity'])
-                  OutlinedButton.icon(
-                      icon: const Icon(Icons.confirmation_number_outlined),
-                      label: Text(targetKind == 'booking'
-                          ? 'Add booking details'
-                          : 'Add to itinerary'),
-                      onPressed: _saving
-                          ? null
-                          : () async {
-                              // Save current edits once before enriching this same expense.
-                              if (!_formKey.currentState!.validate()) return;
-                              if (!await _save(close: false) ||
-                                  !context.mounted) {
-                                return;
-                              }
-                              try {
-                                final repo =
-                                    ref.read(tripPlanRepositoryProvider);
-                                final booking = await repo.itemFromExpense(
-                                    widget.tripId, widget.expense!.id,
-                                    kind: targetKind);
-                                final trip = await ref
-                                    .read(travelRepositoryProvider)
-                                    .getTripWithExpenses(widget.tripId);
-                                final plan =
-                                    await repo.watch(widget.tripId).first;
-                                if (!context.mounted || trip == null) return;
-                                final result = await editPlanItem(
-                                    context, trip, plan, booking);
-                                if (result != null) {
-                                  await repo.save(widget.tripId, result);
-                                  if (context.mounted) Navigator.pop(context);
-                                }
-                              } catch (e) {
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                          content: Text(
-                                              'Could not add booking: $e')));
-                                }
-                              }
-                            }),
+              const SizedBox(height: 12),
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                title: const Text('Linked itinerary'),
+                subtitle:
+                    Text('${_planItemIds.length} selected · choose any number'),
+                initiallyExpanded: _planItemIds.isNotEmpty,
+                children: [
+                  if (!plan.items
+                      .any((i) => i.kind == 'activity' || i.kind == 'booking'))
+                    const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Text(
+                            'Add activities or bookings in your itinerary first.')),
+                  for (final item in plan.items.where((i) =>
+                      (i.kind == 'activity' || i.kind == 'booking') &&
+                      i['category'] != 'No accommodation needed'))
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(plan.itemTitle(item)),
+                      subtitle: Text([
+                        item['date'].isEmpty ? 'Anytime' : item['date'],
+                        item['time'],
+                        item['category']
+                      ].where((v) => v.isNotEmpty).join(' · ')),
+                      value: _planItemIds.contains(item.id),
+                      onChanged: (selected) => setState(() {
+                        if (selected == true) {
+                          _planItemIds.add(item.id);
+                        } else {
+                          _planItemIds.remove(item.id);
+                        }
+                      }),
+                    ),
+                ],
+              ),
               const SizedBox(height: 20),
               LoadingButton(
                 loading: _saving,
@@ -316,6 +310,7 @@ class _AddTravelExpenseScreenState
               name: name,
               notes: notes,
               destinationId: destinationId,
+              planItemIds: _planItemIds.toList(),
             );
       } else {
         await ref.read(travelRepositoryProvider).addTravelExpense(
@@ -327,6 +322,7 @@ class _AddTravelExpenseScreenState
               name: name,
               notes: notes,
               destinationId: destinationId,
+              planItemIds: _planItemIds.toList(),
             );
       }
 

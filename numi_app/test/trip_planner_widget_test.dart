@@ -411,9 +411,18 @@ void main() {
     await tapVisible(tester, find.text('Edit activity'));
     await tester.enterText(
         find.widgetWithText(TextFormField, 'Name'), 'River walk');
+    await tapVisible(tester,
+        find.widgetWithText(DropdownButtonFormField<String>, 'Activity type'));
+    await tester.tap(find.text('Sightseeing').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Payment (optional)'), findsNothing);
     tester.testTextInput.hide();
     await tapVisible(tester, find.text('Save item'));
     expect(find.text('River walk'), findsWidgets);
+    expect(
+        (await tester.runAsync(() => repo.watch(trip.id).first))!
+            .find(extra.id)!['category'],
+        'Sightseeing');
     await tapVisible(tester, find.byTooltip('Item actions'));
     await tapVisible(tester, find.text('Move to another day'));
     await tester.tap(find.text('2').last);
@@ -479,167 +488,6 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
   });
-
-  testWidgets('spending filters separate destination payments from transfers',
-      (tester) async {
-    await tester.runAsync(() async {
-      final tokyo = PlanItem.create('destination').copy(
-          {'title': 'Tokyo', 'date': '2026-10-01', 'endDate': '2026-10-02'});
-      final kyoto = PlanItem.create('destination').copy(
-          {'title': 'Kyoto', 'date': '2026-10-02', 'endDate': '2026-10-03'});
-      await repo.save(trip.id, tokyo);
-      await repo.save(trip.id, kyoto);
-      final hotel = PlanItem.create('booking').copy({
-        'title': 'Kyoto paid hotel',
-        'date': '2026-10-02',
-        'endDate': '2026-10-03',
-        'destinationId': kyoto.id,
-        'amount': '200',
-        'currency': 'SGD',
-        'paymentStatus': 'paid',
-        'paidDate': '2026-09-21'
-      });
-      await repo.save(trip.id, hotel);
-      await repo.save(
-          trip.id,
-          PlanItem.create('booking').copy({
-            'title': 'Intercity train',
-            'category': 'Train',
-            'date': '2026-10-02',
-            'destinationId': tokyo.id,
-            'endDestinationId': kyoto.id,
-            'amount': '50',
-            'currency': 'SGD',
-            'paymentStatus': 'paid',
-            'paidDate': '2026-09-21'
-          }));
-    });
-    await show(tester, const Size(390, 844));
-    await tapVisible(tester, find.byTooltip('View expenses'));
-    await tapVisible(
-        tester,
-        find.widgetWithText(
-            DropdownButtonFormField<String>, 'Show destination'));
-    await tester.tap(find.text('Kyoto').last);
-    await tester.pumpAndSettle();
-    expect(find.text('Kyoto paid hotel'), findsOneWidget);
-    expect(find.text('Intercity train'), findsNothing);
-    await capture(tester, 'destination-spending');
-    await tapVisible(
-        tester,
-        find.widgetWithText(
-            DropdownButtonFormField<String>, 'Show destination'));
-    await tester.tap(find.text('Between destinations').last);
-    await tester.pumpAndSettle();
-    expect(find.text('Intercity train'), findsOneWidget);
-    expect(find.text('Kyoto paid hotel'), findsNothing);
-    expect(tester.takeException(), isNull);
-    await tester.pumpWidget(const SizedBox());
-    await tester.pumpAndSettle();
-  });
-
-  testWidgets(
-      'paid booking appears in expenses and either entry edits the same record',
-      (tester) async {
-    await show(tester, const Size(390, 844));
-    await tapVisible(tester, find.byTooltip('View bookings'));
-    await tapVisible(tester, find.text('Add booking'));
-    await tester.enterText(
-        find.widgetWithText(TextFormField, 'Name'), 'One-entry hotel');
-    tester.testTextInput.hide();
-    await tapVisible(tester, find.text('Stay duration'));
-    await tester.tap(find.byTooltip('Switch to input'));
-    await tester.pumpAndSettle();
-    final rangeFields = find.descendant(
-        of: find.byType(DateRangePickerDialog),
-        matching: find.byType(TextField));
-    await tester.enterText(rangeFields.first, '10/01/2026');
-    await tester.enterText(rangeFields.last, '10/03/2026');
-    await tester.tap(find.text('OK'));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('Check-in 2026-10-01\nCheck-out 2026-10-03'),
-        findsOneWidget);
-    expect(find.textContaining('2 nights'), findsWidgets);
-    await capture(tester, 'stay-duration');
-    await tapVisible(tester, find.text('Payment (optional)'));
-    await tapVisible(tester,
-        find.widgetWithText(TextFormField, 'Amount (optional until paid)'));
-    await tester.enterText(
-        find.widgetWithText(TextFormField, 'Amount (optional until paid)'),
-        '420');
-    tester.testTextInput.hide();
-    await tapVisible(tester, find.widgetWithText(SwitchListTile, 'Paid'));
-    await capture(tester, 'payment-form');
-    await tapVisible(tester, find.text('Save item'));
-    var rows =
-        (await tester.runAsync(() => db.tripDao.getExpensesForTrip(trip.id)))!;
-    expect(rows.length, 1);
-    expect(rows.single.amount, 420);
-    final expenseId = rows.single.id;
-    await tapVisible(tester, find.byTooltip('Close panel'));
-    await tapVisible(tester, find.byTooltip('View expenses'));
-    await tapVisible(tester, find.text('One-entry hotel').last);
-    await tester
-        .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
-    await tester.pumpAndSettle();
-    expect(find.text('Edit booking'), findsOneWidget);
-    await tester.enterText(
-        find.widgetWithText(TextFormField, 'Name'), 'Updated once');
-    tester.testTextInput.hide();
-    await tapVisible(tester, find.text('Save item'));
-    rows =
-        (await tester.runAsync(() => db.tripDao.getExpensesForTrip(trip.id)))!;
-    expect(rows.single.id, expenseId);
-    expect(rows.single.name, 'One-entry hotel');
-    expect(
-        (await tester.runAsync(() => repo.watch(trip.id).first))!
-            .find(rows.single.planItemId!)!
-            .title,
-        'Updated once');
-    expect(tester.takeException(), isNull);
-    await tester.pumpWidget(const SizedBox());
-    await tester.pumpAndSettle();
-  });
-
-  for (final kind in ['booking', 'activity']) {
-    testWidgets(
-        'existing expense can gain $kind details without re-entering its payment',
-        (tester) async {
-      await TravelRepository(db, null, RateRepository(db, null))
-          .addTravelExpense(
-              tripId: trip.id,
-              amount: 90,
-              currency: 'SGD',
-              date: DateTime(2026, 9, 21),
-              category: 'Other',
-              name: 'Museum ticket');
-      final original = (await db.tripDao.getExpensesForTrip(trip.id)).single;
-      await show(tester, const Size(390, 844));
-      await tapVisible(tester, find.byTooltip('View expenses'));
-      await tapVisible(tester, find.text('Museum ticket'));
-      await tapVisible(
-          tester,
-          find
-              .text(kind == 'booking'
-                  ? 'Add booking details'
-                  : 'Add to itinerary')
-              .last);
-      await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 30)));
-      await tester.pumpAndSettle();
-      expect(find.text('New $kind'), findsOneWidget);
-      expect(find.widgetWithText(TextFormField, 'Museum ticket'), findsWidgets);
-      await tapVisible(tester, find.text('Save item'));
-      final rows = (await tester
-          .runAsync(() => db.tripDao.getExpensesForTrip(trip.id)))!;
-      expect(rows.single.id, original.id);
-      expect(rows.single.amount, 90);
-      expect(rows.single.planItemId, isNotNull);
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox());
-      await tester.pumpAndSettle();
-    });
-  }
 
   testWidgets(
       'external link failure keeps the page and offers a working copy fallback',
@@ -733,6 +581,38 @@ void main() {
     expect(find.text('Xiaohongshu'), findsOneWidget);
     await tester.tap(find.text('Save links'));
     await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+  testWidgets(
+      'expense editor selects multiple existing arrangements without adding activities',
+      (tester) async {
+    final plan = (await tester.runAsync(() => repo.watch(trip.id).first))!;
+    final activity = plan.ofKind('activity').first;
+    await tester
+        .runAsync(() => repo.save(trip.id, activity.copy({'title': 'Museum'})));
+    await show(tester, const Size(390, 844));
+    await tab(tester, 'Spending');
+    await tapVisible(tester, find.text('Add expense'));
+    await tester.enterText(find.widgetWithText(TextFormField, 'Amount'), '50');
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Name'), 'Travel pass');
+    tester.testTextInput.hide();
+    await tapVisible(tester, find.text('Linked itinerary'));
+    await tapVisible(tester, find.widgetWithText(CheckboxListTile, 'Museum'));
+    await tapVisible(
+        tester, find.widgetWithText(CheckboxListTile, 'Kyoto riverside hotel'));
+    await capture(tester, 'expense-links');
+    await tapVisible(tester, find.text('Add Expense'));
+    final rows =
+        (await tester.runAsync(() => db.tripDao.getExpensesForTrip(trip.id)))!;
+    expect(rows.length, 1);
+    expect(rows.single.planItemIds, contains(activity.id));
+    expect(rows.single.planItemIds, contains(plan.ofKind('booking').first.id));
+    expect(
+        (await tester.runAsync(() => repo.watch(trip.id).first))!.items.length,
+        plan.items.length);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();

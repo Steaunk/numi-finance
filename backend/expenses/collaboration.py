@@ -13,7 +13,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
 
 from .models import Trip, TripPlan, TripPlanChange, TripInvite
-from .planning import FIELDS, validate_content, reconcile_payments, serialize
+from .planning import FIELDS, validate_content, reconcile_expense_links, serialize
 
 PRIVATE = {'amount', 'currency', 'paymentStatus', 'paidDate', 'expenseClientId', 'expenseCategory'}
 PUBLIC = FIELDS - PRIVATE
@@ -106,8 +106,7 @@ def save_document(trip, content, revision, mutation, actor, *, shared=False, ope
         if previous:
             if previous.request_hash != request_hash:
                 raise PlanConflict('Mutation ID reused with different content')
-            return {'content': previous.content, 'revision': previous.revision,
-                    'payment_ids': serialize(plan)['payment_ids']}
+            return {'content': previous.content, 'revision': previous.revision}
         if choice is not None and (choice not in ('local', 'server') or type(expected_revision) is not int):
             raise ValueError('Conflict resolution needs a choice and expected_revision')
         if choice is not None and plan.revision != expected_revision:
@@ -177,7 +176,7 @@ def save_document(trip, content, revision, mutation, actor, *, shared=False, ope
             content=merged, revision=plan.revision + 1, mutation_id=mutation, updated_at=timezone.now())
         if not changed:
             raise PlanConflict('Another edit arrived. Retry with the latest revision.')
-        reconcile_payments(trip.id, plan.content, merged)
+        reconcile_expense_links(trip.id, plan.content, merged)
         TripPlanChange.objects.create(trip=trip, revision=plan.revision + 1, content=merged,
                                       actor=actor, mutation_id=mutation, request_hash=request_hash)
         plan.refresh_from_db()
