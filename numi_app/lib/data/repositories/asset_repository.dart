@@ -70,6 +70,7 @@ class AssetRepository {
     final snapshots = await _db.accountDao.getAllSnapshots();
     if (snapshots.isEmpty) return [];
 
+    final latestByAccount = <int, double>{};
     final byDate = <String, double>{};
     final accountMap = <int, DbAccount>{};
     final allAccounts = await _db.accountDao.getAll();
@@ -77,6 +78,10 @@ class AssetRepository {
       accountMap[a.id] = a;
     }
 
+    snapshots.sort((a, b) {
+      final byTime = a.snapshotDate.compareTo(b.snapshotDate);
+      return byTime != 0 ? byTime : a.id.compareTo(b.id);
+    });
     for (final snap in snapshots) {
       final account = accountMap[snap.accountId];
       if (account == null || !account.includeInTotal) continue;
@@ -88,7 +93,10 @@ class AssetRepository {
         amountHkd: snap.amountHkd,
         amountSgd: snap.amountSgd,
       );
-      byDate.update(dateKey, (v) => v + amount, ifAbsent: () => amount);
+      // Snapshots are balances, not transactions. Keep the last balance
+      // for each account and carry unchanged accounts into later dates.
+      latestByAccount[snap.accountId] = amount;
+      byDate[dateKey] = latestByAccount.values.fold(0.0, (a, b) => a + b);
     }
 
     final sorted = byDate.entries.toList()
@@ -100,6 +108,12 @@ class AssetRepository {
     return _db.accountDao.watchSnapshotsForAccount(accountId).map(
           (rows) => rows.map(_snapshotToModel).toList(),
         );
+  }
+
+  Future<void> deleteLocalSnapshot(int accountId, int snapshotId) async {
+    await (_db.delete(_db.balanceSnapshots)
+          ..where((s) => s.id.equals(snapshotId) & s.accountId.equals(accountId)))
+        .go();
   }
 
   Future<void> addAccount({

@@ -5,11 +5,45 @@ import '../../../providers/providers.dart';
 import '../../../utils/currency_utils.dart';
 import '../../../utils/date_utils.dart';
 import '../../../config/theme.dart';
+import '../../../models/balance_snapshot.dart';
 import 'update_account_screen.dart';
 
 class AccountHistoryScreen extends ConsumerWidget {
   final int accountId;
   const AccountHistoryScreen({super.key, required this.accountId});
+
+  Future<void> _deleteSnapshot(
+      BuildContext context, WidgetRef ref, BalanceSnapshot snapshot) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete local history entry?'),
+        content: Text(
+          '${AppDateUtils.displayDate(snapshot.snapshotDate)} · '
+          'Balance: ${snapshot.balance.toStringAsFixed(2)}\n\n'
+          'Remove this entry from this device. Your current account balance '
+          'and server history will stay unchanged.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context, true),
+              child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    try {
+      await ref.read(assetRepositoryProvider)
+          .deleteLocalSnapshot(accountId, snapshot.id);
+      ref.invalidate(netWorthTrendProvider);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not delete entry: $e')));
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -141,6 +175,14 @@ class AccountHistoryScreen extends ConsumerWidget {
                       amountSgd: snap.amountSgd,
                     );
                     return ListTile(
+                      leading: PopupMenuButton<String>(
+                        tooltip: 'History entry actions',
+                        onSelected: (_) => _deleteSnapshot(context, ref, snap),
+                        itemBuilder: (_) => const [
+                          PopupMenuItem(value: 'delete',
+                              child: Text('Delete local entry')),
+                        ],
+                      ),
                       title: Text(
                         AppDateUtils.displayDate(snap.snapshotDate),
                       ),
