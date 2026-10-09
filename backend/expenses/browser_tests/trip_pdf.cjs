@@ -1,0 +1,23 @@
+const {chromium}=require('playwright');const assert=require('node:assert/strict');
+(async()=>{
+ const base=process.env.NUMI_TEST_URL||'http://127.0.0.1:8771';assert.ok(['127.0.0.1','localhost'].includes(new URL(base).hostname));
+ const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH});
+ const ctx=await browser.newContext({viewport:{width:390,height:844}}),page=await ctx.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const trip=await(await ctx.request.post(base+'/expenses/api/travel/trips/add/',{data:{destination:'PDF check',start_date:'2026-10-10',end_date:'2026-10-12'}})).json();
+ const api=base+`/expenses/api/travel/trips/${trip.id}/`;
+ await page.goto(base+`/expenses/travel/trips/${trip.id}/plan/`);await page.getByRole('button',{name:'Import PDF',exact:true}).waitFor();
+ const chooser=page.waitForEvent('filechooser');await page.getByRole('button',{name:'Import PDF',exact:true}).click();await(await chooser).setFiles('/tmp/numi-ticket-fixture.pdf');
+ await page.getByRole('button',{name:'Review item 1'}).waitFor();
+ assert.equal((await(await ctx.request.get(api+'plan/')).json()).content.items.length,0);
+ await page.getByRole('button',{name:'Review item 1'}).click();
+ assert.equal(await page.locator('dialog [name=title]').inputValue(),'YAYOI KUSAMA MUSEUM');
+ assert.equal(await page.locator('dialog [name=date]').inputValue(),'2026-10-10');
+ assert.equal(await page.locator('dialog [name=time]').inputValue(),'11:00');
+ await page.locator('dialog [type=submit]').click();await page.waitForFunction(()=>!document.querySelector('dialog'));
+ const plan=await(await ctx.request.get(api+'plan/')).json(),item=plan.content.items[0];assert.ok(item.documentId);assert.equal(item.title,'YAYOI KUSAMA MUSEUM');
+ assert.equal(await page.getByRole('link',{name:/PDF ·.*pdf/}).count(),1);
+ const original=await ctx.request.get(api+'documents/'+item.documentId+'/');assert.equal(original.status(),200);assert.equal((await original.body()).subarray(0,5).toString(),'%PDF-');
+ assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+ await page.screenshot({path:'/tmp/numi-pdf-phone.png',fullPage:true});assert.deepEqual(errors,[]);
+ console.log('PDF UI passed: preview without writes, reviewed fields, original attachment download, phone layout.');await browser.close();
+})().catch(e=>{console.error(e);process.exit(1)});

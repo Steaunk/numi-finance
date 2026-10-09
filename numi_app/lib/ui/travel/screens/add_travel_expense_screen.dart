@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../config/constants.dart';
 import '../../../models/travel_expense.dart';
+import '../../../models/trip_plan.dart';
 import '../../../providers/providers.dart';
 import '../../../utils/date_utils.dart';
 import '../../common/widgets/loading_button.dart';
@@ -14,8 +15,7 @@ class AddTravelExpenseScreen extends ConsumerStatefulWidget {
 
   /// Pass an existing expense to open in edit mode.
   final TravelExpense? expense;
-  final String? initialName, initialCategory, plannerEntryId;
-  final DateTime? initialDate;
+  final String initialDestination;
 
   const AddTravelExpenseScreen({
     super.key,
@@ -23,10 +23,7 @@ class AddTravelExpenseScreen extends ConsumerStatefulWidget {
     required this.tripStartDate,
     required this.tripEndDate,
     this.expense,
-    this.initialName,
-    this.initialCategory,
-    this.initialDate,
-    this.plannerEntryId,
+    this.initialDestination = '',
   });
 
   @override
@@ -44,7 +41,8 @@ class _AddTravelExpenseScreenState
   late String _category;
   late DateTime _date;
   bool _saving = false;
-  late String _plannerEntryId;
+  late String _destinationId;
+  late Set<String> _planItemIds;
 
   bool get _isEditing => widget.expense != null;
 
@@ -54,15 +52,13 @@ class _AddTravelExpenseScreenState
     final e = widget.expense;
     _amountController =
         TextEditingController(text: e != null ? e.amount.toString() : '');
-    _nameController =
-        TextEditingController(text: e?.name ?? widget.initialName ?? '');
+    _nameController = TextEditingController(text: e?.name ?? '');
     _notesController = TextEditingController(text: e?.notes ?? '');
     _currency = e?.currency ?? AppConstants.defaultCurrency;
-    _category = e?.category ??
-        widget.initialCategory ??
-        AppConstants.travelCategories.first;
-    _date = e?.date ?? widget.initialDate ?? widget.tripStartDate;
-    _plannerEntryId = e?.plannerEntryId ?? widget.plannerEntryId ?? '';
+    _category = e?.category ?? 'Other';
+    _date = e?.date ?? DateTime.now();
+    _destinationId = e?.destinationId ?? widget.initialDestination;
+    _planItemIds = {...?e?.planItemIds};
   }
 
   @override
@@ -75,8 +71,11 @@ class _AddTravelExpenseScreenState
 
   @override
   Widget build(BuildContext context) {
-    final entries =
-        ref.watch(tripPlanProvider(widget.tripId)).value?.plan.entries ?? [];
+    final plan =
+        ref.watch(tripPlanProvider(widget.tripId)).valueOrNull ?? TripPlan();
+    final destination = plan.destinations.any((d) => d.id == _destinationId)
+        ? _destinationId
+        : '';
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -192,17 +191,37 @@ class _AddTravelExpenseScreenState
                 onChanged: (v) => setState(() => _category = v!),
               ),
               const SizedBox(height: 12),
+              if (plan.destinations.isNotEmpty) ...[
+                DropdownButtonFormField<String>(
+                  key: ValueKey('expense-city-$destination'),
+                  initialValue: destination,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Destination'),
+                  items: [
+                    const DropdownMenuItem(
+                      value: '',
+                      child: Text('Unassigned'),
+                    ),
+                    ...plan.destinations.map(
+                      (d) =>
+                          DropdownMenuItem(value: d.id, child: Text(d.title)),
+                    ),
+                  ],
+                  onChanged: (v) => setState(() => _destinationId = v!),
+                ),
+                const SizedBox(height: 12),
+              ],
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Date'),
+                title: const Text('Payment date'),
                 subtitle: Text(AppDateUtils.displayDate(_date)),
                 trailing: const Icon(Icons.calendar_today),
                 onTap: () async {
                   final picked = await showDatePicker(
                     context: context,
                     initialDate: _date,
-                    firstDate: DateTime(1900),
-                    lastDate: DateTime(2200),
+                    firstDate: DateTime(2000),
+                    lastDate: DateTime(2100),
                   );
                   if (picked != null) setState(() => _date = picked);
                 },
@@ -220,24 +239,40 @@ class _AddTravelExpenseScreenState
                 maxLines: 2,
               ),
               const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: _plannerEntryId,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                    labelText: 'Linked trip item (optional)'),
-                items: [
-                  const DropdownMenuItem(
-                      value: '', child: Text('No linked item')),
-                  if (_plannerEntryId.isNotEmpty &&
-                      !entries.any((e) => e.id == _plannerEntryId))
-                    DropdownMenuItem(
-                        value: _plannerEntryId,
-                        child: const Text('Previously linked item')),
-                  ...entries.map((e) => DropdownMenuItem(
-                      value: e.id,
-                      child: Text(e.title, overflow: TextOverflow.ellipsis))),
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                title: const Text('Linked itinerary'),
+                subtitle:
+                    Text('${_planItemIds.length} selected · choose any number'),
+                initiallyExpanded: _planItemIds.isNotEmpty,
+                children: [
+                  if (!plan.items
+                      .any((i) => i.kind == 'activity' || i.kind == 'booking'))
+                    const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Text(
+                            'Add activities or bookings in your itinerary first.')),
+                  for (final item in plan.items.where((i) =>
+                      (i.kind == 'activity' || i.kind == 'booking') &&
+                      i['category'] != 'No accommodation needed'))
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(plan.itemTitle(item)),
+                      subtitle: Text([
+                        item['date'].isEmpty ? 'Anytime' : item['date'],
+                        item['time'],
+                        item['category']
+                      ].where((v) => v.isNotEmpty).join(' · ')),
+                      value: _planItemIds.contains(item.id),
+                      onChanged: (selected) => setState(() {
+                        if (selected == true) {
+                          _planItemIds.add(item.id);
+                        } else {
+                          _planItemIds.remove(item.id);
+                        }
+                      }),
+                    ),
                 ],
-                onChanged: (v) => setState(() => _plannerEntryId = v!),
               ),
               const SizedBox(height: 20),
               LoadingButton(
@@ -252,13 +287,18 @@ class _AddTravelExpenseScreenState
     );
   }
 
-  Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
+  Future<bool> _save({bool close = true}) async {
+    if (!_formKey.currentState!.validate()) return false;
     setState(() => _saving = true);
     try {
       final amount = double.parse(_amountController.text);
       final name = _nameController.text.trim();
       final notes = _notesController.text.trim();
+      final plan =
+          ref.read(tripPlanProvider(widget.tripId)).valueOrNull ?? TripPlan();
+      final destinationId = plan.destinations.any((d) => d.id == _destinationId)
+          ? _destinationId
+          : '';
 
       if (_isEditing) {
         await ref.read(travelRepositoryProvider).updateTravelExpense(
@@ -269,7 +309,8 @@ class _AddTravelExpenseScreenState
               category: _category,
               name: name,
               notes: notes,
-              plannerEntryId: _plannerEntryId,
+              destinationId: destinationId,
+              planItemIds: _planItemIds.toList(),
             );
       } else {
         await ref.read(travelRepositoryProvider).addTravelExpense(
@@ -280,22 +321,25 @@ class _AddTravelExpenseScreenState
               category: _category,
               name: name,
               notes: notes,
-              plannerEntryId: _plannerEntryId,
+              destinationId: destinationId,
+              planItemIds: _planItemIds.toList(),
             );
       }
 
-      if (mounted) {
-        Navigator.pop(context);
+      if (mounted && close) {
+        Navigator.pop(context, destinationId);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text(_isEditing ? 'Expense updated' : 'Expense added')),
         );
       }
+      return true;
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('Error: $e')));
       }
+      return false;
     } finally {
       if (mounted) setState(() => _saving = false);
     }

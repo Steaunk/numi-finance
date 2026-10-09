@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Travel Expenses</title>
+    <title>Travel Planner · Numi</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -92,7 +92,7 @@
 <body>
     <header>
         <div class="header-left">
-            <h1>Travel Expenses</h1>
+            <h1>Travel Planner</h1>
             <div style="display:flex;gap:12px;">
                 <a href="/expenses/" class="nav-link">Expenses</a>
                 <a href="/assets/" class="nav-link">Assets</a>
@@ -126,7 +126,7 @@
         <form onsubmit="handleAddTrip(event)">
             <div class="form-grid">
                 <div class="form-group">
-                    <label>Destination *</label>
+                    <label>Trip name *</label>
                     <input type="text" id="tripDest" required placeholder="e.g. Japan">
                 </div>
                 <div class="form-group">
@@ -153,6 +153,7 @@
 
     <footer style="text-align:center;color:#aaa;font-size:0.75rem;padding:20px 0;">&copy; Mar 2026 Steaunk</footer>
 
+    {% include 'expenses/planner.html' %}
     <script>
         let displayCurrency = localStorage.getItem('displayCurrency') || 'SGD';
         let expandedTripId = null;
@@ -194,7 +195,7 @@
 
         function showMessage(text, type) {
             const area = document.getElementById('messageArea');
-            area.innerHTML = `<div class="message message-${type}">${text}</div>`;
+            area.innerHTML = `<div class="message message-${type}">${esc(text)}</div>`;
             setTimeout(() => { area.innerHTML = ''; }, 4000);
         }
 
@@ -250,14 +251,14 @@
                     <div class="trip-header" onclick="toggleTrip(${trip.id})">
                         <div>
                             <div class="trip-dest">${esc(trip.destination)}</div>
-                            <div class="trip-dates">${trip.start_date} ~ ${trip.end_date}${trip.notes ? ' &middot; ' + esc(trip.notes) : ''}</div>
+                            <div class="trip-dates">${esc(trip.start_date)} ~ ${esc(trip.end_date)} · ${TravelPlanner.phase(trip)}${trip.notes ? ' &middot; ' + esc(trip.notes) : ''}</div>
                         </div>
                         <div style="display:flex;align-items:center;gap:10px;">
                             <div style="text-align:right;">
                                 <div class="trip-total">${trip.total_converted.toLocaleString(undefined, {minimumFractionDigits: 2})} ${currency}</div>
                                 <div class="trip-count">${trip.expense_count} expense${trip.expense_count !== 1 ? 's' : ''}</div>
                             </div>
-                            <button class="btn btn-danger" onclick="event.stopPropagation(); deleteTrip(${trip.id}, '${esc(trip.destination)}')">Del</button>
+                            <button class="btn btn-danger" onclick="event.stopPropagation(); deleteTrip(${trip.id})">Del</button>
                         </div>
                     </div>
                     ${isExpanded ? `<div class="trip-detail" id="tripDetail_${trip.id}"><p style="color:#999;">Loading...</p></div>` : ''}
@@ -294,10 +295,11 @@
         }
 
         function renderTripDetail(tripId, data) {
-            const el = document.getElementById(`tripDetail_${tripId}`);
-            if (!el) return;
+            const container = document.getElementById(`tripDetail_${tripId}`);
+            if (!container) return;
+            const el = TravelPlanner.mount(container, data.trip, data.expenses, data.display_currency);
 
-            let html = '';
+            let html = '<div data-expense-destinations style="margin-bottom:16px"></div>';
 
             // Expense table
             if (data.expenses.length > 0) {
@@ -313,7 +315,7 @@
                         const catOpts = TRAVEL_CATEGORIES.map(c =>
                             `<option value="${c}" ${c === exp.category ? 'selected' : ''}>${c}</option>`
                         ).join('');
-                        html += `<tr id="expRow_${exp.id}" class="editing-row"
+                        html += `<tr id="expRow_${exp.id}" data-expense-id="${exp.id}" class="editing-row"
                             onfocusout="onExpRowFocusOut(event, ${tripId}, ${exp.id})"
                             onkeydown="if(event.key==='Escape'){editingExpenseId=null;editingTripId=null;loadTripDetail(${tripId});}">
                             <td><input type="date" id="editExpDate_${exp.id}" value="${exp.date}" style="width:120px;"></td>
@@ -328,9 +330,9 @@
                             <td><button class="btn btn-danger" onclick="event.stopPropagation(); deleteExpense(${tripId}, ${exp.id})">Del</button></td>
                         </tr>`;
                     } else {
-                        html += `<tr class="exp-row-clickable" onclick="startEditExpense(${tripId}, ${exp.id})">
+                        html += `<tr data-expense-id="${exp.id}" class="exp-row-clickable" onclick="startEditExpense(${tripId}, ${exp.id})">
                             <td>${exp.date}</td>
-                            <td>${esc(exp.name)}</td>
+                            <td>${esc(exp.name)}<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); TravelPlanner.linkExpense(${tripId}, ${exp.id})">${(exp.plan_item_ids||[]).length ? exp.plan_item_ids.length+' linked · Edit links' : 'Link itinerary'}</button></td>
                             <td>${esc(exp.category)}</td>
                             <td style="text-align:right;">${exp.amount.toLocaleString(undefined, {minimumFractionDigits: 2})} ${exp.currency}</td>
                             <td style="text-align:right;">${exp.converted_amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
@@ -342,7 +344,7 @@
                 html += `<tr class="total-row">
                     <td colspan="3">Total</td>
                     <td></td>
-                    <td style="text-align:right;">${data.total_converted.toLocaleString(undefined, {minimumFractionDigits: 2})} ${data.display_currency}</td>
+                    <td data-expense-total style="text-align:right;">${data.total_converted.toLocaleString(undefined, {minimumFractionDigits: 2})} ${data.display_currency}</td>
                     <td class="hide-mobile"></td><td></td>
                 </tr></tbody></table>`;
             } else {
@@ -391,6 +393,7 @@
             </div>`;
 
             el.innerHTML = html;
+            TravelPlanner.refreshExpenses(tripId);
 
             // Focus name input when entering edit mode
             if (editingExpenseId) {
@@ -399,7 +402,7 @@
             }
 
             // Render pie chart
-            if (data.expenses.length > 0 && data.category_totals) {
+            if (typeof Chart !== 'undefined' && data.expenses.length > 0 && data.category_totals) {
                 renderPieChart(tripId, data.category_totals, data.display_currency);
             }
         }
@@ -553,13 +556,15 @@
             loadTrips();
         }
 
-        async function deleteTrip(id, name) {
-            if (!confirm(`Delete trip "${name}" and all its expenses?`)) return;
+        async function deleteTrip(id) {
+            if (!confirm('Delete this trip, its plan, bookings, checklists and expenses?')) return;
             try {
-                await fetch(`/expenses/api/travel/trips/${id}/delete/`, {
+                const response = await fetch(`/expenses/api/travel/trips/${id}/delete/`, {
                     method: 'DELETE',
                     headers: { 'X-CSRFToken': getCsrf() },
                 });
+                if (!response.ok) throw new Error('Server could not delete this trip.');
+                TravelPlanner.forget(id);
                 if (expandedTripId === id) expandedTripId = null;
                 if (pieCharts[id]) { pieCharts[id].destroy(); delete pieCharts[id]; }
                 loadTrips();
@@ -589,7 +594,7 @@
         function esc(str) {
             const d = document.createElement('div');
             d.textContent = str || '';
-            return d.innerHTML;
+            return d.innerHTML.replaceAll('"', '&quot;').replaceAll("'", '&#39;');
         }
     </script>
 </body>

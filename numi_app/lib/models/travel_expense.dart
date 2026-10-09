@@ -1,7 +1,9 @@
 class TravelExpense {
-  final String plannerEntryId;
   final int id;
   final int? remoteId;
+  final String? clientId;
+  final List<String> planItemIds;
+  final String destinationId;
   final int tripId;
   final int? tripRemoteId;
   final double amount;
@@ -19,9 +21,11 @@ class TravelExpense {
 
   const TravelExpense({
     required this.id,
-    this.plannerEntryId = '',
     this.remoteId,
     required this.tripId,
+    this.clientId,
+    this.planItemIds = const [],
+    this.destinationId = '',
     this.tripRemoteId,
     required this.amount,
     required this.currency,

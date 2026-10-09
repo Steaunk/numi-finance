@@ -1,270 +1,456 @@
 import 'dart:convert';
 import 'dart:math';
 
-String newTravelId() {
+String newPlanId() {
   final random = Random.secure();
   return List.generate(
       16, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
 }
 
+const placeCategories = [
+  'Accommodation',
+  'Sightseeing',
+  'Restaurant',
+  'Cafe',
+  'Shopping',
+  'Park',
+  'Practical',
+  'Other'
+];
+const bookingCategories = [
+  'Accommodation',
+  'Flight',
+  'Train',
+  'Bus',
+  'Car rental',
+  'Reservation',
+  'No accommodation needed'
+];
+const taskCategories = ['Preparation', 'Packing', 'Shopping'];
+const planPriorities = ['Must go', 'If nearby', 'Nice to have'];
+const planStatuses = [
+  'planned',
+  'confirmed',
+  'completed',
+  'skipped',
+  'cancelled'
+];
+const linkPurposes = ['Map', 'Website', 'Booking', 'Guide', 'Other'];
+
+class PlanLink {
+  final String purpose;
+  final String label;
+  final String url;
+  const PlanLink({this.purpose = 'Other', this.label = '', required this.url});
+  factory PlanLink.fromJson(Map<String, dynamic> json) => PlanLink(
+      purpose: json['purpose'] as String? ?? 'Other',
+      label: json['label'] as String? ?? '',
+      url: json['url'] as String);
+  Map<String, String> toJson() =>
+      {'purpose': purpose, 'label': label, 'url': url};
+  String get platform => linkPlatform(url);
+  String get displayName => label.isEmpty ? platform : label;
+}
+
+class PlanItem {
+  final Map<String, String> fields;
+  final List<PlanLink> links;
+  final List<String> participantIds;
+  PlanItem(Map<String, String> fields,
+      {List<PlanLink> links = const [], List<String> participantIds = const []})
+      : fields = Map.unmodifiable(fields),
+        links = List.unmodifiable(links),
+        participantIds = List.unmodifiable(participantIds);
+  String operator [](String key) => fields[key] ?? '';
+  String get id => this['id'];
+  String get kind => this['kind'];
+  String get title => this['title'];
+  bool get cancelled =>
+      this['status'] == 'cancelled' || this['status'] == 'skipped';
+  bool get isStay => kind == 'booking' && this['category'] == 'Accommodation';
+  int? get stayNights {
+    if (!isStay) return null;
+    final start = DateTime.tryParse(this['date']);
+    final end = DateTime.tryParse(this['endDate']);
+    if (start == null || end == null) return null;
+    final nights = DateTime.utc(end.year, end.month, end.day)
+        .difference(DateTime.utc(start.year, start.month, start.day))
+        .inDays;
+    return nights > 0 ? nights : null;
+  }
+
+  String get stayDuration => stayNights == null
+      ? ''
+      : '${stayNights!} ${stayNights == 1 ? 'night' : 'nights'}';
+  PlanItem copy(Map<String, String> changes,
+          {List<PlanLink>? links, List<String>? participantIds}) =>
+      PlanItem({...fields, ...changes},
+          links: links ?? this.links,
+          participantIds: participantIds ?? this.participantIds);
+  Map<String, dynamic> toJson() => {
+        ...fields,
+        'links': links.map((l) => l.toJson()).toList(),
+        if (participantIds.isNotEmpty) 'participantIds': participantIds
+      };
+  factory PlanItem.fromJson(Map<String, dynamic> json) => PlanItem({
+        for (final e in json.entries)
+          if (e.key != 'links' && e.key != 'participantIds')
+            e.key: e.value as String
+      },
+          participantIds:
+              (json['participantIds'] as List? ?? []).cast<String>(),
+          links: (json['links'] as List? ?? [])
+              .map(
+                  (l) => PlanLink.fromJson(Map<String, dynamic>.from(l as Map)))
+              .toList());
+  factory PlanItem.create(String kind) => PlanItem({
+        'id': newPlanId(),
+        'kind': kind,
+        'title': '',
+        'status': kind == 'task' ? 'todo' : 'planned',
+        'category': switch (kind) {
+          'place' => 'Sightseeing',
+          'booking' => 'Accommodation',
+          'task' => 'Preparation',
+          'destination' => 'Destination',
+          _ => 'Other'
+        },
+        'priority': 'Nice to have',
+      });
+}
+
+class TripPlan {
+  final List<PlanItem> items;
+  final bool pending;
+  final String error;
+  TripPlan(
+      {List<PlanItem> items = const [], this.pending = false, this.error = ''})
+      : items = List.unmodifiable(items);
+  factory TripPlan.decode(String raw,
+      {bool pending = false, String error = ''}) {
+    final json = jsonDecode(raw) as Map<String, dynamic>;
+    return TripPlan(
+        items: (json['items'] as List? ?? [])
+            .map((i) => PlanItem.fromJson(Map<String, dynamic>.from(i as Map)))
+            .toList(),
+        pending: pending,
+        error: error);
+  }
+  String encode() =>
+      jsonEncode({'items': items.map((i) => i.toJson()).toList()});
+  List<PlanItem> ofKind(String kind) =>
+      items.where((i) => i.kind == kind).toList();
+  PlanItem? find(String id) {
+    for (final item in items) {
+      if (item.id == id) return item;
+    }
+    return null;
+  }
+
+  bool isScheduled(String id) => ofKind('activity')
+      .any((i) => i['placeId'] == id && i['date'].isNotEmpty && !i.cancelled);
+  String itemTitle(PlanItem item) => item.title.isNotEmpty
+      ? item.title
+      : find(item['placeId'])?.title ?? 'Activity';
+  List<PlanItem> get people => ofKind('person');
+  List<PlanItem> get activePeople => people.where((p) => !p.cancelled).toList();
+  bool matchesPerson(PlanItem item, String personId) =>
+      personId.isEmpty ||
+      (item.participantIds.isEmpty
+          ? find(personId)?.cancelled != true
+          : item.participantIds.contains(personId));
+  String participantsLabel(PlanItem item) => item.participantIds.isEmpty
+      ? 'Everyone'
+      : item.participantIds
+          .map((id) => find(id)?.title ?? 'Archived person')
+          .join(', ');
+  List<PlanItem> get destinations => ofKind('destination');
+  List<PlanItem> destinationsOn(String day) => destinations
+      .where((d) =>
+          !d.cancelled &&
+          d['date'].compareTo(day) <= 0 &&
+          d['endDate'].compareTo(day) >= 0)
+      .toList();
+  String destinationIdFor(PlanItem item) => item['placeId'].isNotEmpty
+      ? (find(item['placeId'])?['destinationId'] ?? '')
+      : item['destinationId'];
+  String destinationLabel(PlanItem item) {
+    final from = find(destinationIdFor(item))?.title ?? '';
+    final to = find(item['endDestinationId'])?.title ?? '';
+    return to.isNotEmpty && item['endDestinationId'] != destinationIdFor(item)
+        ? '${from.isEmpty ? 'Outside trip' : from} → $to'
+        : from;
+  }
+
+  bool matchesDestination(PlanItem item, String id) =>
+      id.isEmpty ||
+      (id == '__unassigned__'
+          ? destinationIdFor(item).isEmpty && item['endDestinationId'].isEmpty
+          : id == '__transfers__'
+              ? item['endDestinationId'].isNotEmpty &&
+                  item['endDestinationId'] != destinationIdFor(item)
+              : destinationIdFor(item) == id || item['endDestinationId'] == id);
+  String expenseDestination(List<String> itemIds, {String destinationId = ''}) {
+    if (find(destinationId)?.kind == 'destination') return destinationId;
+    final groups = <String>{};
+    for (final id in itemIds) {
+      final item = find(id);
+      if (item == null) continue;
+      final from = destinationIdFor(item), to = item['endDestinationId'];
+      groups.add(to.isNotEmpty && to != from ? '__transfers__' : from);
+    }
+    return groups.length > 1 ? '__transfers__' : groups.firstOrNull ?? '';
+  }
+
+  String expenseDestinationLabel(String id) => id == '__transfers__'
+      ? 'Between destinations'
+      : find(id)?.title ?? 'Unassigned';
+  List<PlanItem> timelineOn(String day,
+      {String destination = '', String person = ''}) {
+    final entries = items
+        .where(
+          (i) =>
+              matchesDestination(i, destination) &&
+              matchesPerson(i, person) &&
+              ((i.kind == 'activity' && i['date'] == day) ||
+                  (day.isEmpty && i.kind == 'booking' && i['date'].isEmpty) ||
+                  (day.isNotEmpty &&
+                      i.kind == 'booking' &&
+                      i['category'] != 'No accommodation needed' &&
+                      (i['category'] == 'Accommodation'
+                          ? i['endDate'] == day
+                          : i['date'] == day || i['endDate'] == day))),
+        )
+        .toList();
+    final order = {
+      for (var index = 0; index < entries.length; index++)
+        entries[index].id: index,
+    };
+    entries.sort((a, b) {
+      final at = timelineTime(a, day), bt = timelineTime(b, day);
+      final result = (at.isEmpty ? '99:99' : at).compareTo(
+        bt.isEmpty ? '99:99' : bt,
+      );
+      return result == 0 ? order[a.id]!.compareTo(order[b.id]!) : result;
+    });
+    return entries;
+  }
+
+  String timelineTime(PlanItem item, String day) =>
+      item.kind == 'booking' && item['endDate'] == day && item['date'] != day
+          ? item['endTime']
+          : item['time'];
+
+  bool hasStay(String day, {String person = ''}) => ofKind('booking').any((i) =>
+      !i.cancelled &&
+      matchesPerson(i, person) &&
+      ((i['category'] == 'No accommodation needed' && i['date'] == day) ||
+          (i['category'] == 'Accommodation' &&
+              i['date'].isNotEmpty &&
+              i['endDate'].isNotEmpty &&
+              i['date'].compareTo(day) <= 0 &&
+              i['endDate'].compareTo(day) > 0)));
+  List<PlanItem> bookingsOn(String day) => ofKind('booking')
+      .where((i) =>
+          i['date'] == day ||
+          i['endDate'] == day ||
+          (i['category'] == 'Accommodation' &&
+              i['date'].isNotEmpty &&
+              i['endDate'].isNotEmpty &&
+              i['date'].compareTo(day) < 0 &&
+              i['endDate'].compareTo(day) > 0))
+      .toList();
+}
+
 String planDate(DateTime date) =>
     '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-
-List<String> tripDates(DateTime start, DateTime end) {
-  final result = <String>[];
-  // UTC calendar arithmetic avoids skipped/repeated days at DST boundaries.
-  var date = DateTime.utc(start.year, start.month, start.day);
-  final last = DateTime.utc(end.year, end.month, end.day);
-  while (!date.isAfter(last)) {
-    result.add(planDate(date));
-    date = date.add(const Duration(days: 1));
+List<DateTime> tripDays(DateTime start, DateTime end) {
+  final result = <DateTime>[];
+  for (var day = DateTime(start.year, start.month, start.day);
+      !day.isAfter(DateTime(end.year, end.month, end.day));
+      day = DateTime(day.year, day.month, day.day + 1)) {
+    result.add(day);
   }
   return result;
 }
 
-class PlanPlace {
-  final String id, title, address, notes, url;
-  final double? lat, lng;
-  const PlanPlace(
-      {required this.id,
-      required this.title,
-      this.address = '',
-      this.notes = '',
-      this.url = '',
-      this.lat,
-      this.lng});
-  factory PlanPlace.fromJson(Map<String, dynamic> j) => PlanPlace(
-      id: j['id'],
-      title: j['title'],
-      address: j['address'] ?? '',
-      notes: j['notes'] ?? '',
-      url: j['url'] ?? '',
-      lat: (j['lat'] as num?)?.toDouble(),
-      lng: (j['lng'] as num?)?.toDouble());
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'address': address,
-        'notes': notes,
-        'url': url,
-        'lat': lat,
-        'lng': lng
-      };
-  bool get hasCoordinates => lat != null && lng != null;
+String tripPhase(DateTime start, DateTime end, DateTime now) {
+  final today = DateTime(now.year, now.month, now.day);
+  if (today.isBefore(DateTime(start.year, start.month, start.day))) {
+    return 'Upcoming';
+  }
+  if (today.isAfter(DateTime(end.year, end.month, end.day))) return 'Completed';
+  return 'Travelling';
 }
 
-class PlanEntry {
-  static const kinds = {
-    'activity': 'Activity',
-    'food': 'Food',
-    'transport': 'Transport',
-    'note': 'Note',
-    'hotel': 'Hotel',
-    'flight': 'Flight',
-    'train': 'Train',
-    'booking': 'Other booking'
+Uri? safeExternalLink(String value) {
+  try {
+    final uri = Uri.tryParse(value.trim());
+    if (uri == null ||
+        !{'https', 'http'}.contains(uri.scheme) ||
+        uri.host.isEmpty ||
+        uri.port < 1 ||
+        uri.port > 65535 ||
+        uri.userInfo.isNotEmpty ||
+        RegExp(r'\s').hasMatch(value.trim())) {
+      return null;
+    }
+    return uri;
+  } on FormatException {
+    return null;
+  }
+}
+
+List<String> extractPlanLinks(String input) =>
+    RegExp(r'''https?://[^\s<>"“”]+''', caseSensitive: false)
+        .allMatches(input)
+        .map((m) => m.group(0)!.replaceAll(RegExp(r'[.,;!，。；！、）)\]】]+$'), ''))
+        .where((s) => safeExternalLink(s) != null)
+        .toSet()
+        .toList();
+Uri mapSearchLink(String title, String address) => Uri.https(
+    'www.google.com',
+    '/maps/search/',
+    {'api': '1', 'query': address.trim().isEmpty ? title : '$title $address'});
+Uri baiduMapSearchLink(String title, String address, String destination) =>
+    Uri.https('api.map.baidu.com', '/place/search', {
+      'query':
+          [title.trim(), address.trim()].where((v) => v.isNotEmpty).join(' '),
+      'region': destination.trim().isEmpty ? '全国' : destination.trim(),
+      'output': 'html',
+      'src': 'webapp.steaunk.numi',
+    });
+String linkPlatform(String url) {
+  final host = safeExternalLink(url)?.host.toLowerCase() ?? '';
+  const platforms = {
+    'google.com': 'Google Maps',
+    'maps.app.goo.gl': 'Google Maps',
+    'goo.gl': 'Google Maps',
+    'g.co': 'Google Maps',
+    'google.co.jp': 'Google Maps',
+    'google.co.uk': 'Google Maps',
+    'google.com.sg': 'Google Maps',
+    'google.com.hk': 'Google Maps',
+    'amap.com': 'Amap',
+    'gaode.com': 'Amap',
+    'baidu.com': 'Baidu Maps',
+    'booking.com': 'Booking.com',
+    'agoda.com': 'Agoda',
+    'airbnb.com': 'Airbnb',
+    'airbnb.co.uk': 'Airbnb',
+    'airbnb.com.sg': 'Airbnb',
+    'airbnb.com.hk': 'Airbnb',
+    'airbnb.jp': 'Airbnb',
+    'airbnb.cn': 'Airbnb',
+    'abnb.me': 'Airbnb',
+    'trip.com.hk': 'Trip.com',
+    'trip.com': 'Trip.com',
+    'ctrip.com': 'Ctrip',
+    'klook.com': 'Klook',
+    'kkday.com': 'KKday',
+    'getyourguide.com': 'GetYourGuide',
+    'xiaohongshu.com': 'Xiaohongshu',
+    'xhslink.com': 'Xiaohongshu',
+    'instagram.com': 'Instagram',
+    'tripadvisor.com': 'Tripadvisor',
   };
-  final String id,
-      title,
-      kind,
-      date,
-      time,
-      endDate,
-      endTime,
-      placeId,
-      notes,
-      status,
-      confirmation,
-      timezone,
-      endTimezone,
-      url;
-  const PlanEntry(
-      {required this.id,
-      required this.title,
-      this.kind = 'activity',
-      this.date = '',
-      this.time = '',
-      this.endDate = '',
-      this.endTime = '',
-      this.placeId = '',
-      this.notes = '',
-      this.status = 'pending',
-      this.confirmation = '',
-      this.timezone = '',
-      this.endTimezone = '',
-      this.url = ''});
-  bool get isBooking =>
-      const ['hotel', 'flight', 'train', 'booking'].contains(kind);
-  bool occursOn(String day) =>
-      date == day ||
-      (date.isNotEmpty &&
-          endDate.isNotEmpty &&
-          day.compareTo(date) >= 0 &&
-          day.compareTo(endDate) <= 0);
-  String get category => switch (kind) {
-        'hotel' => 'Accommodation',
-        'flight' || 'train' || 'transport' => 'Transportation',
-        'food' => 'Food & Drinks',
-        'activity' => 'Sightseeing',
-        _ => 'Other'
-      };
-  factory PlanEntry.fromJson(Map<String, dynamic> j) => PlanEntry(
-      id: j['id'],
-      title: j['title'],
-      kind: j['kind'] ?? 'activity',
-      date: j['date'] ?? '',
-      time: j['time'] ?? '',
-      endDate: j['end_date'] ?? '',
-      endTime: j['end_time'] ?? '',
-      placeId: j['place_id'] ?? '',
-      notes: j['notes'] ?? '',
-      status: j['status'] ?? 'pending',
-      confirmation: j['confirmation'] ?? '',
-      timezone: j['timezone'] ?? '',
-      endTimezone: j['end_timezone'] ?? '',
-      url: j['url'] ?? '');
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'kind': kind,
-        'date': date,
-        'time': time,
-        'end_date': endDate,
-        'end_time': endTime,
-        'place_id': placeId,
-        'notes': notes,
-        'status': status,
-        'confirmation': confirmation,
-        'timezone': timezone,
-        'end_timezone': endTimezone,
-        'url': url
-      };
-  PlanEntry movedTo(String day) {
-    String end = endDate;
-    if (end.isNotEmpty && date.isNotEmpty && day.isNotEmpty) {
-      final duration = DateTime.parse('${endDate}T00:00:00Z')
-          .difference(DateTime.parse('${date}T00:00:00Z'));
-      end = planDate(DateTime.parse('${day}T00:00:00Z').add(duration));
-    }
-    if (day.isEmpty) end = '';
-    return PlanEntry.fromJson({...toJson(), 'date': day, 'end_date': end});
+  for (final e in platforms.entries) {
+    if (host == e.key || host.endsWith('.${e.key}')) return e.value;
   }
+  return host.isEmpty ? 'Website' : host;
 }
 
-class PlanCheck {
-  final String id, title, kind, due, notes;
-  final bool done;
-  const PlanCheck(
-      {required this.id,
-      required this.title,
-      this.kind = 'packing',
-      this.due = '',
-      this.notes = '',
-      this.done = false});
-  factory PlanCheck.fromJson(Map<String, dynamic> j) => PlanCheck(
-      id: j['id'],
-      title: j['title'],
-      kind: j['kind'] ?? 'packing',
-      due: j['due'] ?? '',
-      notes: j['notes'] ?? '',
-      done: j['done'] ?? false);
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'kind': kind,
-        'due': due,
-        'notes': notes,
-        'done': done
-      };
-}
+String planExpenseCategory(String category) => switch (category) {
+      'Accommodation' => 'Accommodation',
+      'Flight' || 'Train' || 'Bus' || 'Car rental' => 'Transportation',
+      'Sightseeing' => 'Sightseeing',
+      'Restaurant' || 'Cafe' => 'Food & Drinks',
+      'Shopping' => 'Shopping',
+      _ => 'Other',
+    };
 
-class TripPlan {
-  final List<PlanPlace> places;
-  final List<PlanEntry> entries;
-  final List<PlanCheck> checks;
-  final Map<String, String> dayNotes;
-  TripPlan(
-      {List<PlanPlace>? places,
-      List<PlanEntry>? entries,
-      List<PlanCheck>? checks,
-      Map<String, String>? dayNotes})
-      : places = places ?? [],
-        entries = entries ?? [],
-        checks = checks ?? [],
-        dayNotes = dayNotes ?? {};
-  factory TripPlan.fromJson(Map<String, dynamic> j) => TripPlan(
-        places: (j['places'] as List? ?? [])
-            .map((v) => PlanPlace.fromJson(Map<String, dynamic>.from(v)))
-            .toList(),
-        entries: (j['entries'] as List? ?? [])
-            .map((v) => PlanEntry.fromJson(Map<String, dynamic>.from(v)))
-            .toList(),
-        checks: (j['checks'] as List? ?? [])
-            .map((v) => PlanCheck.fromJson(Map<String, dynamic>.from(v)))
-            .toList(),
-        dayNotes: Map<String, String>.from(j['day_notes'] ?? {}),
-      );
-  factory TripPlan.decode(String value) =>
-      TripPlan.fromJson(jsonDecode(value) as Map<String, dynamic>);
-  Map<String, dynamic> toJson() => {
-        'places': places.map((p) => p.toJson()).toList(),
-        'entries': entries.map((e) => e.toJson()).toList(),
-        'checks': checks.map((c) => c.toJson()).toList(),
-        'day_notes': dayNotes
-      };
-  String encode() => jsonEncode(toJson());
-  PlanPlace? place(String id) => places.where((p) => p.id == id).firstOrNull;
-  PlanEntry? entry(String id) => entries.where((e) => e.id == id).firstOrNull;
-  void savePlace(PlanPlace place) {
-    final i = places.indexWhere((p) => p.id == place.id);
-    if (i < 0) {
-      places.add(place);
-    } else {
-      places[i] = place;
+/// Rebase edits made while a request was in flight onto its merged response.
+/// Throws instead of silently replacing a concurrent field edit.
+TripPlan mergePlanChanges(TripPlan base, TripPlan local, TripPlan remote) {
+  bool equal(dynamic a, dynamic b) {
+    if (a is Map && b is Map) {
+      return a.length == b.length &&
+          a.keys.every((k) => b.containsKey(k) && equal(a[k], b[k]));
     }
+    if (a is List && b is List) {
+      return a.length == b.length &&
+          List.generate(a.length, (i) => i).every((i) => equal(a[i], b[i]));
+    }
+    return a == b;
   }
 
-  void saveEntry(PlanEntry entry) {
-    final i = entries.indexWhere((e) => e.id == entry.id);
-    if (i < 0) {
-      entries.add(entry);
-    } else {
-      entries[i] = entry;
+  final b = {for (final i in base.items) i.id: i.toJson()};
+  final l = {for (final i in local.items) i.id: i.toJson()};
+  final r = {
+    for (final i in remote.items) i.id: Map<String, dynamic>.of(i.toJson())
+  };
+  for (final id in {...b.keys, ...l.keys}) {
+    final old = b[id], next = l[id], current = r[id];
+    if (equal(old, next) || equal(next, current)) continue;
+    if (old == null || next == null || current == null) {
+      if (!equal(current, old)) throw StateError('conflict');
+      if (next == null) {
+        r.remove(id);
+      } else {
+        r[id] = Map.of(next);
+      }
+      continue;
     }
-  }
-
-  void saveCheck(PlanCheck check) {
-    final i = checks.indexWhere((c) => c.id == check.id);
-    if (i < 0) {
-      checks.add(check);
-    } else {
-      checks[i] = check;
-    }
-  }
-
-  void removePlace(String id) {
-    places.removeWhere((p) => p.id == id);
-    for (var i = 0; i < entries.length; i++) {
-      if (entries[i].placeId == id) {
-        entries[i] =
-            PlanEntry.fromJson({...entries[i].toJson(), 'place_id': ''});
+    for (final field in {...old.keys, ...next.keys}) {
+      if (equal(old[field], next[field]) ||
+          equal(current[field], next[field])) {
+        continue;
+      }
+      if (!equal(current[field], old[field])) throw StateError('conflict');
+      if (next.containsKey(field)) {
+        current[field] = next[field];
+      } else {
+        current.remove(field);
       }
     }
   }
-
-  void reorder(String day, List<String> ids) {
-    // Only reorder slots on this day, preserving all other entries and bookings.
-    final existing =
-        entries.where((e) => e.date == day).map((e) => e.id).toSet();
-    if (ids.length != existing.length ||
-        ids.toSet().length != ids.length ||
-        !ids.toSet().containsAll(existing)) {
-      return;
-    }
-    final byId = {for (final e in entries) e.id: e};
-    var index = 0;
-    for (var i = 0; i < entries.length; i++) {
-      if (entries[i].date == day) entries[i] = byId[ids[index++]]!;
-    }
+  final common =
+      b.keys.toSet().intersection(l.keys.toSet()).intersection(r.keys.toSet());
+  List<String> order(TripPlan p) =>
+      p.items.map((i) => i.id).where(common.contains).toList();
+  final reordered = !equal(order(base), order(local));
+  if (reordered &&
+      !equal(order(base), order(remote)) &&
+      !equal(order(local), order(remote))) {
+    throw StateError('conflict');
   }
+  final ids = {
+    ...(reordered ? local : remote).items.map((i) => i.id),
+    ...local.items.map((i) => i.id),
+    ...r.keys
+  };
+  return TripPlan(
+      items: ids
+          .where(r.containsKey)
+          .map((id) => PlanItem.fromJson(r[id]!))
+          .toList());
+}
+
+/// Suggest a match for review; never merge similarly named visits automatically.
+bool sameScheduledActivity(PlanItem existing, PlanItem incoming) {
+  if (existing.kind != 'activity' ||
+      incoming.kind != 'activity' ||
+      existing['date'].isEmpty ||
+      existing['date'] != incoming['date'] ||
+      existing['time'] != incoming['time']) {
+    return false;
+  }
+  String normalized(String value) =>
+      value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9\u3400-\u9fff]'), '');
+  final a = normalized(existing.title), b = normalized(incoming.title);
+  return a.isNotEmpty &&
+      b.isNotEmpty &&
+      (a == b ||
+          (a.length >= 8 && b.contains(a)) ||
+          (b.length >= 8 && a.contains(b)));
 }

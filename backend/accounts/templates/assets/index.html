@@ -418,9 +418,12 @@
         }
 
         async function loadTrend() {
+            const currency = displayCurrency;
             try {
-                const resp = await fetch(`/assets/api/trend/?currency=${displayCurrency}`);
+                const resp = await fetch(`/assets/api/trend/?currency=${currency}`);
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
                 const data = await resp.json();
+                if (currency !== displayCurrency) return;
                 renderTrendChart(data);
             } catch (err) {
                 console.error('Failed to load trend:', err);
@@ -429,17 +432,21 @@
 
         function renderTrendChart(data) {
             if (trendChart) trendChart.destroy();
+            const dayMs = 86400000;
+            const dateLabel = day => new Date(Math.round(day) * dayMs).toISOString().slice(0, 10);
             trendChart = new Chart(document.getElementById('trendChart'), {
                 type: 'line',
                 data: {
-                    labels: data.dates,
                     datasets: [{
                         label: `Net Worth (${data.currency})`,
-                        data: data.values,
+                        data: data.dates.map((date, i) => ({
+                            x: Date.parse(`${date}T00:00:00Z`) / dayMs,
+                            y: data.values[i],
+                        })),
                         borderColor: '#4a90d9',
                         backgroundColor: 'rgba(74, 144, 217, 0.1)',
                         fill: true,
-                        tension: 0.3,
+                        tension: 0,
                         pointRadius: 4,
                         pointHoverRadius: 6,
                     }]
@@ -449,8 +456,17 @@
                     maintainAspectRatio: false,
                     plugins: {
                         legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                title: items => items.length ? dateLabel(items[0].parsed.x) : '',
+                            },
+                        },
                     },
                     scales: {
+                        x: {
+                            type: 'linear',
+                            ticks: { maxTicksLimit: 6, precision: 0, callback: dateLabel },
+                        },
                         y: { beginAtZero: false },
                     },
                 }

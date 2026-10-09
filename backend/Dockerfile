@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc libpcre2-dev cron curl unzip && \
+    apt-get install -y --no-install-recommends gcc libpcre2-dev cron curl unzip tesseract-ocr tesseract-ocr-eng tesseract-ocr-chi-sim tesseract-ocr-jpn && \
     curl -L https://downloads.rclone.org/rclone-current-linux-amd64.zip -o /tmp/rclone.zip && \
     unzip /tmp/rclone.zip -d /tmp && \
     mv /tmp/rclone-*-linux-amd64/rclone /usr/local/bin/ && \

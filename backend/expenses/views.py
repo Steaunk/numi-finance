@@ -1,8 +1,8 @@
 import json
 import math
-import re
 from datetime import date
 
+from django.db import transaction
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -10,9 +10,7 @@ from django.views.decorators.http import require_GET, require_POST, require_http
 
 from core.services import compute_snapshot_amounts, get_rates
 
-from .models import Expense, EXPENSE_CATEGORIES, TRAVEL_CATEGORIES, Trip, TravelExpense
-
-from .travel_sync import idempotent
+from .models import Expense, EXPENSE_CATEGORIES, TRAVEL_CATEGORIES, Trip, TravelExpense, TripPlan
 
 DISPLAY_CURRENCIES = {'CNY', 'HKD', 'USD', 'SGD'}
 
@@ -74,7 +72,7 @@ def _validate_expense(data):
     else:
         try:
             amount = float(amount)
-            if not math.isfinite(amount) or amount <= 0:
+            if amount <= 0:
                 errors.append('amount must be positive')
         except (TypeError, ValueError):
             errors.append('amount must be a number')
@@ -302,6 +300,7 @@ def list_trips(request):
         result.append({
             'id': trip.id,
             'destination': trip.destination,
+            'client_id': trip.client_id,
             'start_date': trip.start_date.isoformat(),
             'end_date': trip.end_date.isoformat(),
             'notes': trip.notes,
@@ -317,7 +316,6 @@ def list_trips(request):
 
 
 @require_POST
-@idempotent
 def add_trip(request):
     try:
         data = json.loads(request.body)
@@ -346,17 +344,19 @@ def add_trip(request):
     if errors:
         return JsonResponse({'errors': errors}, status=400)
 
-    trip = Trip.objects.create(
-        destination=destination,
-        start_date=start_date,
-        end_date=end_date,
-        notes=data.get('notes', '').strip(),
-    )
+    client_id = data.get('client_id')
+    if client_id is not None and (not isinstance(client_id, str) or not 1 <= len(client_id) <= 64):
+        return JsonResponse({'errors': ['Invalid client_id']}, status=400)
+    fields = dict(destination=destination, start_date=start_date, end_date=end_date,
+                  notes=data.get('notes', '').strip())
+    if client_id:
+        trip, _ = Trip.objects.get_or_create(client_id=client_id, defaults=fields)
+    else:
+        trip = Trip.objects.create(**fields)
     return JsonResponse({'id': trip.id, 'destination': trip.destination}, status=201)
 
 
 @require_http_methods(["PUT"])
-@idempotent
 def update_trip(request, trip_id):
     try:
         trip = Trip.objects.get(id=trip_id)
@@ -389,12 +389,11 @@ def update_trip(request, trip_id):
 
 
 @require_http_methods(["DELETE"])
-@idempotent
 def delete_trip(request, trip_id):
     try:
         trip = Trip.objects.get(id=trip_id)
     except Trip.DoesNotExist:
-        return JsonResponse({'deleted': True})
+        return JsonResponse({'error': 'Trip not found'}, status=404)
     trip.delete()
     return JsonResponse({'deleted': True})
 
@@ -423,13 +422,15 @@ def list_trip_expenses(request, trip_id):
         )
         result.append({
             'id': exp.id,
+            'client_id': exp.client_id,
+            'plan_item_ids': exp.plan_item_ids,
+            'destination_id': exp.destination_id,
             'amount': exp.amount,
             'currency': exp.currency,
             'date': exp.date.isoformat(),
             'category': exp.category,
             'name': exp.name,
             'notes': exp.notes,
-            'planner_entry_id': exp.planner_entry_id,
             'amount_usd': exp.amount_usd,
             'amount_cny': exp.amount_cny,
             'amount_hkd': exp.amount_hkd,
@@ -452,8 +453,29 @@ def list_trip_expenses(request, trip_id):
     })
 
 
+def valid_expense_destination(trip_id, destination_id):
+    if not isinstance(destination_id, str) or len(destination_id) > 64:
+        return False
+    if not destination_id:
+        return True
+    plan = TripPlan.objects.filter(trip_id=trip_id).first()
+    return bool(plan and any(i.get('kind') == 'destination' and i.get('id') == destination_id
+                             for i in plan.content.get('items', [])))
+
+
+def valid_expense_links(trip_id, ids):
+    if (not isinstance(ids, list) or len(ids) > 2000 or
+            any(not isinstance(i, str) or not i or len(i) > 64 for i in ids) or
+            len(ids) != len(set(ids))):
+        return False
+    plan = TripPlan.objects.filter(trip_id=trip_id).first()
+    valid = {i['id'] for i in (plan.content.get('items', []) if plan else [])
+             if i.get('kind') in ('activity', 'booking') and i.get('category') != 'No accommodation needed'}
+    return set(ids) <= valid
+
+
 @require_POST
-@idempotent
+@transaction.atomic
 def add_trip_expense(request, trip_id):
     try:
         trip = Trip.objects.get(id=trip_id)
@@ -465,10 +487,22 @@ def add_trip_expense(request, trip_id):
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
+    client_id = data.get('client_id')
+    if client_id is not None:
+        if not isinstance(client_id, str) or not 1 <= len(client_id) <= 64:
+            return JsonResponse({'error': 'Invalid expense identity'}, status=400)
+        existing = TravelExpense.objects.filter(client_id=client_id).first()
+        if existing:
+            if existing.trip_id != trip_id:
+                return JsonResponse({'error': 'Expense belongs to another trip'}, status=400)
+            return JsonResponse({'id': existing.id, 'name': existing.name})
+    plan_item_ids = data.get('plan_item_ids', [])
+    if not valid_expense_links(trip_id, plan_item_ids):
+        return JsonResponse({'error': 'Choose itinerary items in this trip'}, status=400)
+    destination_id = data.get('destination_id', '')
+    if not valid_expense_destination(trip_id, destination_id):
+        return JsonResponse({'error': 'Choose a destination in this trip'}, status=400)
     errors = []
-    entry_id = data.get('planner_entry_id', '')
-    if not isinstance(entry_id, str) or (entry_id and not re.fullmatch(r'[A-Za-z0-9_-]{16,64}', entry_id)):
-        errors.append('Invalid planner_entry_id')
     amount = data.get('amount')
     try:
         amount = float(amount)
@@ -506,9 +540,10 @@ def add_trip_expense(request, trip_id):
         return JsonResponse({'errors': errors}, status=400)
 
     amounts = compute_snapshot_amounts(amount, currency, rates)
-    exp = TravelExpense.objects.create(
+    values = dict(
         trip=trip,
-        planner_entry_id=entry_id,
+        plan_item_ids=plan_item_ids,
+        destination_id=destination_id,
         amount=amount,
         currency=currency,
         date=exp_date,
@@ -517,11 +552,18 @@ def add_trip_expense(request, trip_id):
         notes=data.get('notes', '').strip(),
         **amounts,
     )
+    if client_id:
+        values['client_id'] = client_id
+    from django.db import transaction
+    with transaction.atomic():
+        exp, _ = TravelExpense.objects.get_or_create(client_id=client_id, defaults=values) if client_id else (TravelExpense.objects.create(**values), True)
+        if exp.trip_id != trip_id:
+            return JsonResponse({'error': 'Expense belongs to another trip'}, status=400)
     return JsonResponse({'id': exp.id, 'name': exp.name}, status=201)
 
 
 @require_http_methods(["PUT"])
-@idempotent
+@transaction.atomic
 def update_trip_expense(request, trip_id, expense_id):
     try:
         exp = TravelExpense.objects.get(id=expense_id, trip_id=trip_id)
@@ -533,10 +575,13 @@ def update_trip_expense(request, trip_id, expense_id):
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
+    plan_item_ids = data.get('plan_item_ids', exp.plan_item_ids)
+    if not valid_expense_links(trip_id, plan_item_ids):
+        return JsonResponse({'error': 'Choose itinerary items in this trip'}, status=400)
+    destination_id = data.get('destination_id', exp.destination_id)
+    if not valid_expense_destination(trip_id, destination_id):
+        return JsonResponse({'error': 'Choose a destination in this trip'}, status=400)
     errors = []
-    entry_id = data.get('planner_entry_id', '')
-    if not isinstance(entry_id, str) or (entry_id and not re.fullmatch(r'[A-Za-z0-9_-]{16,64}', entry_id)):
-        errors.append('Invalid planner_entry_id')
     amount = data.get('amount')
     try:
         amount = float(amount)
@@ -574,7 +619,8 @@ def update_trip_expense(request, trip_id, expense_id):
         return JsonResponse({'errors': errors}, status=400)
 
     amounts = compute_snapshot_amounts(amount, currency, rates)
-    exp.planner_entry_id = data.get('planner_entry_id', exp.planner_entry_id)
+    exp.plan_item_ids = plan_item_ids
+    exp.destination_id = destination_id
     exp.amount = amount
     exp.currency = currency
     exp.date = exp_date
@@ -589,11 +635,27 @@ def update_trip_expense(request, trip_id, expense_id):
 
 
 @require_http_methods(["DELETE"])
-@idempotent
 def delete_trip_expense(request, trip_id, expense_id):
     try:
         exp = TravelExpense.objects.get(id=expense_id, trip_id=trip_id)
     except TravelExpense.DoesNotExist:
-        return JsonResponse({'deleted': True})
+        return JsonResponse({'error': 'Expense not found'}, status=404)
     exp.delete()
     return JsonResponse({'deleted': True})
+
+
+@require_http_methods(['PUT'])
+@transaction.atomic
+def update_expense_links(request, trip_id, expense_id):
+    expense = TravelExpense.objects.filter(id=expense_id, trip_id=trip_id).first()
+    if expense is None:
+        return JsonResponse({'error': 'Expense not found'}, status=404)
+    try:
+        data = json.loads(request.body)
+        if not isinstance(data, dict) or set(data) != {'plan_item_ids'} or not valid_expense_links(trip_id, data['plan_item_ids']):
+            raise ValueError('Choose itinerary items in this trip')
+    except (ValueError, TypeError):
+        return JsonResponse({'error': 'Choose itinerary items in this trip'}, status=400)
+    expense.plan_item_ids = data['plan_item_ids']
+    expense.save(update_fields=['plan_item_ids'])
+    return JsonResponse({'id': expense.id, 'plan_item_ids': expense.plan_item_ids})

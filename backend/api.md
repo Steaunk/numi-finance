@@ -567,35 +567,50 @@ Same fields as Expense, plus `trip` (FK to Trip).
 | `cny/hkd/sgd/jpy` | float | 1 USD = X rate |
 | `fetched_at` | datetime | Auto-set on creation |
 
+## Travel planner (additive API)
 
-## Trip plan document
+`GET /expenses/api/travel/trips/<id>/plan/` returns
+`{"content":{"items":[]},"revision":0}` for an existing trip with no plan.
 
-`GET /expenses/api/travel/trips/<id>/plan/` returns `{ "version": 0, "document": {} }` for a trip without a plan. The trip must exist.
+`PUT` at the same URL accepts `content`, `revision` (the last server revision), and a stable `mutation_id` for that specific update. Items have stable string IDs and kinds `place`, `activity`, `booking`, or `task`. Scalar item fields are strings; `links` is a list of `{purpose, label, url}`. Activities may reference a place with `placeId`. Array order defines manual itinerary order. Accommodation requires checkout after check-in; transport local dates are not compared across time zones.
 
-`PUT` on the same URL accepts:
+A successful PUT returns the document and incremented revision. Repeating the last mutation with identical content returns the same revision. A stale revision or reused mutation with different content returns HTTP 409; stale-revision responses include the current document. Invalid input returns 400; missing trips return 404. Limits: 2 MB request, 2,000 items, 50 links per item, 10,000 characters per string. Links accept only HTTP/HTTPS without embedded user credentials.
+
+Trip creation additionally accepts an optional `client_id` (1–64 characters) to make offline retries idempotent; trip lists include this value. `DELETE /expenses/api/travel/trips/by-client/<client_id>/` idempotently removes a trip after an uncertain creation response. Existing clients may continue using the original trip ID endpoints.
+
+See [Travel planner](../docs/travel-planner.md) for client behavior and deployment order.
+
+Example PUT body (replace the mutation ID for every new edit, retain it for retries):
 
 ```json
 {
-  "version": 0,
-  "_mutation_id": "dc8d652e598c4f5181827380d65690aa",
-  "document": {
-    "places": [],
-    "entries": [],
-    "checks": [],
-    "day_notes": {"2026-10-10": "Take the airport train"}
+  "revision": 0,
+  "mutation_id": "4c979d83e56247989c9b65ddcc5a9981",
+  "content": {
+    "items": [
+      {
+        "id": "place-cafe", "kind": "place", "title": "River Cafe",
+        "category": "Cafe", "priority": "Must go", "status": "planned",
+        "address": "Kyoto", "notes": "Try the matcha",
+        "links": [{"purpose": "Website", "label": "Menu", "url": "https://example.com/menu"}]
+      },
+      {
+        "id": "activity-cafe", "kind": "activity", "title": "",
+        "placeId": "place-cafe", "date": "2026-10-01", "time": "10:00",
+        "status": "planned", "links": []
+      },
+      {
+        "id": "booking-hotel", "kind": "booking", "title": "Riverside Hotel",
+        "category": "Accommodation", "date": "2026-10-01", "endDate": "2026-10-03",
+        "status": "confirmed", "confirmation": "ABC123", "cancelBy": "2026-09-28", "links": []
+      },
+      {
+        "id": "task-charger", "kind": "task", "title": "Pack charger",
+        "category": "Packing", "date": "2026-09-30", "assignee": "Me", "status": "todo", "links": []
+      }
+    ]
   }
 }
 ```
 
-A successful write returns the document and incremented version. A stale version returns HTTP 409 with the current server `version` and `document`; clients keep both copies and ask the user to resolve the conflict. Plan writes are atomic. The document is limited to 2 MB and each collection to 1,000 items.
-
-All collection items have a stable client-generated `id` (16–64 alphanumeric, underscore or hyphen characters), required `title` (up to 200 characters), and optional `notes` (up to 5,000).
-
-- **places**: `address`, optional paired numeric `lat`/`lng`, `url` (HTTP/S).
-- **entries**: `kind` (`activity`, `food`, `transport`, `note`, `hotel`, `flight`, `train`, `booking`); `date`, `end_date` (YYYY-MM-DD or empty); `time`, `end_time` (HH:mm or empty); optional `place_id`; `status` (`pending`, `confirmed`, `cancelled`); `confirmation`, `timezone`, `end_timezone` (IANA names), `url`. Array order is the user-controlled itinerary order. A place may have multiple entries. Bookings can span up to 366 days.
-- **checks**: `kind` (`packing`, `todo`), boolean `done`, optional `due` date.
-- **day_notes**: date-to-text map.
-
-Travel expense create/update accepts optional `planner_entry_id`, also returned in the expense list. It references a stable itinerary/booking entry ID. Expenses survive removal of their linked plan item. No new financial states or forecast accounting are introduced.
-
-All travel write endpoints accept `_mutation_id` in the JSON body, including DELETE, or an `X-Idempotency-Key` header. Replaying the same request returns its original successful response. Reusing a key with a different payload returns 409. The response receipt and business write commit in one database transaction. Existing clients without a mutation key remain supported.
+Dates use `YYYY-MM-DD`; optional times use `HH:MM`. Empty activity `date` means unassigned; empty `time` means flexible. Transport additionally uses `endDate`, `endTime`, `timezone`, `endTimezone`, `address` and `endAddress`. Booking contact details use `contact`; free text uses `notes`. Normal statuses are `planned`, `confirmed`, `completed`, `skipped`, `cancelled`; tasks use `todo` or `completed`. Link purposes are `Map`, `Website`, `Booking`, `Guide`, `Other`.

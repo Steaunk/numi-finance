@@ -1,8 +1,10 @@
+import '../repositories/trip_plan_repository.dart';
 import 'dart:convert';
 import 'package:drift/drift.dart';
 import '../../utils/app_logger.dart';
 import '../local/database.dart';
 import '../remote/endpoints/expense_api.dart';
+import '../remote/endpoints/travel_api.dart';
 import '../remote/endpoints/asset_api.dart';
 import '../repositories/expense_repository.dart';
 import '../repositories/travel_repository.dart';
@@ -12,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../utils/account_icon_utils.dart';
 
 class SyncService {
+  final TripPlanRepository? planRepo;
   static const _maxRetries = 5;
   final AppDatabase _db;
   final ExpenseApi _expenseApi;
@@ -23,8 +26,10 @@ class SyncService {
   final SharedPreferences _prefs;
 
   SyncService({
+    this.planRepo,
     required AppDatabase db,
     required ExpenseApi expenseApi,
+    required TravelApi travelApi,
     required AssetApi assetApi,
     required ExpenseRepository expenseRepo,
     required TravelRepository travelRepo,
@@ -44,7 +49,13 @@ class SyncService {
   static String _toDateStr(dynamic v) =>
       v is String && v.contains('T') ? v.split('T').first : v.toString();
 
-  Future<void> fullSync(String currency) async {
+  Future<void>? _running;
+  Future<void> fullSync(String currency) {
+    if (_running != null) return _running!;
+    return _running = _fullSync(currency).whenComplete(() => _running = null);
+  }
+
+  Future<void> _fullSync(String currency) async {
     await _rateRepo.fetchAndCacheRates();
     // Trigger backend to fetch external API balances first
     await _assetRepo.syncApiAccounts();
@@ -54,6 +65,8 @@ class SyncService {
       _assetRepo.syncFromServer(currency),
       _syncAccountIcons(),
     ]);
+    // Standalone expense destinations must exist remotely before expense upload.
+    await planRepo?.syncAll();
     await _processSyncQueue();
   }
 
@@ -87,28 +100,30 @@ class SyncService {
   Future<void> _processSyncQueue() async {
     final pending = await _db.syncQueueDao.getPending();
     for (final op in pending) {
-      // Travel uses its own ordered, durable queue with request deduplication.
-      if (op.entityType == 'trip' || op.entityType == 'travel_expense') {
-        continue;
+      if (op.entityType == 'trip') {
+        continue; // TravelRepository serializes parent lifecycle.
       }
       // If the record was already synced (e.g. by syncFromServer), drop the op.
       if (op.operation != 'delete' && await _isAlreadySynced(op)) {
         await _db.syncQueueDao.removeById(op.id);
         continue;
       }
-      if (op.retryCount >= _maxRetries) {
+      if (op.retryCount >= _maxRetries && op.entityType != 'travel_expense') {
         AppLogger.instance.log(
           'Sync op ${op.id} (${op.entityType}/${op.operation}) exceeded '
-          '$_maxRetries retries; retained for retry',
+          '$_maxRetries retries, removing',
           name: 'SyncService',
         );
-        // Retain failed operations so a later manual sync can retry them.
+        await _db.syncQueueDao.removeById(op.id);
+        continue;
       }
       try {
         bool handled = false;
         switch (op.entityType) {
           case 'expense':
             handled = await _handleExpenseOp(op);
+          case 'travel_expense':
+            handled = await _handleTravelExpenseOp(op);
           case 'account':
             handled = await _handleAccountOp(op);
         }
@@ -196,6 +211,13 @@ class SyncService {
       default:
         return false;
     }
+  }
+
+  Future<bool> _handleTravelExpenseOp(DbSyncOperation op) async {
+    await _travelRepo.flushExpenses();
+    return (await (_db.select(_db.syncQueue)..where((q) => q.id.equals(op.id)))
+            .getSingleOrNull()) ==
+        null;
   }
 
   Future<bool> _handleAccountOp(DbSyncOperation op) async {

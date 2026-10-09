@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:path_provider/path_provider.dart';
@@ -28,7 +29,6 @@ class Expenses extends Table {
 
 @DataClassName('DbTrip')
 class Trips extends Table {
-  BoolColumn get deleted => boolean().withDefault(const Constant(false))();
   IntColumn get id => integer().autoIncrement()();
   IntColumn get remoteId => integer().nullable()();
   TextColumn get destination => text()();
@@ -41,12 +41,14 @@ class Trips extends Table {
 
 @DataClassName('DbTravelExpense')
 class TravelExpenses extends Table {
-  BoolColumn get deleted => boolean().withDefault(const Constant(false))();
-  TextColumn get plannerEntryId => text().withDefault(const Constant(''))();
   IntColumn get id => integer().autoIncrement()();
   IntColumn get remoteId => integer().nullable()();
   IntColumn get tripId => integer().references(Trips, #id)();
   IntColumn get tripRemoteId => integer().nullable()();
+  TextColumn get clientId => text().nullable()();
+  TextColumn get planItemId => text().nullable()();
+  TextColumn get planItemIds => text().withDefault(const Constant('[]'))();
+  TextColumn get destinationId => text().withDefault(const Constant(''))();
   RealColumn get amount => real()();
   TextColumn get currency => text()();
   DateTimeColumn get date => dateTime()();
@@ -113,16 +115,17 @@ class SyncQueue extends Table {
   IntColumn get retryCount => integer().withDefault(const Constant(0))();
 }
 
+// Each trip has a locally durable document. Local edits are acknowledged by
+// mutation ID, never by a row-level flag shared with a later edit.
 @DataClassName('DbTripPlan')
 class TripPlans extends Table {
-  IntColumn get tripId => integer().references(Trips, #id)();
-  TextColumn get document => text().withDefault(const Constant('{}'))();
-  IntColumn get version => integer().withDefault(const Constant(0))();
-  BoolColumn get synced => boolean().withDefault(const Constant(true))();
-  TextColumn get changeId => text().withDefault(const Constant(''))();
-  TextColumn get conflictDocument => text().nullable()();
-  IntColumn get conflictVersion => integer().nullable()();
-  TextColumn get syncError => text().nullable()();
+  IntColumn get tripId => integer()();
+  TextColumn get content =>
+      text().withDefault(const Constant('{"items":[]}'))();
+  IntColumn get serverRevision => integer().withDefault(const Constant(0))();
+  TextColumn get mutationId => text().withDefault(const Constant(''))();
+  BoolColumn get dirty => boolean().withDefault(const Constant(false))();
+  TextColumn get syncError => text().withDefault(const Constant(''))();
   @override
   Set<Column> get primaryKey => {tripId};
 }
@@ -230,25 +233,26 @@ class ExpenseDao extends DatabaseAccessor<AppDatabase> with _$ExpenseDaoMixin {
 class TripDao extends DatabaseAccessor<AppDatabase> with _$TripDaoMixin {
   TripDao(super.db);
 
-  Stream<List<DbTrip>> watchAll() => (select(trips)
-        ..where((t) => t.deleted.equals(false))
-        ..orderBy([(t) => OrderingTerm.desc(t.startDate)]))
-      .watch();
+  Stream<List<DbTrip>> watchAll() =>
+      (select(trips)..orderBy([(t) => OrderingTerm.desc(t.startDate)])).watch();
 
   Future<DbTrip?> getById(int id) =>
       (select(trips)..where((t) => t.id.equals(id))).getSingleOrNull();
 
   Future<List<DbTravelExpense>> getExpensesForTrip(int tripId) =>
       (select(travelExpenses)
-            ..where((e) => e.tripId.equals(tripId) & e.deleted.equals(false))
+            ..where((e) => e.tripId.equals(tripId))
             ..orderBy([(e) => OrderingTerm.desc(e.date)]))
           .get();
 
   Stream<List<DbTravelExpense>> watchExpensesForTrip(int tripId) =>
       (select(travelExpenses)
-            ..where((e) => e.tripId.equals(tripId) & e.deleted.equals(false))
+            ..where((e) => e.tripId.equals(tripId))
             ..orderBy([(e) => OrderingTerm.desc(e.date)]))
           .watch();
+
+  Future<List<DbTrip>> getAllTrips() =>
+      (select(trips)..orderBy([(t) => OrderingTerm.desc(t.startDate)])).get();
 
   Future<int> insertTrip(TripsCompanion entry) => into(trips).insert(entry);
 
@@ -284,10 +288,14 @@ class TripDao extends DatabaseAccessor<AppDatabase> with _$TripDaoMixin {
     final remoteId = entry.remoteId.value;
     if (remoteId == null) return;
     final existing = await (select(travelExpenses)
-          ..where((e) => e.remoteId.equals(remoteId)))
+          ..where((e) =>
+              e.remoteId.equals(remoteId) |
+              (entry.clientId.value == null
+                  ? const Constant(false)
+                  : e.clientId.equals(entry.clientId.value!))))
         .getSingleOrNull();
     if (existing != null) {
-      await (update(travelExpenses)..where((e) => e.remoteId.equals(remoteId)))
+      await (update(travelExpenses)..where((e) => e.id.equals(existing.id)))
           .write(entry);
     } else {
       await into(travelExpenses).insert(entry, mode: InsertMode.insertOrIgnore);
@@ -378,29 +386,81 @@ class ExchangeRateDao extends DatabaseAccessor<AppDatabase>
     SyncQueue,
     TripPlans,
   ],
-  daos: [
-    SyncQueueDao,
-    ExpenseDao,
-    TripDao,
-    AccountDao,
-    ExchangeRateDao,
-  ],
+  daos: [SyncQueueDao, ExpenseDao, TripDao, AccountDao, ExchangeRateDao],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) => m.createAll(),
         onUpgrade: (m, from, to) async {
-          if (from < 3) {
-            await m.createTable(tripPlans);
-            await m.addColumn(trips, trips.deleted);
-            await m.addColumn(travelExpenses, travelExpenses.deleted);
-            await m.addColumn(travelExpenses, travelExpenses.plannerEntryId);
+          if (from < 5) {
+            await m.addColumn(travelExpenses, travelExpenses.destinationId);
+          }
+          if (from < 4) {
+            await m.addColumn(travelExpenses, travelExpenses.clientId);
+            await m.addColumn(travelExpenses, travelExpenses.planItemId);
+            await customStatement(
+                "UPDATE travel_expenses SET client_id = CASE WHEN remote_id IS NOT NULL THEN 'remote-' || remote_id ELSE lower(hex(randomblob(16))) END");
+          }
+          if (from < 3) await m.createTable(tripPlans);
+          if (from < 6) {
+            await m.addColumn(travelExpenses, travelExpenses.planItemIds);
+            for (final row in await select(travelExpenses).get()) {
+              await (update(travelExpenses)..where((e) => e.id.equals(row.id)))
+                  .write(TravelExpensesCompanion(
+                      planItemIds: Value(jsonEncode(
+                          [if (row.planItemId != null) row.planItemId!])),
+                      planItemId: const Value(null)));
+            }
+            for (final row in await select(travelExpenses).get()) {
+              if (!row.synced || row.remoteId == null) {
+                await (update(travelExpenses)
+                      ..where((e) => e.id.equals(row.id)))
+                    .write(const TravelExpensesCompanion(synced: Value(false)));
+                final queued = await (select(syncQueue)
+                      ..where((q) =>
+                          q.entityType.equals('travel_expense') &
+                          q.localId.equals(row.id)))
+                    .get();
+                if (queued.isEmpty) {
+                  await syncQueueDao.enqueue(SyncQueueCompanion.insert(
+                      entityType: 'travel_expense',
+                      operation: 'update',
+                      localId: row.id,
+                      payload: jsonEncode({'trip_id': row.tripId})));
+                }
+              }
+            }
+            for (final row in await select(tripPlans).get()) {
+              final content = jsonDecode(row.content) as Map<String, dynamic>;
+              for (final item in content['items'] as List) {
+                if (item['kind'] == 'activity' &&
+                    item['category'] == 'Activity') {
+                  item['category'] = item['expenseCategory'] == 'Sightseeing'
+                      ? 'Sightseeing'
+                      : 'Other';
+                }
+                for (final key in [
+                  'amount',
+                  'currency',
+                  'paymentStatus',
+                  'paidDate',
+                  'expenseClientId',
+                  'expenseCategory'
+                ]) {
+                  item.remove(key);
+                }
+              }
+              await (update(tripPlans)
+                    ..where((p) => p.tripId.equals(row.tripId)))
+                  .write(
+                      TripPlansCompanion(content: Value(jsonEncode(content))));
+            }
           }
           if (from < 2) {
             await m.addColumn(accounts, accounts.apiUrl);

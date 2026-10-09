@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import '../models/portfolio.dart';
 import '../ui/expenses/screens/expense_list_screen.dart';
 import '../ui/travel/screens/trip_list_screen.dart';
+import '../ui/travel/screens/import_travel_screen.dart';
 import '../ui/travel/screens/trip_detail_screen.dart';
 import '../ui/assets/screens/asset_overview_screen.dart';
 import '../ui/assets/screens/account_history_screen.dart';
@@ -34,10 +35,19 @@ final router = GoRouter(
               const NoTransitionPage(child: TripListScreen()),
           routes: [
             GoRoute(
+              path: 'import',
+              parentNavigatorKey: _rootNavigatorKey,
+              builder: (context, state) => ImportTravelScreen(
+                  sharedText:
+                      state.extra is String ? state.extra as String : '',
+                  sharedPdf: state.extra is Map<String, dynamic>
+                      ? state.extra as Map<String, dynamic>
+                      : null),
+            ),
+            GoRoute(
               path: ':tripId',
               builder: (context, state) {
-                final tripId =
-                    int.parse(state.pathParameters['tripId']!);
+                final tripId = int.parse(state.pathParameters['tripId']!);
                 return TripDetailScreen(tripId: tripId);
               },
             ),
@@ -51,8 +61,7 @@ final router = GoRouter(
             GoRoute(
               path: ':accountId',
               builder: (context, state) {
-                final accountId =
-                    int.parse(state.pathParameters['accountId']!);
+                final accountId = int.parse(state.pathParameters['accountId']!);
                 return AccountHistoryScreen(accountId: accountId);
               },
             ),
@@ -66,8 +75,8 @@ final router = GoRouter(
             GoRoute(
               path: 'stock/:stockName',
               builder: (context, state) {
-                final name = Uri.decodeComponent(
-                    state.pathParameters['stockName']!);
+                final name =
+                    Uri.decodeComponent(state.pathParameters['stockName']!);
                 final holding = state.extra as PortfolioHolding?;
                 return StockDetailScreen(
                   stockName: name,

@@ -14,15 +14,13 @@ Tracks expenses, travel trips, asset accounts, and investment portfolios across 
 - Multi-currency amounts pre-computed at write time (USD / CNY / HKD / SGD) for fast aggregation
 
 ### Travel
-- Trips with destination, dates, notes, and an offline day-by-day itinerary
-- Activities, meals, transport and notes: reorder within a day, move between days, undo, or leave unscheduled
-- Saved places separate from visits; reuse a place on several days and filter places not yet planned
-- Hotel, flight, train and other booking cards with status, confirmation, local times/timezones, links and multi-day display
-- Day-filtered OpenStreetMap, long-press to save a pin, and external Google Maps navigation; basemap tiles require a connection
-- Packing lists with a travel-essentials starter, plus to-dos with due dates and completion counts
-- Share/copy itinerary text or export a standalone printable HTML file (browser Print → Save as PDF); preview and optional confirmation numbers
-- Per-trip expenses in 6 categories, optionally linked to an itinerary item or booking. No deposits, installments or projected-payment accounting.
-- Durable offline travel writes with request deduplication; plans use revision checks and explicit local/server conflict resolution
+- Trips with destination, dates, notes
+- App: Itinerary, Saved places and Spending, with explicit Bookings and Trip checklist shortcuts
+- One destination filter across views, direct saved-place scheduling, and standalone spending by destination
+- Saved places, daily activities, accommodation and transport, packing and preparation checklists
+- Multiple external links with Google Maps and Baidu Maps search and offline planning with explicit sync conflict resolution
+- Per-trip expenses in 6 categories (Transportation, Accommodation, Sightseeing, Food & Drinks, Shopping, Other)
+- [Planner usage, synchronization and deployment guide](docs/travel-planner.md)
 
 ### Assets
 - Accounts in any supported currency with per-account "include in total" toggle
@@ -41,7 +39,7 @@ Tracks expenses, travel trips, asset accounts, and investment portfolios across 
 
 ### Mobile & Desktop App
 - Android APK and macOS DMG builds
-- **Offline-first**: all writes hit local SQLite (Drift) first, replayed from a sync queue when online; failed operations remain available for retry
+- **Offline-first**: all writes hit local SQLite (Drift) first, replayed from a sync queue when online (max 5 retries)
 - Connectivity listener auto-syncs on offline→online transitions
 - Amounts displayable in any supported currency (selected in settings)
 - **Biometric lock** with 1-minute background grace period
@@ -123,7 +121,9 @@ Settings is a root-level modal at `/settings`.
 
 ### Key design patterns
 
-- **Offline-first sync queue** — local writes enqueue a `SyncOperation` (JSON payload); `SyncService.fullSync()` replays them on next connection, failed operations are retained for later retries. Travel mutations use persistent unique IDs for server-side deduplication; a trip plan is stored as a validated document with a revision and stable IDs for its places, entries and checklist items.
+- **Offline-first sync queue** — local writes enqueue a `SyncOperation` (JSON payload); `SyncService.fullSync()` replays them on next connection, up to 5 retries per op.
+- **Shared travel planning** — named travellers, Everyone or selected participants per arrangement, person filters, scoped web invitations, field-level merge and item history. Participation is separate from payments.
+- **Travel planning sync** — revisioned documents and parent trip operations remain pending until acknowledged; independent changes merge and overlapping fields require a choice.
 - **Pre-computed multi-currency amounts** — every expense / snapshot stores USD / CNY / HKD / SGD at insert time; aggregation queries never hit the rate converter.
 - **Stale-while-revalidate snapshots** — `PUT /accounts/<id>/` only writes a new `BalanceSnapshot` if the previous one is >12h old; daily cron guarantees at least one snapshot per account per day.
 - **JSONPath account sync** — external broker / bank balances are pulled via `api_url` + `api_value_path` (e.g. `data.results.0.balance`) + optional `api_auth`.
@@ -196,8 +196,8 @@ flutter build macos --release
 | Method | Path | Description |
 |--------|------|-------------|
 | GET/POST | `api/travel/trips/` · `trips/add/` | List / create |
-| PUT/DELETE | `api/travel/trips/<id>/` · `.../delete/` | Update / delete |
-| GET/PUT | `api/travel/trips/<id>/plan/` | Versioned itinerary, saved places, bookings and checklists |
+| PUT/DELETE | `api/travel/trips/<id>/` | Update / delete |
+| GET/PUT | `api/travel/trips/<id>/plan/` | Revisioned planning document |
 | GET/POST | `api/travel/trips/<id>/expenses/` · `.../add/` | Trip expenses |
 | PUT/DELETE | `api/travel/trips/<id>/expenses/<eid>/` | Update / delete trip expense |
 
@@ -273,28 +273,3 @@ See [.github/workflows/build-apk.yml](.github/workflows/build-apk.yml):
 - Each build creates a GitHub Release tagged `vYYYYMMDD.N` (date + daily sequence) with artifacts attached
 - The Flutter app checks for updates on launch via the GitHub Releases API
 - Concurrent runs on the same branch are auto-cancelled; `pub` packages and `.dart_tool` are cached for faster builds
-
-
-### Trip planner rollout and verification
-
-Deploy the Django backend and run `python manage.py migrate` before installing the updated Flutter client. Migration `0006` adds optional expense links, per-trip plan documents, and durable mutation receipts; existing trips and expenses stay intact. The client upgrades its local database from version 2 to 3 automatically.
-
-The planner is available in the Flutter Travel detail screen through **Itinerary / Places / Map / Lists / Expenses**. Places can be entered manually or pinned with a map long-press; there is no external place-search API or key requirement. Bookings and activities remain editable without a network. The existing server-rendered travel page remains an expense view.
-
-Plan conflicts apply to the whole plan: compare the local/server versions and explicitly choose which to keep. The losing version is replaced only after confirmation. This is multi-device synchronization, not real-time group editing. Failed writes are retried via the existing cloud sync button or on reconnection. Request receipts are retained so long-offline retries cannot recreate accepted writes.
-
-Run checks with:
-
-```bash
-# backend/
-python manage.py test expenses core
-python manage.py makemigrations --check --dry-run
-
-# numi_app/
-flutter pub get
-dart run build_runner build --delete-conflicting-outputs
-flutter analyze
-flutter test
-```
-
-Native Flutter tests on Linux require the SQLite development/runtime library (`libsqlite3.so`). Maps include OpenStreetMap attribution and fetch tiles on demand; bulk/offline tile downloads are not implemented. Platform share sheets require a device or desktop runner; text copying also works without them.

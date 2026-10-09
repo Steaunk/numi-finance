@@ -1,8 +1,22 @@
 from django.urls import path
 
-from . import views, planner
+from . import views, planning, collaboration, travel_import, travel_documents
 
 urlpatterns = [
+    path('api/travel/pdf-preview/', travel_documents.preview),
+    path('api/travel/trips/<int:trip_id>/documents/', travel_documents.upload),
+    path('api/travel/trips/<int:trip_id>/documents/<uuid:document_id>/', travel_documents.download),
+    path('api/travel/trips/<int:trip_id>/collaboration/pdf-preview/', travel_documents.preview),
+    path('api/travel/trips/<int:trip_id>/collaboration/documents/', travel_documents.upload),
+    path('api/travel/trips/<int:trip_id>/collaboration/documents/<uuid:document_id>/', travel_documents.download),
+    path('api/travel/trips/<int:trip_id>/collaboration/map-preview/', collaboration.map_preview),
+    path('api/travel/import-preview/', travel_import.preview),
+    path('travel/trips/<int:trip_id>/plan/', collaboration.workspace, name='travel_collaboration'),
+    path('api/travel/trips/<int:trip_id>/collaboration/data/', collaboration.data),
+    path('api/travel/trips/<int:trip_id>/collaboration/history/', collaboration.history),
+    path('api/travel/trips/<int:trip_id>/collaboration/invites/', collaboration.invites),
+    path('api/travel/trips/by-client/<str:client_id>/', planning.delete_trip_by_client, name='delete_trip_by_client'),
+    path('api/travel/trips/<int:trip_id>/plan/', planning.trip_plan, name='trip_plan'),
     path('', views.index, name='expenses_index'),
     path('api/expenses/', views.list_expenses, name='list_expenses'),
     path('api/expenses/add/', views.add_expense, name='add_expense'),
@@ -10,8 +24,6 @@ urlpatterns = [
     path('api/expenses/<int:expense_id>/', views.expense_detail, name='expense_detail'),
     path('api/categories/', views.list_categories, name='list_categories'),
     path('api/stats/monthly/', views.monthly_stats, name='monthly_stats'),
-
-    path('api/travel/trips/<int:trip_id>/plan/', planner.trip_plan, name='trip_plan'),
 
     # Travel
     path('travel/', views.travel_index, name='travel_index'),
@@ -21,6 +33,7 @@ urlpatterns = [
     path('api/travel/trips/<int:trip_id>/delete/', views.delete_trip, name='delete_trip'),
     path('api/travel/trips/<int:trip_id>/expenses/', views.list_trip_expenses, name='list_trip_expenses'),
     path('api/travel/trips/<int:trip_id>/expenses/add/', views.add_trip_expense, name='add_trip_expense'),
+    path('api/travel/trips/<int:trip_id>/expenses/<int:expense_id>/links/', views.update_expense_links, name='update_expense_links'),
     path('api/travel/trips/<int:trip_id>/expenses/<int:expense_id>/', views.update_trip_expense, name='update_trip_expense'),
     path('api/travel/trips/<int:trip_id>/expenses/<int:expense_id>/delete/', views.delete_trip_expense, name='delete_trip_expense'),
 ]

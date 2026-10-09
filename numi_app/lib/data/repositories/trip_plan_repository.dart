@@ -1,169 +1,251 @@
-import 'dart:async';
 import 'dart:convert';
+import 'dart:async';
+import 'expense_link_store.dart';
 import 'package:dio/dio.dart';
 import 'package:drift/drift.dart';
 import '../../models/trip_plan.dart';
 import '../local/database.dart';
 import '../remote/endpoints/travel_api.dart';
-import 'travel_repository.dart';
-
-class PlanState {
-  final TripPlan plan;
-  final bool pending;
-  final String? error;
-  final TripPlan? conflict;
-  PlanState(DbTripPlan? row)
-      : plan = TripPlan.decode(row?.document ?? '{}'),
-        pending = !(row?.synced ?? true),
-        error = row?.syncError,
-        conflict = row?.conflictDocument == null
-            ? null
-            : TripPlan.decode(row!.conflictDocument!);
-}
 
 class TripPlanRepository {
   final AppDatabase db;
   final TravelApi? api;
-  final TravelRepository travel;
-  Future<void>? _syncing;
-  TripPlanRepository(this.db, this.api, this.travel);
+  final Map<int, Future<void>> _running = {};
+  final Set<int> _needsSync = {};
+  final Future<void> Function()? prepareTrip;
+  TripPlanRepository(this.db, this.api, {this.prepareTrip});
 
-  Future<DbTripPlan?> _row(int id) =>
-      (db.select(db.tripPlans)..where((p) => p.tripId.equals(id)))
+  Future<DbTripPlan?> _row(int tripId) =>
+      (db.select(db.tripPlans)..where((p) => p.tripId.equals(tripId)))
           .getSingleOrNull();
-  Stream<PlanState> watch(int id) =>
-      (db.select(db.tripPlans)..where((p) => p.tripId.equals(id)))
-          .watchSingleOrNull()
-          .map(PlanState.new);
 
-  Future<void> edit(int id, void Function(TripPlan) change) async {
+  Stream<TripPlan> watch(int tripId) => (db.select(db.tripPlans)
+        ..where((p) => p.tripId.equals(tripId)))
+      .watchSingleOrNull()
+      .map((r) => r == null
+          ? TripPlan()
+          : TripPlan.decode(r.content, pending: r.dirty, error: r.syncError));
+
+  Future<void> _edit(
+      int tripId, List<PlanItem> Function(List<PlanItem>) change) async {
     await db.transaction(() async {
-      final trip = await db.tripDao.getById(id);
-      if (trip == null || trip.deleted) {
+      if (await db.tripDao.getById(tripId) == null) {
         throw StateError('Trip no longer exists');
       }
-      final row = await _row(id);
-      final plan = TripPlan.decode(row?.document ?? '{}');
-      change(plan);
-      final document = plan.encode();
-      if (plan.places.length > 1000 ||
-          plan.entries.length > 1000 ||
-          plan.checks.length > 1000 ||
-          plan.dayNotes.length > 1000 ||
-          utf8.encode(document).length > 1900000) {
-        throw StateError(
-            'This plan is too large. Remove unused items or split it into separate trips.');
-      }
-      await db.into(db.tripPlans).insertOnConflictUpdate(
-          TripPlansCompanion.insert(
-              tripId: Value(id),
-              document: Value(document),
-              version: Value(row?.version ?? 0),
-              synced: const Value(false),
-              changeId: Value(newTravelId()),
-              conflictDocument: Value(row?.conflictDocument),
-              conflictVersion: Value(row?.conflictVersion),
-              syncError: const Value(null)));
+      final row = await _row(tripId);
+      final items = row == null
+          ? <PlanItem>[]
+          : TripPlan.decode(row.content).items.toList();
+      final updated = change(items);
+      await reconcileExpenseLinks(db, tripId, updated);
+      final content = TripPlan(items: updated).encode();
+      await db.into(db.tripPlans).insertOnConflictUpdate(TripPlansCompanion(
+            tripId: Value(tripId),
+            content: Value(content),
+            dirty: const Value(true),
+            mutationId: Value(newPlanId()),
+            serverRevision: Value(row?.serverRevision ?? 0),
+            syncError: Value(row?.syncError == 'conflict' ? 'conflict' : ''),
+          ));
     });
-    unawaited(sync());
+    _needsSync.add(tripId);
+    unawaited(sync(tripId));
   }
 
-  Future<void> resolve(int id, {required bool keepMine}) async {
-    await db.transaction(() async {
-      final row = await _row(id);
-      if (row?.conflictDocument == null) return;
-      await (db.update(db.tripPlans)..where((p) => p.tripId.equals(id)))
-          .write(TripPlansCompanion(
-        document: Value(keepMine ? row!.document : row!.conflictDocument!),
-        version: Value(row.conflictVersion!),
-        synced: Value(!keepMine),
-        changeId: Value(newTravelId()),
-        conflictDocument: const Value(null),
-        conflictVersion: const Value(null),
-        syncError: const Value(null),
-      ));
-    });
-    unawaited(sync());
-  }
-
-  Future<void> sync() {
-    if (api == null) return Future.value();
-    return _syncing ??= _sync().whenComplete(() => _syncing = null);
-  }
-
-  Future<void> _sync() async {
-    await travel.syncPending();
-    final trips = await (db.select(db.trips)
-          ..where((t) => t.deleted.equals(false)))
-        .get();
-    for (final trip in trips) {
-      if (trip.remoteId == null) continue;
-      try {
-        // New edits while a request is in flight get a fresh revision next pass.
-        while (true) {
-          final row = await _row(trip.id);
-          if (row?.conflictDocument != null) break;
-          if (row != null && !row.synced) {
-            try {
-              final response = await api!.putPlan(trip.remoteId!, {
-                'document': jsonDecode(row.document),
-                'version': row.version,
-                '_mutation_id': row.changeId
-              });
-              await db.transaction(() async {
-                final current = await _row(trip.id);
-                if (current == null) return;
-                await (db.update(db.tripPlans)
-                      ..where((p) => p.tripId.equals(trip.id)))
-                    .write(TripPlansCompanion(
-                        version: Value(response['version'] as int),
-                        synced: Value(current.changeId == row.changeId),
-                        syncError: const Value(null)));
-              });
-            } on DioException catch (e) {
-              if (e.response?.statusCode == 409 &&
-                  e.response?.data is Map &&
-                  e.response!.data['document'] is Map) {
-                final server = e.response!.data as Map;
-                await (db.update(db.tripPlans)
-                      ..where((p) => p.tripId.equals(trip.id)))
-                    .write(TripPlansCompanion(
-                        conflictDocument: Value(jsonEncode(server['document'])),
-                        conflictVersion: Value(server['version'] as int),
-                        syncError: const Value(
-                            'This plan changed on another device.')));
-                break;
-              }
-              rethrow;
-            }
-          } else {
-            final response = await api!.getPlan(trip.remoteId!);
-            await db.transaction(() async {
-              final currentTrip = await db.tripDao.getById(trip.id);
-              if (currentTrip == null || currentTrip.deleted) return;
-              final current = await _row(trip.id);
-              if (current != null && !current.synced) return;
-              await db.into(db.tripPlans).insertOnConflictUpdate(
-                  TripPlansCompanion.insert(
-                      tripId: Value(trip.id),
-                      document: Value(jsonEncode(response['document'])),
-                      version: Value(response['version'] as int),
-                      synced: const Value(true),
-                      syncError: const Value(null)));
-            });
-            // An edit during GET must still be flushed, not stranded until restart.
-            final latest = await _row(trip.id);
-            if (latest != null && !latest.synced) continue;
-            break;
+  Future<void> save(int tripId, PlanItem item) => _edit(tripId, (items) {
+        if (item.kind == 'destination' &&
+            (item['date'].isEmpty ||
+                item['endDate'].isEmpty ||
+                item['endDate'].compareTo(item['date']) < 0)) {
+          throw StateError('Choose arrival and departure dates in order.');
+        }
+        if (item.participantIds
+            .any((id) => !items.any((p) => p.kind == 'person' && p.id == id))) {
+          throw StateError('Choose participants from this trip.');
+        }
+        for (final key in ['destinationId', 'endDestinationId']) {
+          if (item[key].isNotEmpty &&
+              !items.any((i) => i.kind == 'destination' && i.id == item[key])) {
+            throw StateError(
+                'The linked destination was removed. Choose another destination.');
           }
         }
-      } catch (e) {
-        final message = e is DioException && e.response != null
-            ? 'Could not sync plan (${e.response!.statusCode}). Your changes are saved on this device.'
-            : 'Offline — your changes are saved on this device.';
-        await (db.update(db.tripPlans)..where((p) => p.tripId.equals(trip.id)))
-            .write(TripPlansCompanion(syncError: Value(message)));
-      }
+        if (item['placeId'].isNotEmpty &&
+            !items.any((i) => i.kind == 'place' && i.id == item['placeId'])) {
+          throw StateError(
+              'The linked place was removed. Choose another place.');
+        }
+        final index = items.indexWhere((i) => i.id == item.id);
+        if (index < 0) {
+          items.add(item);
+        } else {
+          items[index] = item;
+        }
+        return items;
+      });
+
+  Future<void> remove(int tripId, String id) => _edit(
+      tripId,
+      (items) => items
+          .where((i) => i.id != id)
+          .map((i) => i.copy({
+                if (i['destinationId'] == id) 'destinationId': '',
+                if (i['endDestinationId'] == id) 'endDestinationId': '',
+                if (i['placeId'] == id) ...{
+                  'placeId': '',
+                  'destinationId':
+                      items.firstWhere((p) => p.id == id)['destinationId'],
+                  'title': i.title.isEmpty
+                      ? items.firstWhere((p) => p.id == id).title
+                      : i.title
+                }
+              }))
+          .toList());
+
+  Future<void> reorder(int tripId, List<String> orderedIds) =>
+      _edit(tripId, (items) {
+        final selected = {
+          for (final i in items)
+            if (orderedIds.contains(i.id)) i.id: i
+        };
+        if (selected.length != orderedIds.length ||
+            orderedIds.toSet().length != orderedIds.length) {
+          throw StateError('The itinerary changed; refresh and try again.');
+        }
+        var next = 0;
+        return items
+            .map((i) =>
+                selected.containsKey(i.id) ? selected[orderedIds[next++]]! : i)
+            .toList();
+      });
+
+  Future<void> syncAll() async {
+    for (final trip in await db.tripDao.getAllTrips()) {
+      await sync(trip.id);
     }
+  }
+
+  Future<void> sync(int tripId) {
+    final running = _running[tripId];
+    if (running != null) return running;
+    final future = _drain(tripId).whenComplete(() {
+      _running.remove(tripId);
+    });
+    _running[tripId] = future;
+    return future;
+  }
+
+  Future<void> _drain(int tripId) async {
+    do {
+      _needsSync.remove(tripId);
+      await _sync(tripId);
+    } while (_needsSync.contains(tripId));
+  }
+
+  Future<void> _sync(int tripId) async {
+    final remote = api;
+    if (remote == null) return;
+    try {
+      await prepareTrip?.call();
+      final trip = await db.transaction(() async {
+        final parent = await db.tripDao.getById(tripId);
+        if (parent == null) return null;
+        await db.into(db.tripPlans).insert(
+            TripPlansCompanion(tripId: Value(tripId)),
+            mode: InsertMode.insertOrIgnore);
+        return parent;
+      });
+      if (trip == null) return;
+      if (trip.remoteId == null) return;
+      var row = await _row(tripId);
+      if (row?.syncError == 'conflict') return;
+      while (row != null && row.dirty) {
+        final result = await remote.putPlan(trip.remoteId!, {
+          'content': jsonDecode(row.content),
+          'revision': row.serverRevision,
+          'mutation_id': row.mutationId,
+        });
+        await db.transaction(() async {
+          final current = await _row(tripId);
+          if (current == null) return;
+          final merged = current.mutationId == row!.mutationId
+              ? TripPlan.decode(jsonEncode(result['content']))
+              : mergePlanChanges(
+                  TripPlan.decode(row.content),
+                  TripPlan.decode(current.content),
+                  TripPlan.decode(jsonEncode(result['content'])));
+          await reconcileExpenseLinks(db, tripId, merged.items);
+          await (db.update(db.tripPlans)..where((p) => p.tripId.equals(tripId)))
+              .write(TripPlansCompanion(
+                  serverRevision: Value(result['revision'] as int),
+                  content: Value(merged.encode()),
+                  dirty: Value(current.mutationId != row.mutationId),
+                  syncError: const Value('')));
+        });
+        row = await _row(tripId);
+      }
+      final result = await remote.getPlan(trip.remoteId!);
+      await db.transaction(() async {
+        if (await db.tripDao.getById(tripId) == null) return;
+        final current = await _row(tripId);
+        if (current?.dirty == true) return;
+        await reconcileExpenseLinks(
+            db, tripId, TripPlan.decode(jsonEncode(result['content'])).items);
+        await db.into(db.tripPlans).insertOnConflictUpdate(TripPlansCompanion(
+              tripId: Value(tripId),
+              content: Value(jsonEncode(result['content'])),
+              serverRevision: Value(result['revision'] as int),
+              dirty: const Value(false),
+              syncError: const Value(''),
+            ));
+      });
+    } catch (error) {
+      final message = (error is DioException &&
+                  error.response?.statusCode == 409) ||
+              (error is StateError && error.message == 'conflict')
+          ? 'conflict'
+          : 'Could not sync. Your plan is saved on this device. Try again when connected.';
+      await (db.update(db.tripPlans)..where((p) => p.tripId.equals(tripId)))
+          .write(TripPlansCompanion(syncError: Value(message)));
+    }
+  }
+
+  /// Explicit user decision; never overwrite an unseen remote edit automatically.
+  Future<void> resolve(int tripId, {required bool keepLocal}) async {
+    final trip = await db.tripDao.getById(tripId);
+    if (api == null || trip?.remoteId == null) {
+      throw StateError('Connect to the server first');
+    }
+    final running = _running[tripId];
+    if (running != null) await running;
+    final before = await _row(tripId);
+    final result = await api!.getPlan(trip!.remoteId!);
+    if (before == null) return;
+    final resolved = await api!.putPlan(trip.remoteId!, {
+      'content': jsonDecode(before.content),
+      'revision': before.serverRevision,
+      'mutation_id': newPlanId(),
+      'conflict_choice': keepLocal ? 'local' : 'server',
+      'expected_revision': result['revision'],
+    });
+    await db.transaction(() async {
+      final latest = await _row(tripId);
+      if (latest == null) return;
+      final merged = latest.mutationId == before.mutationId
+          ? TripPlan.decode(jsonEncode(resolved['content']))
+          : mergePlanChanges(
+              TripPlan.decode(before.content),
+              TripPlan.decode(latest.content),
+              TripPlan.decode(jsonEncode(resolved['content'])));
+      await reconcileExpenseLinks(db, tripId, merged.items);
+      await (db.update(db.tripPlans)..where((p) => p.tripId.equals(tripId)))
+          .write(TripPlansCompanion(
+              serverRevision: Value(resolved['revision'] as int),
+              content: Value(merged.encode()),
+              dirty: Value(latest.mutationId != before.mutationId),
+              mutationId: Value(newPlanId()),
+              syncError: const Value('')));
+    });
+    await sync(tripId);
   }
 }

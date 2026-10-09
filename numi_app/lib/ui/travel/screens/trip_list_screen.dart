@@ -1,155 +1,180 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import '../../../providers/providers.dart';
+import '../../../models/trip.dart';
+import '../../../models/trip_plan.dart';
 import '../../../utils/currency_utils.dart';
-import '../../../utils/date_utils.dart';
 import '../../common/widgets/currency_selector.dart';
 import '../../common/widgets/empty_state.dart';
 import '../../common/widgets/sync_status_indicator.dart';
 import 'add_trip_screen.dart';
-import '../widgets/travel_style.dart';
 
-class TripListScreen extends StatelessWidget {
+class TripListScreen extends ConsumerWidget {
   const TripListScreen({super.key});
-  @override
-  Widget build(BuildContext context) =>
-      const TravelTheme(child: _TripListBody());
-}
 
-class _TripListBody extends ConsumerWidget {
-  const _TripListBody();
+  void add(BuildContext context) => showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      constraints: const BoxConstraints(maxWidth: 680),
+      builder: (_) => const AddTripScreen());
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tripsAsync = ref.watch(tripListProvider);
-    final displayCurrency = ref.watch(displayCurrencyProvider);
-
+    final trips = ref.watch(tripListProvider);
+    final currency = ref.watch(displayCurrencyProvider);
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Travel'),
-        actions: const [CurrencySelector(), SyncStatusIndicator()],
-      ),
-      body: TravelPageWidth(
-          child: tripsAsync.when(
-        data: (trips) {
-          if (trips.isEmpty) {
-            return const EmptyState(
-              icon: Icons.flight,
-              message: 'No trips yet',
-            );
-          }
-          return RefreshIndicator(
-            onRefresh: () => ref.read(syncStateProvider.notifier).syncNow(),
-            child: ListView.builder(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
-              itemCount: trips.length + 1,
-              itemBuilder: (context, index) {
-                if (index == 0) {
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 8, bottom: 28),
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('OUT OF THE EVERYDAY',
-                              style: TextStyle(
-                                  color: Theme.of(context).colorScheme.primary,
-                                  fontSize: 10,
-                                  letterSpacing: 2,
-                                  fontWeight: FontWeight.w700)),
-                          const SizedBox(height: 10),
-                          Text('Where to next?',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .headlineLarge
-                                  ?.copyWith(
-                                      fontWeight: FontWeight.w700,
-                                      letterSpacing: -1)),
-                          const SizedBox(height: 8),
-                          Text('Your places, plans and little adventures.',
-                              style: Theme.of(context).textTheme.bodyMedium),
-                        ]),
-                  );
-                }
-                final trip = trips[index - 1];
-                final total = trip.expenses.fold<double>(
-                  0,
-                  (sum, e) => sum + e.displayAmount(displayCurrency),
-                );
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(16),
-                    onTap: () => context.go('/travel/${trip.id}'),
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+      appBar: AppBar(title: const Text('Travel'), actions: [
+        IconButton(
+            tooltip: 'Import share link',
+            icon: const Icon(Icons.add_link),
+            onPressed: () => context.push('/travel/import')),
+        const CurrencySelector(),
+        const SyncStatusIndicator()
+      ]),
+      body: trips.when(
+          data: (records) {
+            if (records.isEmpty) {
+              return const EmptyState(
+                  icon: Icons.flight_outlined, message: 'No trips yet');
+            }
+            final now = DateTime.now();
+            final upcoming = records
+                .where((t) =>
+                    tripPhase(t.startDate, t.endDate, now) != 'Completed')
+                .toList()
+              ..sort((a, b) => a.startDate.compareTo(b.startDate));
+            final past = records
+                .where((t) =>
+                    tripPhase(t.startDate, t.endDate, now) == 'Completed')
+                .toList()
+              ..sort((a, b) => b.startDate.compareTo(a.startDate));
+            Widget card(Trip trip) => Consumer(builder: (context, ref, _) {
+                  final plan =
+                      ref.watch(tripPlanProvider(trip.id)).valueOrNull ??
+                          TripPlan();
+                  final tasks = plan.ofKind('task');
+                  final done =
+                      tasks.where((i) => i['status'] == 'completed').length;
+                  final count = plan.items
+                      .where((i) => i.kind != 'task' && i.kind != 'destination')
+                      .length;
+                  final total = trip.expenses.fold<double>(
+                      0, (sum, e) => sum + e.displayAmount(currency));
+                  final theme = Theme.of(context);
+                  final secondary = theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+                  return Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(16),
+                        onTap: () => context.go('/travel/${trip.id}'),
+                        child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  CircleAvatar(
+                                      backgroundColor:
+                                          theme.colorScheme.primaryContainer,
+                                      child: Icon(Icons.flight_outlined,
+                                          color: theme
+                                              .colorScheme.onPrimaryContainer,
+                                          size: 20)),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                      child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                        Text(trip.destination,
+                                            style: theme.textTheme.titleSmall),
+                                        if (plan.destinations.isNotEmpty)
+                                          Text(
+                                              plan.destinations
+                                                  .map((d) => d.title)
+                                                  .join(' → '),
+                                              style: secondary),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                            '${DateFormat('d MMM').format(trip.startDate)} – ${DateFormat('d MMM yyyy').format(trip.endDate)}',
+                                            style: secondary),
+                                        const SizedBox(height: 8),
+                                        Wrap(
+                                            spacing: 12,
+                                            runSpacing: 4,
+                                            children: [
+                                              Text(
+                                                  tripPhase(trip.startDate,
+                                                      trip.endDate, now),
+                                                  style: secondary?.copyWith(
+                                                      color: theme.colorScheme
+                                                          .primary)),
+                                              Text('$count planned items',
+                                                  style: secondary),
+                                              if (trip.expenses.isNotEmpty)
+                                                Text(
+                                                    CurrencyUtils.format(
+                                                        total, currency),
+                                                    style: secondary),
+                                            ]),
+                                        if (tasks.isNotEmpty) ...[
+                                          const SizedBox(height: 12),
+                                          LinearProgressIndicator(
+                                              value: done / tasks.length,
+                                              minHeight: 4,
+                                              borderRadius:
+                                                  BorderRadius.circular(4)),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                              '$done/${tasks.length} preparation complete',
+                                              style: secondary),
+                                        ],
+                                      ])),
+                                  const SizedBox(width: 8),
+                                  Icon(Icons.chevron_right,
+                                      size: 20,
+                                      color:
+                                          theme.colorScheme.onSurfaceVariant),
+                                ])),
+                      ));
+                });
+            return Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 860),
+                    child: RefreshIndicator(
+                        onRefresh: () =>
+                            ref.read(syncStateProvider.notifier).syncNow(),
+                        child: ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
                             children: [
-                              const TravelKindIcon('activity'),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Text(
-                                  trip.destination,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleLarge
-                                      ?.copyWith(fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                              const Icon(Icons.arrow_forward_rounded, size: 20),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                          Text(
-                            '${AppDateUtils.displayDate(trip.startDate)} - ${AppDateUtils.displayDate(trip.endDate)}',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                          const SizedBox(height: 4),
-                          const SizedBox(height: 16),
-                          const Divider(height: 1),
-                          const SizedBox(height: 16),
-                          Row(children: [
-                            Icon(Icons.receipt_long_outlined,
-                                size: 16,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant),
-                            const SizedBox(width: 8),
-                            Expanded(
-                                child: Text('${trip.expenses.length} expenses',
-                                    style:
-                                        Theme.of(context).textTheme.bodySmall)),
-                            Text(CurrencyUtils.format(total, displayCurrency),
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w600)),
-                          ]),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
-      )),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => showModalBottomSheet(
-          context: context,
-          isScrollControlled: true,
-          useSafeArea: true,
-          builder: (context) => const AddTripScreen(),
-        ),
-        icon: const Icon(Icons.add),
-        label: const Text('New trip'),
-      ),
+                              ...upcoming.map(card),
+                              if (past.isNotEmpty)
+                                Theme(
+                                    data: Theme.of(context).copyWith(
+                                        dividerColor: Colors.transparent),
+                                    child: ExpansionTile(
+                                        tilePadding: EdgeInsets.zero,
+                                        title: Text(
+                                            'Past trips · ${past.length}',
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .titleSmall),
+                                        childrenPadding:
+                                            const EdgeInsets.only(top: 8),
+                                        children: past.map(card).toList())),
+                            ]))));
+          },
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Center(child: Text('Could not load trips: $e'))),
+      floatingActionButton: FloatingActionButton(
+          tooltip: 'New trip',
+          onPressed: () => add(context),
+          child: const Icon(Icons.add)),
     );
   }
 }

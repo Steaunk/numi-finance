@@ -1,7 +1,8 @@
+import '../data/repositories/trip_plan_repository.dart';
+import '../models/trip_plan.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/trip.dart' as model;
 import 'core.dart';
-import '../data/repositories/trip_plan_repository.dart';
 
 final tripListProvider = StreamProvider<List<model.Trip>>((ref) {
   return ref.watch(travelRepositoryProvider).watchAllTrips();
@@ -13,7 +14,8 @@ final tripDetailProvider =
 });
 
 final tripPlanRepositoryProvider = Provider<TripPlanRepository>((ref) =>
-    TripPlanRepository(ref.watch(databaseProvider),
-        ref.watch(travelApiProvider), ref.watch(travelRepositoryProvider)));
-final tripPlanProvider = StreamProvider.family<PlanState, int>(
+    TripPlanRepository(
+        ref.watch(databaseProvider), ref.watch(travelApiProvider),
+        prepareTrip: ref.watch(travelRepositoryProvider).flushTrips));
+final tripPlanProvider = StreamProvider.family<TripPlan, int>(
     (ref, id) => ref.watch(tripPlanRepositoryProvider).watch(id));

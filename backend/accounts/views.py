@@ -8,7 +8,7 @@ from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
-from core.models import VALID_CURRENCIES
+from core.models import ExchangeRate, VALID_CURRENCIES
 from core.services import compute_snapshot_amounts, convert_amount, get_rates
 
 from .models import Account, BalanceSnapshot
@@ -278,13 +278,13 @@ def trend(request):
         currency = 'SGD'
 
     amount_field = f'amount_{currency.lower()}'
-    included_ids = set(
-        Account.objects.filter(include_in_total=True).values_list('id', flat=True)
+    included_accounts = dict(
+        Account.objects.filter(include_in_total=True).values_list('id', 'currency')
     )
     snapshots = list(
         BalanceSnapshot.objects
-        .filter(account_id__in=included_ids)
-        .order_by('snapshot_date', 'created_at')
+        .filter(account_id__in=included_accounts)
+        .order_by('snapshot_date', 'created_at', 'id')
     )
 
     if not snapshots:
@@ -292,6 +292,17 @@ def trend(request):
 
     # Build latest-balance-per-account at each date (2 queries total, not N*M)
     dates = sorted({s.snapshot_date for s in snapshots})
+    # JPY has no precomputed snapshot column. Use the rate for each
+    # snapshot's date, just like the other stored currency equivalents.
+    jpy_rates = {}
+    if currency == 'JPY':
+        jpy_rates = dict(
+            ExchangeRate.objects.filter(rate_date__in=dates)
+            .values_list('rate_date', 'jpy')
+        )
+        for d in dates:
+            if d not in jpy_rates:
+                jpy_rates[d] = get_rates(d.isoformat())['jpy']
     latest_by_account = {}  # account_id -> amount in target currency
     trend_dates = []
     trend_values = []
@@ -300,7 +311,12 @@ def trend(request):
     for d in dates:
         while snap_idx < len(snapshots) and snapshots[snap_idx].snapshot_date <= d:
             s = snapshots[snap_idx]
-            latest_by_account[s.account_id] = getattr(s, amount_field)
+            if currency == 'JPY':
+                amount = (s.balance if included_accounts[s.account_id] == 'JPY'
+                          else round(s.amount_usd * jpy_rates[s.snapshot_date], 2))
+            else:
+                amount = getattr(s, amount_field)
+            latest_by_account[s.account_id] = amount
             snap_idx += 1
         trend_dates.append(d.isoformat())
         trend_values.append(round(sum(latest_by_account.values()), 2))

@@ -12,6 +12,7 @@ Future<void> showPlanExport(BuildContext context, Trip trip, TripPlan plan) =>
         context: context,
         isScrollControlled: true,
         useSafeArea: true,
+        constraints: const BoxConstraints(maxWidth: 720),
         builder: (_) => _ExportSheet(trip: trip, plan: plan));
 
 class _ExportSheet extends StatefulWidget {
@@ -25,10 +26,14 @@ class _ExportSheet extends StatefulWidget {
 class _ExportSheetState extends State<_ExportSheet> {
   bool references = false;
   bool busy = false;
+  String? message;
   String get text =>
       tripPlanText(widget.trip, widget.plan, includeReferences: references);
   Future<void> share(bool file) async {
-    setState(() => busy = true);
+    setState(() {
+      busy = true;
+      message = null;
+    });
     try {
       final box = context.findRenderObject() as RenderBox?;
       final origin =
@@ -48,9 +53,8 @@ class _ExportSheetState extends State<_ExportSheet> {
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text(
-                'Sharing is unavailable. You can copy the itinerary instead.')));
+        setState(() => message =
+            'Sharing is unavailable. You can copy the itinerary instead.');
       }
     } finally {
       if (mounted) setState(() => busy = false);
@@ -73,9 +77,18 @@ class _ExportSheetState extends State<_ExportSheet> {
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Include confirmation numbers'),
                 value: references,
-                onChanged: (v) => setState(() => references = v)),
+                onChanged: busy
+                    ? null
+                    : (v) => setState(() {
+                          references = v;
+                          message = null;
+                        })),
             Expanded(child: SingleChildScrollView(child: SelectableText(text))),
             const SizedBox(height: 12),
+            if (message != null)
+              Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Semantics(liveRegion: true, child: Text(message!))),
             Wrap(spacing: 8, runSpacing: 8, children: [
               FilledButton.icon(
                   onPressed: busy ? null : () => share(false),
@@ -87,10 +100,14 @@ class _ExportSheetState extends State<_ExportSheet> {
                   label: const Text('Export printable HTML')),
               TextButton(
                   onPressed: () async {
-                    await Clipboard.setData(ClipboardData(text: text));
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Itinerary copied')));
+                    try {
+                      await Clipboard.setData(ClipboardData(text: text));
+                      if (mounted) setState(() => message = 'Itinerary copied');
+                    } catch (_) {
+                      if (mounted) {
+                        setState(() => message =
+                            'Could not copy. Select the preview text to copy it manually.');
+                      }
                     }
                   },
                   child: const Text('Copy')),
