@@ -59,6 +59,7 @@ class Trip(models.Model):
 
 
 class TravelExpense(models.Model):
+    planner_entry_id = models.CharField(max_length=64, blank=True, default='')
     trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name='expenses')
     amount = models.FloatField()
     currency = models.CharField(max_length=3)
@@ -77,3 +78,22 @@ class TravelExpense(models.Model):
 
     def __str__(self):
         return f"{self.name} - {self.amount} {self.currency}"
+
+
+class TripPlan(models.Model):
+    """One versioned planning document per trip; UUIDs inside stay stable offline."""
+    trip = models.OneToOneField(Trip, on_delete=models.CASCADE, related_name='plan')
+    document = models.JSONField(default=dict)
+    version = models.PositiveIntegerField(default=0)
+
+
+class TravelMutation(models.Model):
+    scope = models.CharField(max_length=64)
+    key = models.CharField(max_length=64)
+    request_hash = models.CharField(max_length=64)
+    response = models.JSONField(default=dict)
+    status = models.PositiveSmallIntegerField(default=200)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['scope', 'key'], name='travel_mutation_unique')]

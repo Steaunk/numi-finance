@@ -1,4 +1,5 @@
 class TravelExpense {
+  final String plannerEntryId;
   final int id;
   final int? remoteId;
   final int tripId;
@@ -18,6 +19,7 @@ class TravelExpense {
 
   const TravelExpense({
     required this.id,
+    this.plannerEntryId = '',
     this.remoteId,
     required this.tripId,
     this.tripRemoteId,

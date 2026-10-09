@@ -4,6 +4,7 @@ import '../data/sync/sync_service.dart';
 import 'assets.dart';
 import 'core.dart';
 import 'expenses.dart';
+import 'travel.dart';
 
 final syncServiceProvider = Provider<SyncService?>((ref) {
   final client = ref.watch(apiClientProvider);
@@ -11,7 +12,6 @@ final syncServiceProvider = Provider<SyncService?>((ref) {
   return SyncService(
     db: ref.watch(databaseProvider),
     expenseApi: ref.watch(expenseApiProvider)!,
-    travelApi: ref.watch(travelApiProvider)!,
     assetApi: ref.watch(assetApiProvider)!,
     expenseRepo: ref.watch(expenseRepositoryProvider),
     travelRepo: ref.watch(travelRepositoryProvider),
@@ -31,12 +31,14 @@ class SyncStateNotifier extends StateNotifier<AsyncValue<void>> {
   SyncStateNotifier(this._ref) : super(const AsyncData(null));
 
   Future<void> syncNow() async {
+    if (state.isLoading) return;
     final service = _ref.read(syncServiceProvider);
     if (service == null) return;
     state = const AsyncLoading();
     try {
       final currency = _ref.read(displayCurrencyProvider);
       await service.fullSync(currency);
+      await _ref.read(tripPlanRepositoryProvider).sync();
       state = const AsyncData(null);
       _ref.invalidate(accountListProvider);
       _ref.invalidate(monthlyStatsProvider(null));
@@ -56,7 +58,13 @@ class SyncStateNotifier extends StateNotifier<AsyncValue<void>> {
 }
 
 final pendingCountProvider = StreamProvider<int>((ref) {
-  return ref.watch(databaseProvider).syncQueueDao.watchPendingCount();
+  final db = ref.watch(databaseProvider);
+  return db
+      .customSelect(
+          'SELECT (SELECT COUNT(*) FROM sync_queue) + (SELECT COUNT(*) FROM trip_plans WHERE synced = 0) AS pending',
+          readsFrom: {db.syncQueue, db.tripPlans})
+      .watchSingle()
+      .map((row) => row.read<int>('pending'));
 });
 
 final connectivityProvider = StreamProvider<bool>((ref) {

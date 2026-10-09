@@ -566,3 +566,36 @@ Same fields as Expense, plus `trip` (FK to Trip).
 | `rate_date` | date | Unique, one entry per day |
 | `cny/hkd/sgd/jpy` | float | 1 USD = X rate |
 | `fetched_at` | datetime | Auto-set on creation |
+
+
+## Trip plan document
+
+`GET /expenses/api/travel/trips/<id>/plan/` returns `{ "version": 0, "document": {} }` for a trip without a plan. The trip must exist.
+
+`PUT` on the same URL accepts:
+
+```json
+{
+  "version": 0,
+  "_mutation_id": "dc8d652e598c4f5181827380d65690aa",
+  "document": {
+    "places": [],
+    "entries": [],
+    "checks": [],
+    "day_notes": {"2026-10-10": "Take the airport train"}
+  }
+}
+```
+
+A successful write returns the document and incremented version. A stale version returns HTTP 409 with the current server `version` and `document`; clients keep both copies and ask the user to resolve the conflict. Plan writes are atomic. The document is limited to 2 MB and each collection to 1,000 items.
+
+All collection items have a stable client-generated `id` (16–64 alphanumeric, underscore or hyphen characters), required `title` (up to 200 characters), and optional `notes` (up to 5,000).
+
+- **places**: `address`, optional paired numeric `lat`/`lng`, `url` (HTTP/S).
+- **entries**: `kind` (`activity`, `food`, `transport`, `note`, `hotel`, `flight`, `train`, `booking`); `date`, `end_date` (YYYY-MM-DD or empty); `time`, `end_time` (HH:mm or empty); optional `place_id`; `status` (`pending`, `confirmed`, `cancelled`); `confirmation`, `timezone`, `end_timezone` (IANA names), `url`. Array order is the user-controlled itinerary order. A place may have multiple entries. Bookings can span up to 366 days.
+- **checks**: `kind` (`packing`, `todo`), boolean `done`, optional `due` date.
+- **day_notes**: date-to-text map.
+
+Travel expense create/update accepts optional `planner_entry_id`, also returned in the expense list. It references a stable itinerary/booking entry ID. Expenses survive removal of their linked plan item. No new financial states or forecast accounting are introduced.
+
+All travel write endpoints accept `_mutation_id` in the JSON body, including DELETE, or an `X-Idempotency-Key` header. Replaying the same request returns its original successful response. Reusing a key with a different payload returns 409. The response receipt and business write commit in one database transaction. Existing clients without a mutation key remain supported.

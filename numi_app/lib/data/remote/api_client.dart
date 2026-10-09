@@ -97,8 +97,10 @@ class ApiClient {
       if (e is DioException) {
         final body = e.response?.data?.toString() ?? 'null';
         final snippet = body.substring(0, body.length.clamp(0, 300));
-        log.log('GET $path failed: status=${e.response?.statusCode} '
-            'type=${e.type} body=$snippet', name: 'API');
+        log.log(
+            'GET $path failed: status=${e.response?.statusCode} '
+            'type=${e.type} body=$snippet',
+            name: 'API');
       } else {
         log.log('GET $path error: $e', name: 'API');
       }
@@ -112,5 +114,6 @@ class ApiClient {
   Future<Response<T>> put<T>(String path, {dynamic data}) =>
       _dio.put<T>(path, data: data);
 
-  Future<Response<T>> delete<T>(String path) => _dio.delete<T>(path);
+  Future<Response<T>> delete<T>(String path, {dynamic data}) =>
+      _dio.delete<T>(path, data: data);
 }

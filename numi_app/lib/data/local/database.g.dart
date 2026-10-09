@@ -680,6 +680,16 @@ class $TripsTable extends Trips with TableInfo<$TripsTable, DbTrip> {
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
   $TripsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _deletedMeta =
+      const VerificationMeta('deleted');
+  @override
+  late final GeneratedColumn<bool> deleted = GeneratedColumn<bool>(
+      'deleted', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("deleted" IN (0, 1))'),
+      defaultValue: const Constant(false));
   static const VerificationMeta _idMeta = const VerificationMeta('id');
   @override
   late final GeneratedColumn<int> id = GeneratedColumn<int>(
@@ -736,8 +746,17 @@ class $TripsTable extends Trips with TableInfo<$TripsTable, DbTrip> {
           GeneratedColumn.constraintIsAlways('CHECK ("synced" IN (0, 1))'),
       defaultValue: const Constant(false));
   @override
-  List<GeneratedColumn> get $columns =>
-      [id, remoteId, destination, startDate, endDate, notes, createdAt, synced];
+  List<GeneratedColumn> get $columns => [
+        deleted,
+        id,
+        remoteId,
+        destination,
+        startDate,
+        endDate,
+        notes,
+        createdAt,
+        synced
+      ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -748,6 +767,10 @@ class $TripsTable extends Trips with TableInfo<$TripsTable, DbTrip> {
       {bool isInserting = false}) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
+    if (data.containsKey('deleted')) {
+      context.handle(_deletedMeta,
+          deleted.isAcceptableOrUnknown(data['deleted']!, _deletedMeta));
+    }
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     }
@@ -796,6 +819,8 @@ class $TripsTable extends Trips with TableInfo<$TripsTable, DbTrip> {
   DbTrip map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return DbTrip(
+      deleted: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}deleted'])!,
       id: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
       remoteId: attachedDatabase.typeMapping
@@ -822,6 +847,7 @@ class $TripsTable extends Trips with TableInfo<$TripsTable, DbTrip> {
 }
 
 class DbTrip extends DataClass implements Insertable<DbTrip> {
+  final bool deleted;
   final int id;
   final int? remoteId;
   final String destination;
@@ -831,7 +857,8 @@ class DbTrip extends DataClass implements Insertable<DbTrip> {
   final DateTime? createdAt;
   final bool synced;
   const DbTrip(
-      {required this.id,
+      {required this.deleted,
+      required this.id,
       this.remoteId,
       required this.destination,
       required this.startDate,
@@ -842,6 +869,7 @@ class DbTrip extends DataClass implements Insertable<DbTrip> {
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
+    map['deleted'] = Variable<bool>(deleted);
     map['id'] = Variable<int>(id);
     if (!nullToAbsent || remoteId != null) {
       map['remote_id'] = Variable<int>(remoteId);
@@ -859,6 +887,7 @@ class DbTrip extends DataClass implements Insertable<DbTrip> {
 
   TripsCompanion toCompanion(bool nullToAbsent) {
     return TripsCompanion(
+      deleted: Value(deleted),
       id: Value(id),
       remoteId: remoteId == null && nullToAbsent
           ? const Value.absent()
@@ -878,6 +907,7 @@ class DbTrip extends DataClass implements Insertable<DbTrip> {
       {ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return DbTrip(
+      deleted: serializer.fromJson<bool>(json['deleted']),
       id: serializer.fromJson<int>(json['id']),
       remoteId: serializer.fromJson<int?>(json['remoteId']),
       destination: serializer.fromJson<String>(json['destination']),
@@ -892,6 +922,7 @@ class DbTrip extends DataClass implements Insertable<DbTrip> {
   Map<String, dynamic> toJson({ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
+      'deleted': serializer.toJson<bool>(deleted),
       'id': serializer.toJson<int>(id),
       'remoteId': serializer.toJson<int?>(remoteId),
       'destination': serializer.toJson<String>(destination),
@@ -904,7 +935,8 @@ class DbTrip extends DataClass implements Insertable<DbTrip> {
   }
 
   DbTrip copyWith(
-          {int? id,
+          {bool? deleted,
+          int? id,
           Value<int?> remoteId = const Value.absent(),
           String? destination,
           DateTime? startDate,
@@ -913,6 +945,7 @@ class DbTrip extends DataClass implements Insertable<DbTrip> {
           Value<DateTime?> createdAt = const Value.absent(),
           bool? synced}) =>
       DbTrip(
+        deleted: deleted ?? this.deleted,
         id: id ?? this.id,
         remoteId: remoteId.present ? remoteId.value : this.remoteId,
         destination: destination ?? this.destination,
@@ -924,6 +957,7 @@ class DbTrip extends DataClass implements Insertable<DbTrip> {
       );
   DbTrip copyWithCompanion(TripsCompanion data) {
     return DbTrip(
+      deleted: data.deleted.present ? data.deleted.value : this.deleted,
       id: data.id.present ? data.id.value : this.id,
       remoteId: data.remoteId.present ? data.remoteId.value : this.remoteId,
       destination:
@@ -939,6 +973,7 @@ class DbTrip extends DataClass implements Insertable<DbTrip> {
   @override
   String toString() {
     return (StringBuffer('DbTrip(')
+          ..write('deleted: $deleted, ')
           ..write('id: $id, ')
           ..write('remoteId: $remoteId, ')
           ..write('destination: $destination, ')
@@ -952,12 +987,13 @@ class DbTrip extends DataClass implements Insertable<DbTrip> {
   }
 
   @override
-  int get hashCode => Object.hash(
-      id, remoteId, destination, startDate, endDate, notes, createdAt, synced);
+  int get hashCode => Object.hash(deleted, id, remoteId, destination, startDate,
+      endDate, notes, createdAt, synced);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is DbTrip &&
+          other.deleted == this.deleted &&
           other.id == this.id &&
           other.remoteId == this.remoteId &&
           other.destination == this.destination &&
@@ -969,6 +1005,7 @@ class DbTrip extends DataClass implements Insertable<DbTrip> {
 }
 
 class TripsCompanion extends UpdateCompanion<DbTrip> {
+  final Value<bool> deleted;
   final Value<int> id;
   final Value<int?> remoteId;
   final Value<String> destination;
@@ -978,6 +1015,7 @@ class TripsCompanion extends UpdateCompanion<DbTrip> {
   final Value<DateTime?> createdAt;
   final Value<bool> synced;
   const TripsCompanion({
+    this.deleted = const Value.absent(),
     this.id = const Value.absent(),
     this.remoteId = const Value.absent(),
     this.destination = const Value.absent(),
@@ -988,6 +1026,7 @@ class TripsCompanion extends UpdateCompanion<DbTrip> {
     this.synced = const Value.absent(),
   });
   TripsCompanion.insert({
+    this.deleted = const Value.absent(),
     this.id = const Value.absent(),
     this.remoteId = const Value.absent(),
     required String destination,
@@ -1000,6 +1039,7 @@ class TripsCompanion extends UpdateCompanion<DbTrip> {
         startDate = Value(startDate),
         endDate = Value(endDate);
   static Insertable<DbTrip> custom({
+    Expression<bool>? deleted,
     Expression<int>? id,
     Expression<int>? remoteId,
     Expression<String>? destination,
@@ -1010,6 +1050,7 @@ class TripsCompanion extends UpdateCompanion<DbTrip> {
     Expression<bool>? synced,
   }) {
     return RawValuesInsertable({
+      if (deleted != null) 'deleted': deleted,
       if (id != null) 'id': id,
       if (remoteId != null) 'remote_id': remoteId,
       if (destination != null) 'destination': destination,
@@ -1022,7 +1063,8 @@ class TripsCompanion extends UpdateCompanion<DbTrip> {
   }
 
   TripsCompanion copyWith(
-      {Value<int>? id,
+      {Value<bool>? deleted,
+      Value<int>? id,
       Value<int?>? remoteId,
       Value<String>? destination,
       Value<DateTime>? startDate,
@@ -1031,6 +1073,7 @@ class TripsCompanion extends UpdateCompanion<DbTrip> {
       Value<DateTime?>? createdAt,
       Value<bool>? synced}) {
     return TripsCompanion(
+      deleted: deleted ?? this.deleted,
       id: id ?? this.id,
       remoteId: remoteId ?? this.remoteId,
       destination: destination ?? this.destination,
@@ -1045,6 +1088,9 @@ class TripsCompanion extends UpdateCompanion<DbTrip> {
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
+    if (deleted.present) {
+      map['deleted'] = Variable<bool>(deleted.value);
+    }
     if (id.present) {
       map['id'] = Variable<int>(id.value);
     }
@@ -1075,6 +1121,7 @@ class TripsCompanion extends UpdateCompanion<DbTrip> {
   @override
   String toString() {
     return (StringBuffer('TripsCompanion(')
+          ..write('deleted: $deleted, ')
           ..write('id: $id, ')
           ..write('remoteId: $remoteId, ')
           ..write('destination: $destination, ')
@@ -1094,6 +1141,24 @@ class $TravelExpensesTable extends TravelExpenses
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
   $TravelExpensesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _deletedMeta =
+      const VerificationMeta('deleted');
+  @override
+  late final GeneratedColumn<bool> deleted = GeneratedColumn<bool>(
+      'deleted', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("deleted" IN (0, 1))'),
+      defaultValue: const Constant(false));
+  static const VerificationMeta _plannerEntryIdMeta =
+      const VerificationMeta('plannerEntryId');
+  @override
+  late final GeneratedColumn<String> plannerEntryId = GeneratedColumn<String>(
+      'planner_entry_id', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(''));
   static const VerificationMeta _idMeta = const VerificationMeta('id');
   @override
   late final GeneratedColumn<int> id = GeneratedColumn<int>(
@@ -1206,6 +1271,8 @@ class $TravelExpensesTable extends TravelExpenses
       defaultValue: const Constant(false));
   @override
   List<GeneratedColumn> get $columns => [
+        deleted,
+        plannerEntryId,
         id,
         remoteId,
         tripId,
@@ -1233,6 +1300,16 @@ class $TravelExpensesTable extends TravelExpenses
       {bool isInserting = false}) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
+    if (data.containsKey('deleted')) {
+      context.handle(_deletedMeta,
+          deleted.isAcceptableOrUnknown(data['deleted']!, _deletedMeta));
+    }
+    if (data.containsKey('planner_entry_id')) {
+      context.handle(
+          _plannerEntryIdMeta,
+          plannerEntryId.isAcceptableOrUnknown(
+              data['planner_entry_id']!, _plannerEntryIdMeta));
+    }
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     }
@@ -1319,6 +1396,10 @@ class $TravelExpensesTable extends TravelExpenses
   DbTravelExpense map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return DbTravelExpense(
+      deleted: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}deleted'])!,
+      plannerEntryId: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}planner_entry_id'])!,
       id: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
       remoteId: attachedDatabase.typeMapping
@@ -1361,6 +1442,8 @@ class $TravelExpensesTable extends TravelExpenses
 }
 
 class DbTravelExpense extends DataClass implements Insertable<DbTravelExpense> {
+  final bool deleted;
+  final String plannerEntryId;
   final int id;
   final int? remoteId;
   final int tripId;
@@ -1378,7 +1461,9 @@ class DbTravelExpense extends DataClass implements Insertable<DbTravelExpense> {
   final DateTime? createdAt;
   final bool synced;
   const DbTravelExpense(
-      {required this.id,
+      {required this.deleted,
+      required this.plannerEntryId,
+      required this.id,
       this.remoteId,
       required this.tripId,
       this.tripRemoteId,
@@ -1397,6 +1482,8 @@ class DbTravelExpense extends DataClass implements Insertable<DbTravelExpense> {
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
+    map['deleted'] = Variable<bool>(deleted);
+    map['planner_entry_id'] = Variable<String>(plannerEntryId);
     map['id'] = Variable<int>(id);
     if (!nullToAbsent || remoteId != null) {
       map['remote_id'] = Variable<int>(remoteId);
@@ -1424,6 +1511,8 @@ class DbTravelExpense extends DataClass implements Insertable<DbTravelExpense> {
 
   TravelExpensesCompanion toCompanion(bool nullToAbsent) {
     return TravelExpensesCompanion(
+      deleted: Value(deleted),
+      plannerEntryId: Value(plannerEntryId),
       id: Value(id),
       remoteId: remoteId == null && nullToAbsent
           ? const Value.absent()
@@ -1453,6 +1542,8 @@ class DbTravelExpense extends DataClass implements Insertable<DbTravelExpense> {
       {ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return DbTravelExpense(
+      deleted: serializer.fromJson<bool>(json['deleted']),
+      plannerEntryId: serializer.fromJson<String>(json['plannerEntryId']),
       id: serializer.fromJson<int>(json['id']),
       remoteId: serializer.fromJson<int?>(json['remoteId']),
       tripId: serializer.fromJson<int>(json['tripId']),
@@ -1475,6 +1566,8 @@ class DbTravelExpense extends DataClass implements Insertable<DbTravelExpense> {
   Map<String, dynamic> toJson({ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
+      'deleted': serializer.toJson<bool>(deleted),
+      'plannerEntryId': serializer.toJson<String>(plannerEntryId),
       'id': serializer.toJson<int>(id),
       'remoteId': serializer.toJson<int?>(remoteId),
       'tripId': serializer.toJson<int>(tripId),
@@ -1495,7 +1588,9 @@ class DbTravelExpense extends DataClass implements Insertable<DbTravelExpense> {
   }
 
   DbTravelExpense copyWith(
-          {int? id,
+          {bool? deleted,
+          String? plannerEntryId,
+          int? id,
           Value<int?> remoteId = const Value.absent(),
           int? tripId,
           Value<int?> tripRemoteId = const Value.absent(),
@@ -1512,6 +1607,8 @@ class DbTravelExpense extends DataClass implements Insertable<DbTravelExpense> {
           Value<DateTime?> createdAt = const Value.absent(),
           bool? synced}) =>
       DbTravelExpense(
+        deleted: deleted ?? this.deleted,
+        plannerEntryId: plannerEntryId ?? this.plannerEntryId,
         id: id ?? this.id,
         remoteId: remoteId.present ? remoteId.value : this.remoteId,
         tripId: tripId ?? this.tripId,
@@ -1532,6 +1629,10 @@ class DbTravelExpense extends DataClass implements Insertable<DbTravelExpense> {
       );
   DbTravelExpense copyWithCompanion(TravelExpensesCompanion data) {
     return DbTravelExpense(
+      deleted: data.deleted.present ? data.deleted.value : this.deleted,
+      plannerEntryId: data.plannerEntryId.present
+          ? data.plannerEntryId.value
+          : this.plannerEntryId,
       id: data.id.present ? data.id.value : this.id,
       remoteId: data.remoteId.present ? data.remoteId.value : this.remoteId,
       tripId: data.tripId.present ? data.tripId.value : this.tripId,
@@ -1556,6 +1657,8 @@ class DbTravelExpense extends DataClass implements Insertable<DbTravelExpense> {
   @override
   String toString() {
     return (StringBuffer('DbTravelExpense(')
+          ..write('deleted: $deleted, ')
+          ..write('plannerEntryId: $plannerEntryId, ')
           ..write('id: $id, ')
           ..write('remoteId: $remoteId, ')
           ..write('tripId: $tripId, ')
@@ -1578,6 +1681,8 @@ class DbTravelExpense extends DataClass implements Insertable<DbTravelExpense> {
 
   @override
   int get hashCode => Object.hash(
+      deleted,
+      plannerEntryId,
       id,
       remoteId,
       tripId,
@@ -1598,6 +1703,8 @@ class DbTravelExpense extends DataClass implements Insertable<DbTravelExpense> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is DbTravelExpense &&
+          other.deleted == this.deleted &&
+          other.plannerEntryId == this.plannerEntryId &&
           other.id == this.id &&
           other.remoteId == this.remoteId &&
           other.tripId == this.tripId &&
@@ -1617,6 +1724,8 @@ class DbTravelExpense extends DataClass implements Insertable<DbTravelExpense> {
 }
 
 class TravelExpensesCompanion extends UpdateCompanion<DbTravelExpense> {
+  final Value<bool> deleted;
+  final Value<String> plannerEntryId;
   final Value<int> id;
   final Value<int?> remoteId;
   final Value<int> tripId;
@@ -1634,6 +1743,8 @@ class TravelExpensesCompanion extends UpdateCompanion<DbTravelExpense> {
   final Value<DateTime?> createdAt;
   final Value<bool> synced;
   const TravelExpensesCompanion({
+    this.deleted = const Value.absent(),
+    this.plannerEntryId = const Value.absent(),
     this.id = const Value.absent(),
     this.remoteId = const Value.absent(),
     this.tripId = const Value.absent(),
@@ -1652,6 +1763,8 @@ class TravelExpensesCompanion extends UpdateCompanion<DbTravelExpense> {
     this.synced = const Value.absent(),
   });
   TravelExpensesCompanion.insert({
+    this.deleted = const Value.absent(),
+    this.plannerEntryId = const Value.absent(),
     this.id = const Value.absent(),
     this.remoteId = const Value.absent(),
     required int tripId,
@@ -1675,6 +1788,8 @@ class TravelExpensesCompanion extends UpdateCompanion<DbTravelExpense> {
         category = Value(category),
         name = Value(name);
   static Insertable<DbTravelExpense> custom({
+    Expression<bool>? deleted,
+    Expression<String>? plannerEntryId,
     Expression<int>? id,
     Expression<int>? remoteId,
     Expression<int>? tripId,
@@ -1693,6 +1808,8 @@ class TravelExpensesCompanion extends UpdateCompanion<DbTravelExpense> {
     Expression<bool>? synced,
   }) {
     return RawValuesInsertable({
+      if (deleted != null) 'deleted': deleted,
+      if (plannerEntryId != null) 'planner_entry_id': plannerEntryId,
       if (id != null) 'id': id,
       if (remoteId != null) 'remote_id': remoteId,
       if (tripId != null) 'trip_id': tripId,
@@ -1713,7 +1830,9 @@ class TravelExpensesCompanion extends UpdateCompanion<DbTravelExpense> {
   }
 
   TravelExpensesCompanion copyWith(
-      {Value<int>? id,
+      {Value<bool>? deleted,
+      Value<String>? plannerEntryId,
+      Value<int>? id,
       Value<int?>? remoteId,
       Value<int>? tripId,
       Value<int?>? tripRemoteId,
@@ -1730,6 +1849,8 @@ class TravelExpensesCompanion extends UpdateCompanion<DbTravelExpense> {
       Value<DateTime?>? createdAt,
       Value<bool>? synced}) {
     return TravelExpensesCompanion(
+      deleted: deleted ?? this.deleted,
+      plannerEntryId: plannerEntryId ?? this.plannerEntryId,
       id: id ?? this.id,
       remoteId: remoteId ?? this.remoteId,
       tripId: tripId ?? this.tripId,
@@ -1752,6 +1873,12 @@ class TravelExpensesCompanion extends UpdateCompanion<DbTravelExpense> {
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
+    if (deleted.present) {
+      map['deleted'] = Variable<bool>(deleted.value);
+    }
+    if (plannerEntryId.present) {
+      map['planner_entry_id'] = Variable<String>(plannerEntryId.value);
+    }
     if (id.present) {
       map['id'] = Variable<int>(id.value);
     }
@@ -1806,6 +1933,8 @@ class TravelExpensesCompanion extends UpdateCompanion<DbTravelExpense> {
   @override
   String toString() {
     return (StringBuffer('TravelExpensesCompanion(')
+          ..write('deleted: $deleted, ')
+          ..write('plannerEntryId: $plannerEntryId, ')
           ..write('id: $id, ')
           ..write('remoteId: $remoteId, ')
           ..write('tripId: $tripId, ')
@@ -3628,6 +3757,438 @@ class SyncQueueCompanion extends UpdateCompanion<DbSyncOperation> {
   }
 }
 
+class $TripPlansTable extends TripPlans
+    with TableInfo<$TripPlansTable, DbTripPlan> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $TripPlansTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _tripIdMeta = const VerificationMeta('tripId');
+  @override
+  late final GeneratedColumn<int> tripId = GeneratedColumn<int>(
+      'trip_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('REFERENCES trips (id)'));
+  static const VerificationMeta _documentMeta =
+      const VerificationMeta('document');
+  @override
+  late final GeneratedColumn<String> document = GeneratedColumn<String>(
+      'document', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('{}'));
+  static const VerificationMeta _versionMeta =
+      const VerificationMeta('version');
+  @override
+  late final GeneratedColumn<int> version = GeneratedColumn<int>(
+      'version', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _syncedMeta = const VerificationMeta('synced');
+  @override
+  late final GeneratedColumn<bool> synced = GeneratedColumn<bool>(
+      'synced', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("synced" IN (0, 1))'),
+      defaultValue: const Constant(true));
+  static const VerificationMeta _changeIdMeta =
+      const VerificationMeta('changeId');
+  @override
+  late final GeneratedColumn<String> changeId = GeneratedColumn<String>(
+      'change_id', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(''));
+  static const VerificationMeta _conflictDocumentMeta =
+      const VerificationMeta('conflictDocument');
+  @override
+  late final GeneratedColumn<String> conflictDocument = GeneratedColumn<String>(
+      'conflict_document', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _conflictVersionMeta =
+      const VerificationMeta('conflictVersion');
+  @override
+  late final GeneratedColumn<int> conflictVersion = GeneratedColumn<int>(
+      'conflict_version', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _syncErrorMeta =
+      const VerificationMeta('syncError');
+  @override
+  late final GeneratedColumn<String> syncError = GeneratedColumn<String>(
+      'sync_error', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  @override
+  List<GeneratedColumn> get $columns => [
+        tripId,
+        document,
+        version,
+        synced,
+        changeId,
+        conflictDocument,
+        conflictVersion,
+        syncError
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'trip_plans';
+  @override
+  VerificationContext validateIntegrity(Insertable<DbTripPlan> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('trip_id')) {
+      context.handle(_tripIdMeta,
+          tripId.isAcceptableOrUnknown(data['trip_id']!, _tripIdMeta));
+    }
+    if (data.containsKey('document')) {
+      context.handle(_documentMeta,
+          document.isAcceptableOrUnknown(data['document']!, _documentMeta));
+    }
+    if (data.containsKey('version')) {
+      context.handle(_versionMeta,
+          version.isAcceptableOrUnknown(data['version']!, _versionMeta));
+    }
+    if (data.containsKey('synced')) {
+      context.handle(_syncedMeta,
+          synced.isAcceptableOrUnknown(data['synced']!, _syncedMeta));
+    }
+    if (data.containsKey('change_id')) {
+      context.handle(_changeIdMeta,
+          changeId.isAcceptableOrUnknown(data['change_id']!, _changeIdMeta));
+    }
+    if (data.containsKey('conflict_document')) {
+      context.handle(
+          _conflictDocumentMeta,
+          conflictDocument.isAcceptableOrUnknown(
+              data['conflict_document']!, _conflictDocumentMeta));
+    }
+    if (data.containsKey('conflict_version')) {
+      context.handle(
+          _conflictVersionMeta,
+          conflictVersion.isAcceptableOrUnknown(
+              data['conflict_version']!, _conflictVersionMeta));
+    }
+    if (data.containsKey('sync_error')) {
+      context.handle(_syncErrorMeta,
+          syncError.isAcceptableOrUnknown(data['sync_error']!, _syncErrorMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {tripId};
+  @override
+  DbTripPlan map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DbTripPlan(
+      tripId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}trip_id'])!,
+      document: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}document'])!,
+      version: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}version'])!,
+      synced: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}synced'])!,
+      changeId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}change_id'])!,
+      conflictDocument: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}conflict_document']),
+      conflictVersion: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}conflict_version']),
+      syncError: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}sync_error']),
+    );
+  }
+
+  @override
+  $TripPlansTable createAlias(String alias) {
+    return $TripPlansTable(attachedDatabase, alias);
+  }
+}
+
+class DbTripPlan extends DataClass implements Insertable<DbTripPlan> {
+  final int tripId;
+  final String document;
+  final int version;
+  final bool synced;
+  final String changeId;
+  final String? conflictDocument;
+  final int? conflictVersion;
+  final String? syncError;
+  const DbTripPlan(
+      {required this.tripId,
+      required this.document,
+      required this.version,
+      required this.synced,
+      required this.changeId,
+      this.conflictDocument,
+      this.conflictVersion,
+      this.syncError});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['trip_id'] = Variable<int>(tripId);
+    map['document'] = Variable<String>(document);
+    map['version'] = Variable<int>(version);
+    map['synced'] = Variable<bool>(synced);
+    map['change_id'] = Variable<String>(changeId);
+    if (!nullToAbsent || conflictDocument != null) {
+      map['conflict_document'] = Variable<String>(conflictDocument);
+    }
+    if (!nullToAbsent || conflictVersion != null) {
+      map['conflict_version'] = Variable<int>(conflictVersion);
+    }
+    if (!nullToAbsent || syncError != null) {
+      map['sync_error'] = Variable<String>(syncError);
+    }
+    return map;
+  }
+
+  TripPlansCompanion toCompanion(bool nullToAbsent) {
+    return TripPlansCompanion(
+      tripId: Value(tripId),
+      document: Value(document),
+      version: Value(version),
+      synced: Value(synced),
+      changeId: Value(changeId),
+      conflictDocument: conflictDocument == null && nullToAbsent
+          ? const Value.absent()
+          : Value(conflictDocument),
+      conflictVersion: conflictVersion == null && nullToAbsent
+          ? const Value.absent()
+          : Value(conflictVersion),
+      syncError: syncError == null && nullToAbsent
+          ? const Value.absent()
+          : Value(syncError),
+    );
+  }
+
+  factory DbTripPlan.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DbTripPlan(
+      tripId: serializer.fromJson<int>(json['tripId']),
+      document: serializer.fromJson<String>(json['document']),
+      version: serializer.fromJson<int>(json['version']),
+      synced: serializer.fromJson<bool>(json['synced']),
+      changeId: serializer.fromJson<String>(json['changeId']),
+      conflictDocument: serializer.fromJson<String?>(json['conflictDocument']),
+      conflictVersion: serializer.fromJson<int?>(json['conflictVersion']),
+      syncError: serializer.fromJson<String?>(json['syncError']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'tripId': serializer.toJson<int>(tripId),
+      'document': serializer.toJson<String>(document),
+      'version': serializer.toJson<int>(version),
+      'synced': serializer.toJson<bool>(synced),
+      'changeId': serializer.toJson<String>(changeId),
+      'conflictDocument': serializer.toJson<String?>(conflictDocument),
+      'conflictVersion': serializer.toJson<int?>(conflictVersion),
+      'syncError': serializer.toJson<String?>(syncError),
+    };
+  }
+
+  DbTripPlan copyWith(
+          {int? tripId,
+          String? document,
+          int? version,
+          bool? synced,
+          String? changeId,
+          Value<String?> conflictDocument = const Value.absent(),
+          Value<int?> conflictVersion = const Value.absent(),
+          Value<String?> syncError = const Value.absent()}) =>
+      DbTripPlan(
+        tripId: tripId ?? this.tripId,
+        document: document ?? this.document,
+        version: version ?? this.version,
+        synced: synced ?? this.synced,
+        changeId: changeId ?? this.changeId,
+        conflictDocument: conflictDocument.present
+            ? conflictDocument.value
+            : this.conflictDocument,
+        conflictVersion: conflictVersion.present
+            ? conflictVersion.value
+            : this.conflictVersion,
+        syncError: syncError.present ? syncError.value : this.syncError,
+      );
+  DbTripPlan copyWithCompanion(TripPlansCompanion data) {
+    return DbTripPlan(
+      tripId: data.tripId.present ? data.tripId.value : this.tripId,
+      document: data.document.present ? data.document.value : this.document,
+      version: data.version.present ? data.version.value : this.version,
+      synced: data.synced.present ? data.synced.value : this.synced,
+      changeId: data.changeId.present ? data.changeId.value : this.changeId,
+      conflictDocument: data.conflictDocument.present
+          ? data.conflictDocument.value
+          : this.conflictDocument,
+      conflictVersion: data.conflictVersion.present
+          ? data.conflictVersion.value
+          : this.conflictVersion,
+      syncError: data.syncError.present ? data.syncError.value : this.syncError,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DbTripPlan(')
+          ..write('tripId: $tripId, ')
+          ..write('document: $document, ')
+          ..write('version: $version, ')
+          ..write('synced: $synced, ')
+          ..write('changeId: $changeId, ')
+          ..write('conflictDocument: $conflictDocument, ')
+          ..write('conflictVersion: $conflictVersion, ')
+          ..write('syncError: $syncError')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(tripId, document, version, synced, changeId,
+      conflictDocument, conflictVersion, syncError);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DbTripPlan &&
+          other.tripId == this.tripId &&
+          other.document == this.document &&
+          other.version == this.version &&
+          other.synced == this.synced &&
+          other.changeId == this.changeId &&
+          other.conflictDocument == this.conflictDocument &&
+          other.conflictVersion == this.conflictVersion &&
+          other.syncError == this.syncError);
+}
+
+class TripPlansCompanion extends UpdateCompanion<DbTripPlan> {
+  final Value<int> tripId;
+  final Value<String> document;
+  final Value<int> version;
+  final Value<bool> synced;
+  final Value<String> changeId;
+  final Value<String?> conflictDocument;
+  final Value<int?> conflictVersion;
+  final Value<String?> syncError;
+  const TripPlansCompanion({
+    this.tripId = const Value.absent(),
+    this.document = const Value.absent(),
+    this.version = const Value.absent(),
+    this.synced = const Value.absent(),
+    this.changeId = const Value.absent(),
+    this.conflictDocument = const Value.absent(),
+    this.conflictVersion = const Value.absent(),
+    this.syncError = const Value.absent(),
+  });
+  TripPlansCompanion.insert({
+    this.tripId = const Value.absent(),
+    this.document = const Value.absent(),
+    this.version = const Value.absent(),
+    this.synced = const Value.absent(),
+    this.changeId = const Value.absent(),
+    this.conflictDocument = const Value.absent(),
+    this.conflictVersion = const Value.absent(),
+    this.syncError = const Value.absent(),
+  });
+  static Insertable<DbTripPlan> custom({
+    Expression<int>? tripId,
+    Expression<String>? document,
+    Expression<int>? version,
+    Expression<bool>? synced,
+    Expression<String>? changeId,
+    Expression<String>? conflictDocument,
+    Expression<int>? conflictVersion,
+    Expression<String>? syncError,
+  }) {
+    return RawValuesInsertable({
+      if (tripId != null) 'trip_id': tripId,
+      if (document != null) 'document': document,
+      if (version != null) 'version': version,
+      if (synced != null) 'synced': synced,
+      if (changeId != null) 'change_id': changeId,
+      if (conflictDocument != null) 'conflict_document': conflictDocument,
+      if (conflictVersion != null) 'conflict_version': conflictVersion,
+      if (syncError != null) 'sync_error': syncError,
+    });
+  }
+
+  TripPlansCompanion copyWith(
+      {Value<int>? tripId,
+      Value<String>? document,
+      Value<int>? version,
+      Value<bool>? synced,
+      Value<String>? changeId,
+      Value<String?>? conflictDocument,
+      Value<int?>? conflictVersion,
+      Value<String?>? syncError}) {
+    return TripPlansCompanion(
+      tripId: tripId ?? this.tripId,
+      document: document ?? this.document,
+      version: version ?? this.version,
+      synced: synced ?? this.synced,
+      changeId: changeId ?? this.changeId,
+      conflictDocument: conflictDocument ?? this.conflictDocument,
+      conflictVersion: conflictVersion ?? this.conflictVersion,
+      syncError: syncError ?? this.syncError,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (tripId.present) {
+      map['trip_id'] = Variable<int>(tripId.value);
+    }
+    if (document.present) {
+      map['document'] = Variable<String>(document.value);
+    }
+    if (version.present) {
+      map['version'] = Variable<int>(version.value);
+    }
+    if (synced.present) {
+      map['synced'] = Variable<bool>(synced.value);
+    }
+    if (changeId.present) {
+      map['change_id'] = Variable<String>(changeId.value);
+    }
+    if (conflictDocument.present) {
+      map['conflict_document'] = Variable<String>(conflictDocument.value);
+    }
+    if (conflictVersion.present) {
+      map['conflict_version'] = Variable<int>(conflictVersion.value);
+    }
+    if (syncError.present) {
+      map['sync_error'] = Variable<String>(syncError.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TripPlansCompanion(')
+          ..write('tripId: $tripId, ')
+          ..write('document: $document, ')
+          ..write('version: $version, ')
+          ..write('synced: $synced, ')
+          ..write('changeId: $changeId, ')
+          ..write('conflictDocument: $conflictDocument, ')
+          ..write('conflictVersion: $conflictVersion, ')
+          ..write('syncError: $syncError')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -3639,6 +4200,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
       $BalanceSnapshotsTable(this);
   late final $ExchangeRatesTable exchangeRates = $ExchangeRatesTable(this);
   late final $SyncQueueTable syncQueue = $SyncQueueTable(this);
+  late final $TripPlansTable tripPlans = $TripPlansTable(this);
   late final SyncQueueDao syncQueueDao = SyncQueueDao(this as AppDatabase);
   late final ExpenseDao expenseDao = ExpenseDao(this as AppDatabase);
   late final TripDao tripDao = TripDao(this as AppDatabase);
@@ -3656,7 +4218,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         accounts,
         balanceSnapshots,
         exchangeRates,
-        syncQueue
+        syncQueue,
+        tripPlans
       ];
 }
 
@@ -3955,6 +4518,7 @@ typedef $$ExpensesTableProcessedTableManager = ProcessedTableManager<
     DbExpense,
     PrefetchHooks Function()>;
 typedef $$TripsTableCreateCompanionBuilder = TripsCompanion Function({
+  Value<bool> deleted,
   Value<int> id,
   Value<int?> remoteId,
   required String destination,
@@ -3965,6 +4529,7 @@ typedef $$TripsTableCreateCompanionBuilder = TripsCompanion Function({
   Value<bool> synced,
 });
 typedef $$TripsTableUpdateCompanionBuilder = TripsCompanion Function({
+  Value<bool> deleted,
   Value<int> id,
   Value<int?> remoteId,
   Value<String> destination,
@@ -3993,6 +4558,20 @@ final class $$TripsTableReferences
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
+
+  static MultiTypedResultKey<$TripPlansTable, List<DbTripPlan>>
+      _tripPlansRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+          db.tripPlans,
+          aliasName: $_aliasNameGenerator(db.trips.id, db.tripPlans.tripId));
+
+  $$TripPlansTableProcessedTableManager get tripPlansRefs {
+    final manager = $$TripPlansTableTableManager($_db, $_db.tripPlans)
+        .filter((f) => f.tripId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_tripPlansRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
 }
 
 class $$TripsTableFilterComposer extends Composer<_$AppDatabase, $TripsTable> {
@@ -4003,6 +4582,9 @@ class $$TripsTableFilterComposer extends Composer<_$AppDatabase, $TripsTable> {
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  ColumnFilters<bool> get deleted => $composableBuilder(
+      column: $table.deleted, builder: (column) => ColumnFilters(column));
+
   ColumnFilters<int> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnFilters(column));
 
@@ -4047,6 +4629,27 @@ class $$TripsTableFilterComposer extends Composer<_$AppDatabase, $TripsTable> {
             ));
     return f(composer);
   }
+
+  Expression<bool> tripPlansRefs(
+      Expression<bool> Function($$TripPlansTableFilterComposer f) f) {
+    final $$TripPlansTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.tripPlans,
+        getReferencedColumn: (t) => t.tripId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$TripPlansTableFilterComposer(
+              $db: $db,
+              $table: $db.tripPlans,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
 }
 
 class $$TripsTableOrderingComposer
@@ -4058,6 +4661,9 @@ class $$TripsTableOrderingComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  ColumnOrderings<bool> get deleted => $composableBuilder(
+      column: $table.deleted, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<int> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnOrderings(column));
 
@@ -4092,6 +4698,9 @@ class $$TripsTableAnnotationComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  GeneratedColumn<bool> get deleted =>
+      $composableBuilder(column: $table.deleted, builder: (column) => column);
+
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
@@ -4136,6 +4745,27 @@ class $$TripsTableAnnotationComposer
             ));
     return f(composer);
   }
+
+  Expression<T> tripPlansRefs<T extends Object>(
+      Expression<T> Function($$TripPlansTableAnnotationComposer a) f) {
+    final $$TripPlansTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.tripPlans,
+        getReferencedColumn: (t) => t.tripId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$TripPlansTableAnnotationComposer(
+              $db: $db,
+              $table: $db.tripPlans,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
 }
 
 class $$TripsTableTableManager extends RootTableManager<
@@ -4149,7 +4779,7 @@ class $$TripsTableTableManager extends RootTableManager<
     $$TripsTableUpdateCompanionBuilder,
     (DbTrip, $$TripsTableReferences),
     DbTrip,
-    PrefetchHooks Function({bool travelExpensesRefs})> {
+    PrefetchHooks Function({bool travelExpensesRefs, bool tripPlansRefs})> {
   $$TripsTableTableManager(_$AppDatabase db, $TripsTable table)
       : super(TableManagerState(
           db: db,
@@ -4161,6 +4791,7 @@ class $$TripsTableTableManager extends RootTableManager<
           createComputedFieldComposer: () =>
               $$TripsTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
+            Value<bool> deleted = const Value.absent(),
             Value<int> id = const Value.absent(),
             Value<int?> remoteId = const Value.absent(),
             Value<String> destination = const Value.absent(),
@@ -4171,6 +4802,7 @@ class $$TripsTableTableManager extends RootTableManager<
             Value<bool> synced = const Value.absent(),
           }) =>
               TripsCompanion(
+            deleted: deleted,
             id: id,
             remoteId: remoteId,
             destination: destination,
@@ -4181,6 +4813,7 @@ class $$TripsTableTableManager extends RootTableManager<
             synced: synced,
           ),
           createCompanionCallback: ({
+            Value<bool> deleted = const Value.absent(),
             Value<int> id = const Value.absent(),
             Value<int?> remoteId = const Value.absent(),
             required String destination,
@@ -4191,6 +4824,7 @@ class $$TripsTableTableManager extends RootTableManager<
             Value<bool> synced = const Value.absent(),
           }) =>
               TripsCompanion.insert(
+            deleted: deleted,
             id: id,
             remoteId: remoteId,
             destination: destination,
@@ -4204,11 +4838,13 @@ class $$TripsTableTableManager extends RootTableManager<
               .map((e) =>
                   (e.readTable(table), $$TripsTableReferences(db, table, e)))
               .toList(),
-          prefetchHooksCallback: ({travelExpensesRefs = false}) {
+          prefetchHooksCallback: (
+              {travelExpensesRefs = false, tripPlansRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
-                if (travelExpensesRefs) db.travelExpenses
+                if (travelExpensesRefs) db.travelExpenses,
+                if (tripPlansRefs) db.tripPlans
               ],
               addJoins: null,
               getPrefetchedDataCallback: (items) async {
@@ -4222,6 +4858,17 @@ class $$TripsTableTableManager extends RootTableManager<
                         managerFromTypedResult: (p0) =>
                             $$TripsTableReferences(db, table, p0)
                                 .travelExpensesRefs,
+                        referencedItemsForCurrentItem: (item,
+                                referencedItems) =>
+                            referencedItems.where((e) => e.tripId == item.id),
+                        typedResults: items),
+                  if (tripPlansRefs)
+                    await $_getPrefetchedData<DbTrip, $TripsTable, DbTripPlan>(
+                        currentTable: table,
+                        referencedTable:
+                            $$TripsTableReferences._tripPlansRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$TripsTableReferences(db, table, p0).tripPlansRefs,
                         referencedItemsForCurrentItem: (item,
                                 referencedItems) =>
                             referencedItems.where((e) => e.tripId == item.id),
@@ -4244,9 +4891,11 @@ typedef $$TripsTableProcessedTableManager = ProcessedTableManager<
     $$TripsTableUpdateCompanionBuilder,
     (DbTrip, $$TripsTableReferences),
     DbTrip,
-    PrefetchHooks Function({bool travelExpensesRefs})>;
+    PrefetchHooks Function({bool travelExpensesRefs, bool tripPlansRefs})>;
 typedef $$TravelExpensesTableCreateCompanionBuilder = TravelExpensesCompanion
     Function({
+  Value<bool> deleted,
+  Value<String> plannerEntryId,
   Value<int> id,
   Value<int?> remoteId,
   required int tripId,
@@ -4266,6 +4915,8 @@ typedef $$TravelExpensesTableCreateCompanionBuilder = TravelExpensesCompanion
 });
 typedef $$TravelExpensesTableUpdateCompanionBuilder = TravelExpensesCompanion
     Function({
+  Value<bool> deleted,
+  Value<String> plannerEntryId,
   Value<int> id,
   Value<int?> remoteId,
   Value<int> tripId,
@@ -4313,6 +4964,13 @@ class $$TravelExpensesTableFilterComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  ColumnFilters<bool> get deleted => $composableBuilder(
+      column: $table.deleted, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get plannerEntryId => $composableBuilder(
+      column: $table.plannerEntryId,
+      builder: (column) => ColumnFilters(column));
+
   ColumnFilters<int> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnFilters(column));
 
@@ -4388,6 +5046,13 @@ class $$TravelExpensesTableOrderingComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  ColumnOrderings<bool> get deleted => $composableBuilder(
+      column: $table.deleted, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get plannerEntryId => $composableBuilder(
+      column: $table.plannerEntryId,
+      builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<int> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnOrderings(column));
 
@@ -4464,6 +5129,12 @@ class $$TravelExpensesTableAnnotationComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  GeneratedColumn<bool> get deleted =>
+      $composableBuilder(column: $table.deleted, builder: (column) => column);
+
+  GeneratedColumn<String> get plannerEntryId => $composableBuilder(
+      column: $table.plannerEntryId, builder: (column) => column);
+
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
@@ -4554,6 +5225,8 @@ class $$TravelExpensesTableTableManager extends RootTableManager<
           createComputedFieldComposer: () =>
               $$TravelExpensesTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
+            Value<bool> deleted = const Value.absent(),
+            Value<String> plannerEntryId = const Value.absent(),
             Value<int> id = const Value.absent(),
             Value<int?> remoteId = const Value.absent(),
             Value<int> tripId = const Value.absent(),
@@ -4572,6 +5245,8 @@ class $$TravelExpensesTableTableManager extends RootTableManager<
             Value<bool> synced = const Value.absent(),
           }) =>
               TravelExpensesCompanion(
+            deleted: deleted,
+            plannerEntryId: plannerEntryId,
             id: id,
             remoteId: remoteId,
             tripId: tripId,
@@ -4590,6 +5265,8 @@ class $$TravelExpensesTableTableManager extends RootTableManager<
             synced: synced,
           ),
           createCompanionCallback: ({
+            Value<bool> deleted = const Value.absent(),
+            Value<String> plannerEntryId = const Value.absent(),
             Value<int> id = const Value.absent(),
             Value<int?> remoteId = const Value.absent(),
             required int tripId,
@@ -4608,6 +5285,8 @@ class $$TravelExpensesTableTableManager extends RootTableManager<
             Value<bool> synced = const Value.absent(),
           }) =>
               TravelExpensesCompanion.insert(
+            deleted: deleted,
+            plannerEntryId: plannerEntryId,
             id: id,
             remoteId: remoteId,
             tripId: tripId,
@@ -5763,6 +6442,321 @@ typedef $$SyncQueueTableProcessedTableManager = ProcessedTableManager<
     ),
     DbSyncOperation,
     PrefetchHooks Function()>;
+typedef $$TripPlansTableCreateCompanionBuilder = TripPlansCompanion Function({
+  Value<int> tripId,
+  Value<String> document,
+  Value<int> version,
+  Value<bool> synced,
+  Value<String> changeId,
+  Value<String?> conflictDocument,
+  Value<int?> conflictVersion,
+  Value<String?> syncError,
+});
+typedef $$TripPlansTableUpdateCompanionBuilder = TripPlansCompanion Function({
+  Value<int> tripId,
+  Value<String> document,
+  Value<int> version,
+  Value<bool> synced,
+  Value<String> changeId,
+  Value<String?> conflictDocument,
+  Value<int?> conflictVersion,
+  Value<String?> syncError,
+});
+
+final class $$TripPlansTableReferences
+    extends BaseReferences<_$AppDatabase, $TripPlansTable, DbTripPlan> {
+  $$TripPlansTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $TripsTable _tripIdTable(_$AppDatabase db) => db.trips
+      .createAlias($_aliasNameGenerator(db.tripPlans.tripId, db.trips.id));
+
+  $$TripsTableProcessedTableManager get tripId {
+    final $_column = $_itemColumn<int>('trip_id')!;
+
+    final manager = $$TripsTableTableManager($_db, $_db.trips)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_tripIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+}
+
+class $$TripPlansTableFilterComposer
+    extends Composer<_$AppDatabase, $TripPlansTable> {
+  $$TripPlansTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get document => $composableBuilder(
+      column: $table.document, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get version => $composableBuilder(
+      column: $table.version, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get synced => $composableBuilder(
+      column: $table.synced, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get changeId => $composableBuilder(
+      column: $table.changeId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get conflictDocument => $composableBuilder(
+      column: $table.conflictDocument,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get conflictVersion => $composableBuilder(
+      column: $table.conflictVersion,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get syncError => $composableBuilder(
+      column: $table.syncError, builder: (column) => ColumnFilters(column));
+
+  $$TripsTableFilterComposer get tripId {
+    final $$TripsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.tripId,
+        referencedTable: $db.trips,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$TripsTableFilterComposer(
+              $db: $db,
+              $table: $db.trips,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$TripPlansTableOrderingComposer
+    extends Composer<_$AppDatabase, $TripPlansTable> {
+  $$TripPlansTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get document => $composableBuilder(
+      column: $table.document, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get version => $composableBuilder(
+      column: $table.version, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get synced => $composableBuilder(
+      column: $table.synced, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get changeId => $composableBuilder(
+      column: $table.changeId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get conflictDocument => $composableBuilder(
+      column: $table.conflictDocument,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get conflictVersion => $composableBuilder(
+      column: $table.conflictVersion,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get syncError => $composableBuilder(
+      column: $table.syncError, builder: (column) => ColumnOrderings(column));
+
+  $$TripsTableOrderingComposer get tripId {
+    final $$TripsTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.tripId,
+        referencedTable: $db.trips,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$TripsTableOrderingComposer(
+              $db: $db,
+              $table: $db.trips,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$TripPlansTableAnnotationComposer
+    extends Composer<_$AppDatabase, $TripPlansTable> {
+  $$TripPlansTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get document =>
+      $composableBuilder(column: $table.document, builder: (column) => column);
+
+  GeneratedColumn<int> get version =>
+      $composableBuilder(column: $table.version, builder: (column) => column);
+
+  GeneratedColumn<bool> get synced =>
+      $composableBuilder(column: $table.synced, builder: (column) => column);
+
+  GeneratedColumn<String> get changeId =>
+      $composableBuilder(column: $table.changeId, builder: (column) => column);
+
+  GeneratedColumn<String> get conflictDocument => $composableBuilder(
+      column: $table.conflictDocument, builder: (column) => column);
+
+  GeneratedColumn<int> get conflictVersion => $composableBuilder(
+      column: $table.conflictVersion, builder: (column) => column);
+
+  GeneratedColumn<String> get syncError =>
+      $composableBuilder(column: $table.syncError, builder: (column) => column);
+
+  $$TripsTableAnnotationComposer get tripId {
+    final $$TripsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.tripId,
+        referencedTable: $db.trips,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$TripsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.trips,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$TripPlansTableTableManager extends RootTableManager<
+    _$AppDatabase,
+    $TripPlansTable,
+    DbTripPlan,
+    $$TripPlansTableFilterComposer,
+    $$TripPlansTableOrderingComposer,
+    $$TripPlansTableAnnotationComposer,
+    $$TripPlansTableCreateCompanionBuilder,
+    $$TripPlansTableUpdateCompanionBuilder,
+    (DbTripPlan, $$TripPlansTableReferences),
+    DbTripPlan,
+    PrefetchHooks Function({bool tripId})> {
+  $$TripPlansTableTableManager(_$AppDatabase db, $TripPlansTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$TripPlansTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$TripPlansTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$TripPlansTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> tripId = const Value.absent(),
+            Value<String> document = const Value.absent(),
+            Value<int> version = const Value.absent(),
+            Value<bool> synced = const Value.absent(),
+            Value<String> changeId = const Value.absent(),
+            Value<String?> conflictDocument = const Value.absent(),
+            Value<int?> conflictVersion = const Value.absent(),
+            Value<String?> syncError = const Value.absent(),
+          }) =>
+              TripPlansCompanion(
+            tripId: tripId,
+            document: document,
+            version: version,
+            synced: synced,
+            changeId: changeId,
+            conflictDocument: conflictDocument,
+            conflictVersion: conflictVersion,
+            syncError: syncError,
+          ),
+          createCompanionCallback: ({
+            Value<int> tripId = const Value.absent(),
+            Value<String> document = const Value.absent(),
+            Value<int> version = const Value.absent(),
+            Value<bool> synced = const Value.absent(),
+            Value<String> changeId = const Value.absent(),
+            Value<String?> conflictDocument = const Value.absent(),
+            Value<int?> conflictVersion = const Value.absent(),
+            Value<String?> syncError = const Value.absent(),
+          }) =>
+              TripPlansCompanion.insert(
+            tripId: tripId,
+            document: document,
+            version: version,
+            synced: synced,
+            changeId: changeId,
+            conflictDocument: conflictDocument,
+            conflictVersion: conflictVersion,
+            syncError: syncError,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$TripPlansTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: ({tripId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (tripId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.tripId,
+                    referencedTable:
+                        $$TripPlansTableReferences._tripIdTable(db),
+                    referencedColumn:
+                        $$TripPlansTableReferences._tripIdTable(db).id,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$TripPlansTableProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    $TripPlansTable,
+    DbTripPlan,
+    $$TripPlansTableFilterComposer,
+    $$TripPlansTableOrderingComposer,
+    $$TripPlansTableAnnotationComposer,
+    $$TripPlansTableCreateCompanionBuilder,
+    $$TripPlansTableUpdateCompanionBuilder,
+    (DbTripPlan, $$TripPlansTableReferences),
+    DbTripPlan,
+    PrefetchHooks Function({bool tripId})>;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -5781,4 +6775,6 @@ class $AppDatabaseManager {
       $$ExchangeRatesTableTableManager(_db, _db.exchangeRates);
   $$SyncQueueTableTableManager get syncQueue =>
       $$SyncQueueTableTableManager(_db, _db.syncQueue);
+  $$TripPlansTableTableManager get tripPlans =>
+      $$TripPlansTableTableManager(_db, _db.tripPlans);
 }

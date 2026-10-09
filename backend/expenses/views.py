@@ -1,4 +1,6 @@
 import json
+import math
+import re
 from datetime import date
 
 from django.http import JsonResponse
@@ -9,6 +11,8 @@ from django.views.decorators.http import require_GET, require_POST, require_http
 from core.services import compute_snapshot_amounts, get_rates
 
 from .models import Expense, EXPENSE_CATEGORIES, TRAVEL_CATEGORIES, Trip, TravelExpense
+
+from .travel_sync import idempotent
 
 DISPLAY_CURRENCIES = {'CNY', 'HKD', 'USD', 'SGD'}
 
@@ -70,7 +74,7 @@ def _validate_expense(data):
     else:
         try:
             amount = float(amount)
-            if amount <= 0:
+            if not math.isfinite(amount) or amount <= 0:
                 errors.append('amount must be positive')
         except (TypeError, ValueError):
             errors.append('amount must be a number')
@@ -313,6 +317,7 @@ def list_trips(request):
 
 
 @require_POST
+@idempotent
 def add_trip(request):
     try:
         data = json.loads(request.body)
@@ -351,6 +356,7 @@ def add_trip(request):
 
 
 @require_http_methods(["PUT"])
+@idempotent
 def update_trip(request, trip_id):
     try:
         trip = Trip.objects.get(id=trip_id)
@@ -383,11 +389,12 @@ def update_trip(request, trip_id):
 
 
 @require_http_methods(["DELETE"])
+@idempotent
 def delete_trip(request, trip_id):
     try:
         trip = Trip.objects.get(id=trip_id)
     except Trip.DoesNotExist:
-        return JsonResponse({'error': 'Trip not found'}, status=404)
+        return JsonResponse({'deleted': True})
     trip.delete()
     return JsonResponse({'deleted': True})
 
@@ -422,6 +429,7 @@ def list_trip_expenses(request, trip_id):
             'category': exp.category,
             'name': exp.name,
             'notes': exp.notes,
+            'planner_entry_id': exp.planner_entry_id,
             'amount_usd': exp.amount_usd,
             'amount_cny': exp.amount_cny,
             'amount_hkd': exp.amount_hkd,
@@ -445,6 +453,7 @@ def list_trip_expenses(request, trip_id):
 
 
 @require_POST
+@idempotent
 def add_trip_expense(request, trip_id):
     try:
         trip = Trip.objects.get(id=trip_id)
@@ -457,10 +466,13 @@ def add_trip_expense(request, trip_id):
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
     errors = []
+    entry_id = data.get('planner_entry_id', '')
+    if not isinstance(entry_id, str) or (entry_id and not re.fullmatch(r'[A-Za-z0-9_-]{16,64}', entry_id)):
+        errors.append('Invalid planner_entry_id')
     amount = data.get('amount')
     try:
         amount = float(amount)
-        if amount <= 0:
+        if not math.isfinite(amount) or amount <= 0:
             errors.append('amount must be positive')
     except (TypeError, ValueError):
         errors.append('amount must be a number')
@@ -496,6 +508,7 @@ def add_trip_expense(request, trip_id):
     amounts = compute_snapshot_amounts(amount, currency, rates)
     exp = TravelExpense.objects.create(
         trip=trip,
+        planner_entry_id=entry_id,
         amount=amount,
         currency=currency,
         date=exp_date,
@@ -508,6 +521,7 @@ def add_trip_expense(request, trip_id):
 
 
 @require_http_methods(["PUT"])
+@idempotent
 def update_trip_expense(request, trip_id, expense_id):
     try:
         exp = TravelExpense.objects.get(id=expense_id, trip_id=trip_id)
@@ -520,10 +534,13 @@ def update_trip_expense(request, trip_id, expense_id):
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
     errors = []
+    entry_id = data.get('planner_entry_id', '')
+    if not isinstance(entry_id, str) or (entry_id and not re.fullmatch(r'[A-Za-z0-9_-]{16,64}', entry_id)):
+        errors.append('Invalid planner_entry_id')
     amount = data.get('amount')
     try:
         amount = float(amount)
-        if amount <= 0:
+        if not math.isfinite(amount) or amount <= 0:
             errors.append('amount must be positive')
     except (TypeError, ValueError):
         errors.append('amount must be a number')
@@ -557,6 +574,7 @@ def update_trip_expense(request, trip_id, expense_id):
         return JsonResponse({'errors': errors}, status=400)
 
     amounts = compute_snapshot_amounts(amount, currency, rates)
+    exp.planner_entry_id = data.get('planner_entry_id', exp.planner_entry_id)
     exp.amount = amount
     exp.currency = currency
     exp.date = exp_date
@@ -571,10 +589,11 @@ def update_trip_expense(request, trip_id, expense_id):
 
 
 @require_http_methods(["DELETE"])
+@idempotent
 def delete_trip_expense(request, trip_id, expense_id):
     try:
         exp = TravelExpense.objects.get(id=expense_id, trip_id=trip_id)
     except TravelExpense.DoesNotExist:
-        return JsonResponse({'error': 'Expense not found'}, status=404)
+        return JsonResponse({'deleted': True})
     exp.delete()
     return JsonResponse({'deleted': True})

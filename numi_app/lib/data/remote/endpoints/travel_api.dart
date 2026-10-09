@@ -4,6 +4,20 @@ class TravelApi {
   final ApiClient _client;
   TravelApi(this._client);
 
+  Future<Map<String, dynamic>> getPlan(int tripId) async {
+    final response = await _client
+        .get<Map<String, dynamic>>('/expenses/api/travel/trips/$tripId/plan/');
+    return response.data!;
+  }
+
+  Future<Map<String, dynamic>> putPlan(
+      int tripId, Map<String, dynamic> payload) async {
+    final response = await _client.put<Map<String, dynamic>>(
+        '/expenses/api/travel/trips/$tripId/plan/',
+        data: payload);
+    return response.data!;
+  }
+
   Future<List<Map<String, dynamic>>> getTrips({String currency = 'SGD'}) async {
     final response = await _client.get<Map<String, dynamic>>(
       '/expenses/api/travel/trips/',
@@ -21,8 +35,8 @@ class TravelApi {
     return response.data as Map<String, dynamic>;
   }
 
-  Future<void> deleteTrip(int id) =>
-      _client.delete('/expenses/api/travel/trips/$id/delete/');
+  Future<void> deleteTrip(int id, {Map<String, dynamic>? payload}) =>
+      _client.delete('/expenses/api/travel/trips/$id/delete/', data: payload);
 
   Future<List<Map<String, dynamic>>> getTripExpenses(
     int tripId, {
@@ -59,7 +73,9 @@ class TravelApi {
     return response.data as Map<String, dynamic>;
   }
 
-  Future<void> deleteTripExpense(int tripId, int expenseId) =>
+  Future<void> deleteTripExpense(int tripId, int expenseId,
+          {Map<String, dynamic>? payload}) =>
       _client.delete(
-          '/expenses/api/travel/trips/$tripId/expenses/$expenseId/delete/');
+          '/expenses/api/travel/trips/$tripId/expenses/$expenseId/delete/',
+          data: payload);
 }

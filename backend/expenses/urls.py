@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import views, planner
 
 urlpatterns = [
     path('', views.index, name='expenses_index'),
@@ -10,6 +10,8 @@ urlpatterns = [
     path('api/expenses/<int:expense_id>/', views.expense_detail, name='expense_detail'),
     path('api/categories/', views.list_categories, name='list_categories'),
     path('api/stats/monthly/', views.monthly_stats, name='monthly_stats'),
+
+    path('api/travel/trips/<int:trip_id>/plan/', planner.trip_plan, name='trip_plan'),
 
     # Travel
     path('travel/', views.travel_index, name='travel_index'),

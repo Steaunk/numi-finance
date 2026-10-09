@@ -30,7 +30,9 @@ class _AddTripScreenState extends ConsumerState<AddTripScreen> {
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.only(
-        left: 16, right: 16, top: 16,
+        left: 16,
+        right: 16,
+        top: 16,
         bottom: MediaQuery.of(context).viewInsets.bottom + 16,
       ),
       child: Form(
@@ -49,8 +51,7 @@ class _AddTripScreenState extends ConsumerState<AddTripScreen> {
                   labelText: 'Destination',
                   prefixIcon: Icon(Icons.place),
                 ),
-                validator: (v) =>
-                    v == null || v.isEmpty ? 'Required' : null,
+                validator: (v) => v == null || v.isEmpty ? 'Required' : null,
               ),
               const SizedBox(height: 12),
               ListTile(

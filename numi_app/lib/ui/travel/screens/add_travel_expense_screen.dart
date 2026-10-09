@@ -11,8 +11,11 @@ class AddTravelExpenseScreen extends ConsumerStatefulWidget {
   final int tripId;
   final DateTime tripStartDate;
   final DateTime tripEndDate;
+
   /// Pass an existing expense to open in edit mode.
   final TravelExpense? expense;
+  final String? initialName, initialCategory, plannerEntryId;
+  final DateTime? initialDate;
 
   const AddTravelExpenseScreen({
     super.key,
@@ -20,6 +23,10 @@ class AddTravelExpenseScreen extends ConsumerStatefulWidget {
     required this.tripStartDate,
     required this.tripEndDate,
     this.expense,
+    this.initialName,
+    this.initialCategory,
+    this.initialDate,
+    this.plannerEntryId,
   });
 
   @override
@@ -37,6 +44,7 @@ class _AddTravelExpenseScreenState
   late String _category;
   late DateTime _date;
   bool _saving = false;
+  late String _plannerEntryId;
 
   bool get _isEditing => widget.expense != null;
 
@@ -46,11 +54,15 @@ class _AddTravelExpenseScreenState
     final e = widget.expense;
     _amountController =
         TextEditingController(text: e != null ? e.amount.toString() : '');
-    _nameController = TextEditingController(text: e?.name ?? '');
+    _nameController =
+        TextEditingController(text: e?.name ?? widget.initialName ?? '');
     _notesController = TextEditingController(text: e?.notes ?? '');
     _currency = e?.currency ?? AppConstants.defaultCurrency;
-    _category = e?.category ?? AppConstants.travelCategories.first;
-    _date = e?.date ?? widget.tripStartDate;
+    _category = e?.category ??
+        widget.initialCategory ??
+        AppConstants.travelCategories.first;
+    _date = e?.date ?? widget.initialDate ?? widget.tripStartDate;
+    _plannerEntryId = e?.plannerEntryId ?? widget.plannerEntryId ?? '';
   }
 
   @override
@@ -63,6 +75,8 @@ class _AddTravelExpenseScreenState
 
   @override
   Widget build(BuildContext context) {
+    final entries =
+        ref.watch(tripPlanProvider(widget.tripId)).value?.plan.entries ?? [];
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -80,10 +94,11 @@ class _AddTravelExpenseScreenState
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
+                  Expanded(
+                      child: Text(
                     _isEditing ? 'Edit Travel Expense' : 'Add Travel Expense',
                     style: Theme.of(context).textTheme.headlineSmall,
-                  ),
+                  )),
                   if (_isEditing)
                     IconButton(
                       icon: Icon(Icons.delete,
@@ -112,13 +127,15 @@ class _AddTravelExpenseScreenState
                     flex: 2,
                     child: TextFormField(
                       controller: _amountController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true),
-                      decoration:
-                          const InputDecoration(labelText: 'Amount'),
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(labelText: 'Amount'),
                       validator: (v) {
                         if (v == null || v.isEmpty) return 'Required';
-                        if (double.tryParse(v) == null) return 'Invalid';
+                        final amount = double.tryParse(v);
+                        if (amount == null || !amount.isFinite || amount <= 0) {
+                          return 'Enter a positive amount';
+                        }
                         return null;
                       },
                     ),
@@ -133,20 +150,18 @@ class _AddTravelExpenseScreenState
                         if (query.isEmpty) {
                           return AppConstants.travelCurrencies;
                         }
-                        return AppConstants.travelCurrencies.where(
-                            (c) => c.contains(query));
+                        return AppConstants.travelCurrencies
+                            .where((c) => c.contains(query));
                       },
-                      onSelected: (value) =>
-                          setState(() => _currency = value),
-                      fieldViewBuilder: (context, controller, focusNode,
-                          onFieldSubmitted) {
+                      onSelected: (value) => setState(() => _currency = value),
+                      fieldViewBuilder:
+                          (context, controller, focusNode, onFieldSubmitted) {
                         return TextFormField(
                           controller: controller,
                           focusNode: focusNode,
-                          decoration: const InputDecoration(
-                              labelText: 'Currency'),
-                          textCapitalization:
-                              TextCapitalization.characters,
+                          decoration:
+                              const InputDecoration(labelText: 'Currency'),
+                          textCapitalization: TextCapitalization.characters,
                           validator: (v) {
                             if (v == null || v.isEmpty) return 'Required';
                             if (!AppConstants.travelCurrencies
@@ -157,8 +172,7 @@ class _AddTravelExpenseScreenState
                           },
                           onChanged: (v) {
                             final upper = v.toUpperCase();
-                            if (AppConstants.travelCurrencies
-                                .contains(upper)) {
+                            if (AppConstants.travelCurrencies.contains(upper)) {
                               _currency = upper;
                             }
                           },
@@ -173,8 +187,7 @@ class _AddTravelExpenseScreenState
                 initialValue: _category,
                 decoration: const InputDecoration(labelText: 'Category'),
                 items: AppConstants.travelCategories
-                    .map((c) =>
-                        DropdownMenuItem(value: c, child: Text(c)))
+                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                     .toList(),
                 onChanged: (v) => setState(() => _category = v!),
               ),
@@ -188,10 +201,8 @@ class _AddTravelExpenseScreenState
                   final picked = await showDatePicker(
                     context: context,
                     initialDate: _date,
-                    firstDate: widget.tripStartDate
-                        .subtract(const Duration(days: 365)),
-                    lastDate:
-                        widget.tripEndDate.add(const Duration(days: 100)),
+                    firstDate: DateTime(1900),
+                    lastDate: DateTime(2200),
                   );
                   if (picked != null) setState(() => _date = picked);
                 },
@@ -200,14 +211,33 @@ class _AddTravelExpenseScreenState
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(labelText: 'Name'),
-                validator: (v) =>
-                    v == null || v.isEmpty ? 'Required' : null,
+                validator: (v) => v == null || v.isEmpty ? 'Required' : null,
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _notesController,
                 decoration: const InputDecoration(labelText: 'Notes'),
                 maxLines: 2,
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _plannerEntryId,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                    labelText: 'Linked trip item (optional)'),
+                items: [
+                  const DropdownMenuItem(
+                      value: '', child: Text('No linked item')),
+                  if (_plannerEntryId.isNotEmpty &&
+                      !entries.any((e) => e.id == _plannerEntryId))
+                    DropdownMenuItem(
+                        value: _plannerEntryId,
+                        child: const Text('Previously linked item')),
+                  ...entries.map((e) => DropdownMenuItem(
+                      value: e.id,
+                      child: Text(e.title, overflow: TextOverflow.ellipsis))),
+                ],
+                onChanged: (v) => setState(() => _plannerEntryId = v!),
               ),
               const SizedBox(height: 20),
               LoadingButton(
@@ -239,6 +269,7 @@ class _AddTravelExpenseScreenState
               category: _category,
               name: name,
               notes: notes,
+              plannerEntryId: _plannerEntryId,
             );
       } else {
         await ref.read(travelRepositoryProvider).addTravelExpense(
@@ -249,6 +280,7 @@ class _AddTravelExpenseScreenState
               category: _category,
               name: name,
               notes: notes,
+              plannerEntryId: _plannerEntryId,
             );
       }
 
@@ -256,8 +288,7 @@ class _AddTravelExpenseScreenState
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text(
-                  _isEditing ? 'Expense updated' : 'Expense added')),
+              content: Text(_isEditing ? 'Expense updated' : 'Expense added')),
         );
       }
     } catch (e) {

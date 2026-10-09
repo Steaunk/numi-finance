@@ -28,6 +28,7 @@ class Expenses extends Table {
 
 @DataClassName('DbTrip')
 class Trips extends Table {
+  BoolColumn get deleted => boolean().withDefault(const Constant(false))();
   IntColumn get id => integer().autoIncrement()();
   IntColumn get remoteId => integer().nullable()();
   TextColumn get destination => text()();
@@ -40,6 +41,8 @@ class Trips extends Table {
 
 @DataClassName('DbTravelExpense')
 class TravelExpenses extends Table {
+  BoolColumn get deleted => boolean().withDefault(const Constant(false))();
+  TextColumn get plannerEntryId => text().withDefault(const Constant(''))();
   IntColumn get id => integer().autoIncrement()();
   IntColumn get remoteId => integer().nullable()();
   IntColumn get tripId => integer().references(Trips, #id)();
@@ -65,7 +68,8 @@ class Accounts extends Table {
   TextColumn get name => text()();
   TextColumn get currency => text()();
   RealColumn get balance => real().withDefault(const Constant(0))();
-  BoolColumn get includeInTotal => boolean().withDefault(const Constant(true))();
+  BoolColumn get includeInTotal =>
+      boolean().withDefault(const Constant(true))();
   TextColumn get notes => text().withDefault(const Constant(''))();
   TextColumn get apiUrl => text().nullable()();
   TextColumn get apiValuePath => text().nullable()();
@@ -109,6 +113,20 @@ class SyncQueue extends Table {
   IntColumn get retryCount => integer().withDefault(const Constant(0))();
 }
 
+@DataClassName('DbTripPlan')
+class TripPlans extends Table {
+  IntColumn get tripId => integer().references(Trips, #id)();
+  TextColumn get document => text().withDefault(const Constant('{}'))();
+  IntColumn get version => integer().withDefault(const Constant(0))();
+  BoolColumn get synced => boolean().withDefault(const Constant(true))();
+  TextColumn get changeId => text().withDefault(const Constant(''))();
+  TextColumn get conflictDocument => text().nullable()();
+  IntColumn get conflictVersion => integer().nullable()();
+  TextColumn get syncError => text().nullable()();
+  @override
+  Set<Column> get primaryKey => {tripId};
+}
+
 // ── DAOs ─────────────────────────────────────────────────────────────────────
 
 @DriftAccessor(tables: [SyncQueue])
@@ -140,8 +158,7 @@ class SyncQueueDao extends DatabaseAccessor<AppDatabase>
 }
 
 @DriftAccessor(tables: [Expenses])
-class ExpenseDao extends DatabaseAccessor<AppDatabase>
-    with _$ExpenseDaoMixin {
+class ExpenseDao extends DatabaseAccessor<AppDatabase> with _$ExpenseDaoMixin {
   ExpenseDao(super.db);
 
   Stream<List<DbExpense>> watchByMonth(int year, int month) {
@@ -213,23 +230,23 @@ class ExpenseDao extends DatabaseAccessor<AppDatabase>
 class TripDao extends DatabaseAccessor<AppDatabase> with _$TripDaoMixin {
   TripDao(super.db);
 
-  Stream<List<DbTrip>> watchAll() =>
-      (select(trips)
-            ..orderBy([(t) => OrderingTerm.desc(t.startDate)]))
-          .watch();
+  Stream<List<DbTrip>> watchAll() => (select(trips)
+        ..where((t) => t.deleted.equals(false))
+        ..orderBy([(t) => OrderingTerm.desc(t.startDate)]))
+      .watch();
 
   Future<DbTrip?> getById(int id) =>
       (select(trips)..where((t) => t.id.equals(id))).getSingleOrNull();
 
   Future<List<DbTravelExpense>> getExpensesForTrip(int tripId) =>
       (select(travelExpenses)
-            ..where((e) => e.tripId.equals(tripId))
+            ..where((e) => e.tripId.equals(tripId) & e.deleted.equals(false))
             ..orderBy([(e) => OrderingTerm.desc(e.date)]))
           .get();
 
   Stream<List<DbTravelExpense>> watchExpensesForTrip(int tripId) =>
       (select(travelExpenses)
-            ..where((e) => e.tripId.equals(tripId))
+            ..where((e) => e.tripId.equals(tripId) & e.deleted.equals(false))
             ..orderBy([(e) => OrderingTerm.desc(e.date)]))
           .watch();
 
@@ -270,28 +287,24 @@ class TripDao extends DatabaseAccessor<AppDatabase> with _$TripDaoMixin {
           ..where((e) => e.remoteId.equals(remoteId)))
         .getSingleOrNull();
     if (existing != null) {
-      await (update(travelExpenses)
-            ..where((e) => e.remoteId.equals(remoteId)))
+      await (update(travelExpenses)..where((e) => e.remoteId.equals(remoteId)))
           .write(entry);
     } else {
-      await into(travelExpenses)
-          .insert(entry, mode: InsertMode.insertOrIgnore);
+      await into(travelExpenses).insert(entry, mode: InsertMode.insertOrIgnore);
     }
   }
 }
 
 @DriftAccessor(tables: [Accounts, BalanceSnapshots])
-class AccountDao extends DatabaseAccessor<AppDatabase>
-    with _$AccountDaoMixin {
+class AccountDao extends DatabaseAccessor<AppDatabase> with _$AccountDaoMixin {
   AccountDao(super.db);
 
-  Stream<List<DbAccount>> watchAll() =>
-      (select(accounts)
-            ..orderBy([
-              (a) => OrderingTerm.desc(a.includeInTotal),
-              (a) => OrderingTerm.asc(a.name),
-            ]))
-          .watch();
+  Stream<List<DbAccount>> watchAll() => (select(accounts)
+        ..orderBy([
+          (a) => OrderingTerm.desc(a.includeInTotal),
+          (a) => OrderingTerm.asc(a.name),
+        ]))
+      .watch();
 
   Future<DbAccount?> getById(int id) =>
       (select(accounts)..where((a) => a.id.equals(id))).getSingleOrNull();
@@ -340,11 +353,10 @@ class ExchangeRateDao extends DatabaseAccessor<AppDatabase>
     with _$ExchangeRateDaoMixin {
   ExchangeRateDao(super.db);
 
-  Future<DbExchangeRate?> getLatest() =>
-      (select(exchangeRates)
-            ..orderBy([(r) => OrderingTerm.desc(r.rateDate)])
-            ..limit(1))
-          .getSingleOrNull();
+  Future<DbExchangeRate?> getLatest() => (select(exchangeRates)
+        ..orderBy([(r) => OrderingTerm.desc(r.rateDate)])
+        ..limit(1))
+      .getSingleOrNull();
 
   Future<void> insertRow(ExchangeRatesCompanion entry) async {
     // Keep only the latest rates entry
@@ -364,6 +376,7 @@ class ExchangeRateDao extends DatabaseAccessor<AppDatabase>
     BalanceSnapshots,
     ExchangeRates,
     SyncQueue,
+    TripPlans,
   ],
   daos: [
     SyncQueueDao,
@@ -377,12 +390,18 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) => m.createAll(),
         onUpgrade: (m, from, to) async {
+          if (from < 3) {
+            await m.createTable(tripPlans);
+            await m.addColumn(trips, trips.deleted);
+            await m.addColumn(travelExpenses, travelExpenses.deleted);
+            await m.addColumn(travelExpenses, travelExpenses.plannerEntryId);
+          }
           if (from < 2) {
             await m.addColumn(accounts, accounts.apiUrl);
             await m.addColumn(accounts, accounts.apiValuePath);
