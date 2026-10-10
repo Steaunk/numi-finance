@@ -146,6 +146,10 @@ or **Import PDF** in the collaborative web workspace. Preview is read-only: insp
 the extracted text, choose the trip and review each proposed activity or transport
 leg before saving. No payment is recorded. An existing activity or booking can
 also receive an original PDF attachment without creating another arrangement.
+Use **Remove PDF** to detach a ticket from an arrangement. In the web editor,
+removal takes effect on **Save**; **Cancel** keeps the attachment. In the app,
+confirm removal with the trash button beside the ticket; offline changes sync
+when connected. Other arrangements using the same PDF keep their attachments.
 
 Original bytes are stored once per trip and SHA-256 hash in `TravelDocument`;
 plan items reference `documentId` / `documentName`. Files stay behind the owner's

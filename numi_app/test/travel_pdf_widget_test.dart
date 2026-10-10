@@ -12,8 +12,10 @@ import 'package:numi_app/data/repositories/trip_plan_repository.dart';
 import 'package:numi_app/data/repositories/travel_repository.dart';
 import 'package:numi_app/data/repositories/rate_repository.dart';
 import 'package:numi_app/models/trip.dart';
+import 'package:numi_app/models/trip_plan.dart';
 import 'package:numi_app/providers/providers.dart';
 import 'package:numi_app/ui/travel/screens/import_travel_screen.dart';
+import 'package:numi_app/ui/travel/widgets/ticket_pdf.dart';
 
 class PdfApi extends TravelApi {
   PdfApi() : super(ApiClient('https://example.test'));
@@ -73,6 +75,68 @@ void main() {
     await db.close();
     await file.parent.delete(recursive: true);
   });
+  testWidgets(
+      'PDF removal can be cancelled and persists offline per arrangement',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final item = PlanItem.create('activity').copy({
+      'title': 'Museum',
+      'documentId': 'f78b0f4b-6643-4215-90eb-e050c871979b',
+      'documentName': 'Ticket.pdf',
+    });
+    final other = PlanItem.create('booking').copy({
+      'title': 'Another arrangement',
+      'documentId': item['documentId'],
+      'documentName': item['documentName'],
+    });
+    await repo.save(trip.id, item);
+    await repo.save(trip.id, other);
+    await tester.pumpWidget(ProviderScope(
+        overrides: [
+          databaseProvider.overrideWithValue(db),
+          tripPlanRepositoryProvider.overrideWithValue(repo),
+        ],
+        child: MaterialApp(home: Scaffold(body: Consumer(
+          builder: (context, ref, _) {
+            final current =
+                ref.watch(tripPlanProvider(trip.id)).value?.find(item.id);
+            return current == null
+                ? const SizedBox()
+                : TicketPdf(tripId: trip.id, item: current);
+          },
+        )))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Remove PDF'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.text('Ticket.pdf'), findsOneWidget);
+    expect(
+        (await tester.runAsync(() => repo.watch(trip.id).first))!
+            .find(item.id)!['documentId'],
+        item['documentId']);
+
+    await tester.tap(find.byTooltip('Remove PDF'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+    expect(find.text('Attach ticket PDF'), findsOneWidget);
+    expect(find.byTooltip('Remove PDF'), findsNothing);
+    final plan = (await tester
+        .runAsync(() => TripPlanRepository(db, null).watch(trip.id).first))!;
+    expect(plan.find(item.id)!['documentId'], isEmpty);
+    expect(plan.find(item.id)!['documentName'], isEmpty);
+    expect(plan.find(item.id)!.title, 'Museum');
+    expect(plan.find(other.id)!['documentId'], other['documentId']);
+    expect(plan.pending, isTrue);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('PDF review keeps original and attaches only after confirmation',
       (tester) async {
     tester.view.physicalSize = const Size(390, 844);

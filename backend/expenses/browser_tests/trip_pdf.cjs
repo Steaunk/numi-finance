@@ -17,7 +17,25 @@ const {chromium}=require('playwright');const assert=require('node:assert/strict'
  const plan=await(await ctx.request.get(api+'plan/')).json(),item=plan.content.items[0];assert.ok(item.documentId);assert.equal(item.title,'YAYOI KUSAMA MUSEUM');
  assert.equal(await page.getByRole('link',{name:/PDF ·.*pdf/}).count(),1);
  const original=await ctx.request.get(api+'documents/'+item.documentId+'/');assert.equal(original.status(),200);assert.equal((await original.body()).subarray(0,5).toString(),'%PDF-');
+ const edit=()=>page.locator(`[data-edit="${item.id}"]`).click();
+ const remove=()=>page.locator('dialog [data-remove-pdf]').click();
+ const save=async()=>{await page.locator('dialog [type=submit]').click();await page.waitForFunction(()=>!document.querySelector('dialog'));};
+ const readItem=async()=>(await(await ctx.request.get(api+'plan/')).json()).content.items.find(i=>i.id===item.id);
+ const attach=async()=>{const chooser=page.waitForEvent('filechooser');await page.locator('dialog [data-attach-pdf]').click();await(await chooser).setFiles('/tmp/numi-ticket-fixture.pdf');};
+ // Removal is a draft change until Save; cancelling preserves the attachment.
+ await edit();await remove();await page.locator('dialog [data-cancel]').click();
+ assert.equal((await readItem()).documentId,item.documentId);
+ // Cancelling a pending replacement also clears the original when saved.
+ await edit();await attach();await remove();await save();
+ let removed=await readItem();assert.equal(removed.documentId,'');assert.equal(removed.documentName,'');assert.equal(removed.title,item.title);
+ await page.reload();await page.locator(`[data-edit="${item.id}"]`).waitFor();
+ assert.equal(await page.getByRole('link',{name:/PDF ·.*pdf/}).count(),0);
+ // A fresh attachment can be selected again after removal.
+ await edit();assert.equal(await page.locator('dialog [data-remove-pdf]').isVisible(),false);
+ await attach();await remove();await attach();await save();assert.equal((await readItem()).documentId,item.documentId);
+ // Removing an existing attachment requires no replacement upload.
+ await edit();await remove();await save();assert.equal((await readItem()).documentId,'');
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  await page.screenshot({path:'/tmp/numi-pdf-phone.png',fullPage:true});assert.deepEqual(errors,[]);
- console.log('PDF UI passed: preview without writes, reviewed fields, original attachment download, phone layout.');await browser.close();
+ console.log('PDF UI passed: preview, download, cancelled and saved removal, pending replacement removal, reattachment, reload persistence, phone layout.');await browser.close();
 })().catch(e=>{console.error(e);process.exit(1)});

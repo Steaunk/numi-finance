@@ -17,6 +17,43 @@ class TicketPdf extends ConsumerStatefulWidget {
 
 class _TicketPdfState extends ConsumerState<TicketPdf> {
   bool opening = false;
+  Future<void> remove() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove PDF?'),
+        content: const Text(
+            'Remove the PDF from this arrangement? Other arrangements using the same PDF will keep it.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Remove')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => opening = true);
+    try {
+      final plan = await ref.read(tripPlanProvider(widget.tripId).future);
+      final current = plan.find(widget.item.id);
+      if (current == null) throw StateError('This arrangement was removed.');
+      await ref.read(tripPlanRepositoryProvider).save(
+          widget.tripId, current.copy({'documentId': '', 'documentName': ''}));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(e is StateError
+                ? e.message.toString()
+                : 'Could not remove the PDF. Please try again.')));
+      }
+    } finally {
+      if (mounted) setState(() => opening = false);
+    }
+  }
+
   Future<void> attach() async {
     setState(() => opening = true);
     try {
@@ -126,9 +163,15 @@ class _TicketPdfState extends ConsumerState<TicketPdf> {
                 : open,
         trailing: widget.item['documentId'].isEmpty
             ? null
-            : IconButton(
-                tooltip: 'Replace PDF',
-                onPressed: opening ? null : attach,
-                icon: const Icon(Icons.attach_file)),
+            : Row(mainAxisSize: MainAxisSize.min, children: [
+                IconButton(
+                    tooltip: 'Replace PDF',
+                    onPressed: opening ? null : attach,
+                    icon: const Icon(Icons.attach_file)),
+                IconButton(
+                    tooltip: 'Remove PDF',
+                    onPressed: opening ? null : remove,
+                    icon: const Icon(Icons.delete_outline)),
+              ]),
       );
 }
